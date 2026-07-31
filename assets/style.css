@@ -244,6 +244,40 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 .empty-tip { padding: 10px 16px; color: var(--text-3); font-size: 13px; margin: 0; }
 
+/* ---------- 群聊列表 / 选择器 / 成员列表 ---------- */
+.group-list li {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background .12s;
+}
+.group-list li:hover { background: var(--bg); }
+.group-list li.is-active { background: #eef3fe; border-left-color: var(--brand); }
+.group-list .info { flex: 1; min-width: 0; }
+.group-list .nm { font-size: 14.5px; font-weight: 500; }
+.group-list .ph { font-size: 12.5px; color: var(--text-3); }
+
+.friend-picker { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.picker-item { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 9px; cursor: pointer; }
+.picker-item:hover { background: var(--bg); }
+.picker-item input { flex: 0 0 auto; width: 16px; height: 16px; }
+.picker-item .info { flex: 1; min-width: 0; }
+.picker-item .nm { font-size: 14px; font-weight: 500; }
+.picker-item .ph { font-size: 12px; color: var(--text-3); }
+
+.member-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.member-item { display: flex; align-items: center; gap: 9px; padding: 7px 4px; }
+.member-item .info { flex: 1; min-width: 0; }
+.member-item .nm { font-size: 14px; font-weight: 500; }
+.member-item .mini-ok, .member-item .mini-no { flex: 0 0 auto; }
+
+/* 群聊中他人消息显示发送者昵称 */
+.msg.group-in { flex-wrap: wrap; }
+.msg.group-in .msg-sender { flex-basis: 100%; margin: 0 2px 3px; }
+.msg-sender { font-size: 11.5px; color: var(--text-3); }
+
+
 /* ---------- 聊天区 ---------- */
 .chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
