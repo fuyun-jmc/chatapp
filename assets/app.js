@@ -32,7 +32,7 @@
     friends: [],        // { id, phone, nickname }
     incoming: [],       // 待我处理的好友申请
     active: null,       // 当前会话好友
-    unread: {},         // { friendId: true }
+    unread: {},         // { friendId: number }  未读消息计数
     urlCache: {},       // file_path -> signed url
     channel: null
   };
@@ -388,7 +388,8 @@
       rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
       li.appendChild(rem);
 
-      if (state.unread[f.id]) li.appendChild(el('div', 'dot'));
+      var cnt = state.unread[f.id] || 0;
+      if (cnt > 0) li.appendChild(el('div', 'badge', cnt > 99 ? '99+' : String(cnt)));
       li.onclick = function () { openChat(f); };
       list.appendChild(li);
     });
@@ -863,7 +864,7 @@
             appendMessage(m);
           }
         } else if (!m.recalled) {
-          state.unread[m.sender_id] = true;
+          state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
           renderFriends();
           var from = state.friends.filter(function (f) { return f.id === m.sender_id; })[0];
           if (from) toast(from.nickname + ' 发来一条消息');
