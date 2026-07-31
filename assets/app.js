@@ -619,6 +619,15 @@
     var av = $('peer-avatar');
     setAvatar(av, { nickname: friend.remark || friend.nickname, phone: friend.phone, avatarPath: friend.avatar });
 
+    var rb = $('peer-remark-btn');
+    if (rb) {
+      if (friend.group) { rb.hidden = true; }
+      else {
+        rb.hidden = false;
+        rb.onclick = function () { editRemark(friend); };
+      }
+    }
+
     var box = $('messages');
     box.innerHTML = '';
     box.appendChild(el('div', 'day-sep', '加载中…'));
