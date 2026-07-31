@@ -388,8 +388,12 @@
       rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
       li.appendChild(rem);
 
-      var cnt = state.unread[f.id] || 0;
-      if (cnt > 0) li.appendChild(el('div', 'badge', cnt > 99 ? '99+' : String(cnt)));
+      var cnt = parseInt(state.unread[f.id] || 0, 10) || 0;
+      if (cnt > 0) {
+        var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
+        badge.setAttribute('aria-label', '未读消息 ' + cnt + ' 条');
+        li.appendChild(badge);
+      }
       li.onclick = function () { openChat(f); };
       list.appendChild(li);
     });
