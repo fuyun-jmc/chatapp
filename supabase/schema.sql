@@ -28,6 +28,8 @@ create table if not exists public.friendships (
                check (status in ('pending', 'accepted', 'rejected')),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
+  requester_remark  text,   -- 申请方给对方的备注名
+  addressee_remark  text,   -- 被申请方给对方的备注名
   unique (requester_id, addressee_id),
   check (requester_id <> addressee_id)
 );
@@ -55,6 +57,11 @@ create table if not exists public.messages (
 -- 已部署过的旧库不会因上面的建表语句自动加列，这里用 ALTER 补齐（幂等）
 alter table public.messages
   add column if not exists recalled boolean not null default false;
+
+-- 好友备注：两条关系各有自己的备注字段（幂等，可重复跑）
+alter table public.friendships
+  add column if not exists requester_remark text,
+  add column if not exists addressee_remark text;
 
 create index if not exists messages_pair_idx
   on public.messages (sender_id, receiver_id, created_at desc);
@@ -137,11 +144,11 @@ create policy "friendships_insert" on public.friendships
   for insert to authenticated
   with check (auth.uid() = requester_id);
 
--- 只有被申请方能同意/拒绝
+-- 关系双方都可更新：被申请方同意/拒绝，双方各自设置自己的备注
 drop policy if exists "friendships_update" on public.friendships;
 create policy "friendships_update" on public.friendships
   for update to authenticated
-  using (auth.uid() = addressee_id);
+  using (auth.uid() = requester_id or auth.uid() = addressee_id);
 
 drop policy if exists "friendships_delete" on public.friendships;
 create policy "friendships_delete" on public.friendships
