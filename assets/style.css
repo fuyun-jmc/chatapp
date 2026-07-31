@@ -312,6 +312,24 @@ input, textarea { font-family: inherit; font-size: 15px; }
   white-space: nowrap; padding-bottom: 2px;
 }
 
+/* ---------- 撤回 ---------- */
+.msg.recalled { align-self: center; max-width: 100%; justify-content: center; }
+.recalled-note {
+  font-size: 13px; color: var(--text-3);
+  padding: 2px 10px; text-align: center;
+}
+.recall-btn {
+  align-self: center; flex: 0 0 auto;
+  font-size: 12px; color: var(--text-3);
+  background: none; border: none; padding: 2px 6px;
+  border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.msg:hover .recall-btn { opacity: .85; }
+.recall-btn:hover { color: var(--danger); background: rgba(217,75,75,.1); }
+@media (max-width: 720px) {
+  .recall-btn { opacity: .7; }
+}
+
 .upload-bar {
   padding: 7px 18px; font-size: 13px; color: var(--brand);
   background: #eef3fe; border-top: 1px solid var(--line);
