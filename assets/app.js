@@ -56,6 +56,34 @@
 
   function initialOf(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
+  /* 统一渲染头像：有自定义头像图则显示图片，否则显示首字母色块 */
+  function setAvatar(node, opts) {
+    opts = opts || {};
+    var name = opts.nickname || opts.phone || '?';
+    var seed = opts.phone || name;
+    node.textContent = '';
+    node.style.background = colorOf(seed);
+    var old = node.querySelector('img');
+    if (old) old.remove();
+    if (opts.avatarPath) {
+      signedUrl(opts.avatarPath).then(function (url) {
+        if (!url) { node.textContent = initialOf(name); return; }
+        var im = new Image();
+        im.className = 'avatar-img';
+        im.alt = name;
+        im.onload = function () {
+          node.textContent = '';
+          node.style.background = 'transparent';
+          node.appendChild(im);
+        };
+        im.onerror = function () { node.textContent = initialOf(name); };
+        im.src = url;
+      });
+    } else {
+      node.textContent = initialOf(name);
+    }
+  }
+
   function maskPhone(p) {
     return p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : (p || '');
   }
@@ -232,7 +260,7 @@
   }
 
   function loadProfile() {
-    return sb.from('profiles').select('id,phone,nickname').eq('id', state.uid).maybeSingle()
+    return sb.from('profiles').select('id,phone,nickname,avatar_path').eq('id', state.uid).maybeSingle()
       .then(function (r) {
         if (r.error) throw r.error;
         if (!r.data) {
@@ -255,9 +283,7 @@
         state.profile = p;
         $('me-name').textContent = p.nickname;
         $('me-phone').textContent = p.phone;
-        var av = $('me-avatar');
-        av.textContent = initialOf(p.nickname);
-        av.style.background = colorOf(p.phone);
+        setAvatar($('me-avatar'), { nickname: p.nickname, phone: p.phone, avatarPath: p.avatar_path });
       });
   }
 
@@ -267,8 +293,8 @@
   function loadRelations() {
     return sb.from('friendships')
       .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,' +
-              'requester:profiles!friendships_requester_id_fkey(id,phone,nickname),' +
-              'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname)')
+              'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path),' +
+              'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path)')
       .or('requester_id.eq.' + state.uid + ',addressee_id.eq.' + state.uid)
       .order('created_at', { ascending: false })
       .then(function (r) {
@@ -285,6 +311,7 @@
               id: other.id,
               phone: other.phone,
               nickname: other.nickname,
+              avatar: other.avatar_path,
               remark: myRemark,
               relId: row.id,
               iAmRequester: iAmRequester
@@ -316,8 +343,8 @@
 
     state.incoming.forEach(function (req) {
       var li = el('li');
-      var av = el('div', 'avatar sm', initialOf(req.user.nickname));
-      av.style.background = colorOf(req.user.phone);
+      var av = el('div', 'avatar sm');
+      setAvatar(av, { nickname: req.user.nickname, phone: req.user.phone, avatarPath: req.user.avatar_path });
       var info = el('div', 'info');
       info.appendChild(el('div', 'nm', req.user.nickname));
       info.appendChild(el('div', 'ph', maskPhone(req.user.phone)));
@@ -349,8 +376,8 @@
     state.friends.forEach(function (f) {
       var li = el('li');
       if (state.active && state.active.id === f.id) li.classList.add('is-active');
-      var av = el('div', 'avatar sm', initialOf(f.remark || f.nickname));
-      av.style.background = colorOf(f.phone);
+      var av = el('div', 'avatar sm');
+      setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
       var info = el('div', 'info');
       info.appendChild(el('div', 'nm', f.remark || f.nickname));
       info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
@@ -391,6 +418,98 @@
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
+  /* ============================================================
+   *  个人设置（头像 + 名称）
+   * ============================================================ */
+  var pendingAvatar = null;   // 待保存的新头像路径（null 表示未改动）
+
+  function openSettings() {
+    if (!state.profile) return;
+    pendingAvatar = null;
+    $('settings-name').value = state.profile.nickname || '';
+    setAvatar($('settings-avatar'), {
+      nickname: state.profile.nickname,
+      phone: state.profile.phone,
+      avatarPath: state.profile.avatar_path
+    });
+    $('settings-modal').hidden = false;
+  }
+
+  function closeSettings() {
+    $('settings-modal').hidden = true;
+    pendingAvatar = null;
+  }
+
+  $('settings-btn').addEventListener('click', openSettings);
+  $('settings-close').addEventListener('click', closeSettings);
+  $('settings-cancel').addEventListener('click', closeSettings);
+  $('settings-modal').addEventListener('click', function (e) {
+    if (e.target === this) closeSettings();
+  });
+
+  $('settings-avatar-btn').addEventListener('click', function () {
+    $('settings-avatar-file').click();
+  });
+
+  $('settings-avatar-file').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast('头像图片请小于 2 MB'); return; }
+
+    var ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
+    var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+             : Date.now() + (Math.random() * 1e6 | 0);
+    var path = state.uid + '/avatars/' + rand + (ext ? '.' + ext : '');
+
+    var btn = $('settings-avatar-btn');
+    btn.disabled = true; btn.textContent = '上传中…';
+    sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || 'image/png', upsert: true })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        pendingAvatar = path;
+        var url = URL.createObjectURL(file);   // 立即本地预览
+        var av = $('settings-avatar');
+        av.textContent = '';
+        av.style.background = 'transparent';
+        var old = av.querySelector('img');
+        if (old) old.remove();
+        var im = new Image();
+        im.className = 'avatar-img';
+        im.src = url;
+        av.appendChild(im);
+        toast('头像已选择，点「保存」生效');
+      })
+      .catch(function (e) { toast(friendlyError(e)); })
+      .then(function () { btn.disabled = false; btn.textContent = '更换头像'; });
+  });
+
+  $('settings-save').addEventListener('click', function () {
+    var name = $('settings-name').value.trim();
+    if (!name) { toast('名称不能为空'); return; }
+    var payload = { nickname: name.slice(0, 20) };
+    if (pendingAvatar !== null) payload.avatar_path = pendingAvatar;
+
+    var btn = $('settings-save');
+    btn.disabled = true; btn.textContent = '保存中…';
+    sb.from('profiles').update(payload).eq('id', state.uid)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.profile.nickname = name;
+        if (pendingAvatar !== null) state.profile.avatar_path = pendingAvatar;
+        $('me-name').textContent = name;
+        setAvatar($('me-avatar'), {
+          nickname: state.profile.nickname,
+          phone: state.profile.phone,
+          avatarPath: state.profile.avatar_path
+        });
+        toast('已保存');
+        closeSettings();
+      })
+      .catch(function (e) { toast(friendlyError(e)); })
+      .then(function () { btn.disabled = false; btn.textContent = '保存'; });
+  });
+
   /* ---------- 按手机号搜索并添加 ---------- */
   $('search-btn').addEventListener('click', doSearch);
   $('search-phone').addEventListener('keydown', function (e) {
@@ -405,7 +524,7 @@
 
     var btn = $('search-btn');
     btn.disabled = true;
-    sb.from('profiles').select('id,phone,nickname').eq('phone', phone).maybeSingle()
+    sb.from('profiles').select('id,phone,nickname,avatar_path').eq('phone', phone).maybeSingle()
       .then(function (r) {
         if (r.error) throw r.error;
         box.hidden = false;
@@ -416,8 +535,8 @@
         }
         var user = r.data;
         var row = el('div', 'row');
-        var av = el('div', 'avatar sm', initialOf(user.nickname));
-        av.style.background = colorOf(user.phone);
+        var av = el('div', 'avatar sm');
+        setAvatar(av, { nickname: user.nickname, phone: user.phone, avatarPath: user.avatar_path });
         var info = el('div', 'info');
         info.appendChild(el('div', 'nm', user.nickname));
         info.appendChild(el('div', 'ph', user.phone));
@@ -493,8 +612,7 @@
     $('peer-name').textContent = friend.remark || friend.nickname;
     $('peer-phone').textContent = friend.phone;
     var av = $('peer-avatar');
-    av.textContent = initialOf(friend.remark || friend.nickname);
-    av.style.background = colorOf(friend.phone);
+    setAvatar(av, { nickname: friend.remark || friend.nickname, phone: friend.phone, avatarPath: friend.avatar });
 
     var box = $('messages');
     box.innerHTML = '';
