@@ -507,6 +507,14 @@
   function renderMessage(m) {
     var out = m.sender_id === state.uid;
     var wrap = el('div', 'msg ' + (out ? 'out' : 'in'));
+    wrap.dataset.id = m.id;
+
+    if (m.recalled) {
+      wrap.className = 'msg recalled';
+      wrap.appendChild(el('div', 'recalled-note',
+        out ? '你撤回了一条消息' : '对方撤回了一条消息'));
+      return wrap;
+    }
 
     var bubble;
     if (m.kind === 'text') {
@@ -551,7 +559,27 @@
 
     wrap.appendChild(bubble);
     wrap.appendChild(el('div', 'msg-time', fmtTime(m.created_at)));
+
+    if (out) {
+      var rb = el('button', 'recall-btn', '撤回');
+      rb.type = 'button';
+      rb.onclick = function () { recallMessage(m.id); };
+      wrap.appendChild(rb);
+    }
     return wrap;
+  }
+
+  function recallMessage(id) {
+    var box = $('messages');
+    var old = box.querySelector('[data-id="' + id + '"]');
+    sb.from('messages')
+      .update({ recalled: true, content: null, file_path: null, file_name: null, file_size: null })
+      .eq('id', id)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (old) old.replaceWith(renderMessage({ id: id, sender_id: state.uid, recalled: true }));
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
   }
 
   $('lightbox').addEventListener('click', function () { this.hidden = true; });
@@ -665,13 +693,20 @@
 
     state.channel = sb.channel('chat-' + state.uid)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'messages',
+        event: '*', schema: 'public', table: 'messages',
         filter: 'receiver_id=eq.' + state.uid
       }, function (payload) {
+        if (payload.eventType === 'DELETE') return;
         var m = payload.new;
+        if (!m) return;
         if (state.active && m.sender_id === state.active.id) {
-          appendMessage(m);
-        } else {
+          if (payload.eventType === 'UPDATE' || m.recalled) {
+            var old = $('messages').querySelector('[data-id="' + m.id + '"]');
+            if (old) old.replaceWith(renderMessage(m));
+          } else {
+            appendMessage(m);
+          }
+        } else if (!m.recalled) {
           state.unread[m.sender_id] = true;
           renderFriends();
           var from = state.friends.filter(function (f) { return f.id === m.sender_id; })[0];
