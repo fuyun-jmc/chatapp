@@ -330,6 +330,18 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .recall-btn { opacity: .7; }
 }
 
+.remark-btn {
+  align-self: center; flex: 0 0 auto;
+  font-size: 12px; color: var(--text-3);
+  background: none; border: none; padding: 2px 6px;
+  border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.friend-list li:hover .remark-btn { opacity: .85; }
+.remark-btn:hover { color: var(--brand); background: rgba(79,124,247,.1); }
+@media (max-width: 720px) {
+  .remark-btn { opacity: .7; }
+}
+
 .upload-bar {
   padding: 7px 18px; font-size: 13px; color: var(--brand);
   background: #eef3fe; border-top: 1px solid var(--line);
