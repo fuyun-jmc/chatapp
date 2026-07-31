@@ -24,7 +24,7 @@ window.CHAT_CONFIG = {
 
   // 单个文件大小上限（MB）。Supabase 免费版单文件上限 50MB，
   // 免费存储总量约 1GB，视频很占空间，建议保守设置。
-  MAX_IMAGE_MB: 5,
+  MAX_IMAGE_MB: 10,
   MAX_VIDEO_MB: 50,
   MAX_FILE_MB: 20,
 
