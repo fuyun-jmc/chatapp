@@ -31,8 +31,10 @@
     profile: null,
     friends: [],        // { id, phone, nickname }
     incoming: [],       // 待我处理的好友申请
-    active: null,       // 当前会话好友
-    unread: {},         // { friendId: number }  未读消息计数
+    groups: [],         // { id, name, ownerId, memberIds, memberCount, iAmOwner }
+    profilesById: {},   // uid -> { nickname, avatar_path, phone }
+    active: null,       // 当前会话：好友对象或群组对象（type==='group'）
+    unread: {},         // { peerId: number }  未读消息计数（好友或群）
     urlCache: {},       // file_path -> signed url
     channel: null
   };
@@ -255,6 +257,7 @@
 
     loadProfile()
       .then(loadRelations)
+      .then(loadGroups)
       .then(subscribeRealtime)
       .catch(function (e) { toast(friendlyError(e)); });
   }
@@ -322,6 +325,9 @@
         });
         state.friends = friends;
         state.incoming = incoming;
+        friends.forEach(function (f) {
+          state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone };
+        });
         renderFriends();
         renderRequests();
 
@@ -515,6 +521,264 @@
       .then(function () { btn.disabled = false; btn.textContent = '保存'; });
   });
 
+  /* ============================================================
+   *  群聊
+   * ============================================================ */
+  function groupById(id) {
+    for (var i = 0; i < state.groups.length; i++) if (state.groups[i].id === id) return state.groups[i];
+    return null;
+  }
+  function friendById(id) {
+    for (var i = 0; i < state.friends.length; i++) if (state.friends[i].id === id) return state.friends[i];
+    return null;
+  }
+
+  function loadGroups() {
+    return sb.from('groups')
+      .select('id,name,owner_id, group_members(user_id)')
+      .order('created_at', { ascending: false })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.groups = (r.data || []).map(function (g) {
+          var members = (g.group_members || []).map(function (m) { return m.user_id; });
+          return {
+            type: 'group',
+            id: g.id,
+            name: g.name,
+            ownerId: g.owner_id,
+            memberIds: members,
+            memberCount: members.length,
+            iAmOwner: g.owner_id === state.uid
+          };
+        });
+        if (state.active && state.active.type === 'group') {
+          var fresh = groupById(state.active.id);
+          if (fresh) state.active = fresh;
+        }
+        renderGroups();
+        return state.groups;
+      });
+  }
+
+  function renderGroups() {
+    var list = $('group-list');
+    if (!list) return;
+    list.innerHTML = '';
+    $('group-empty').hidden = state.groups.length > 0;
+    state.groups.forEach(function (g) {
+      var li = el('li');
+      if (state.active && state.active.type === 'group' && state.active.id === g.id) li.classList.add('is-active');
+      var av = el('div', 'avatar sm');
+      av.textContent = g.name ? g.name.charAt(0) : '群';
+      av.style.background = '#7f77dd';
+      var info = el('div', 'info');
+      info.appendChild(el('div', 'nm', g.name));
+      info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
+      li.appendChild(av); li.appendChild(info);
+      var cnt = state.unread[g.id] || 0;
+      if (cnt > 0) {
+        var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
+        li.appendChild(badge);
+      }
+      li.onclick = function () { var gg = groupById(g.id); if (gg) openChat(gg); };
+      list.appendChild(li);
+    });
+  }
+
+  function loadGroupMemberProfiles(groupId) {
+    sb.from('group_members').select('user_id, profiles(id,nickname,avatar_path,phone)')
+      .eq('group_id', groupId)
+      .then(function (r) {
+        if (r.error) return;
+        (r.data || []).forEach(function (m) {
+          var p = m.profiles;
+          if (p) state.profilesById[p.id] = { nickname: p.nickname, avatar_path: p.avatar_path, phone: p.phone };
+        });
+      });
+  }
+
+  /* ---------- 创建群聊 ---------- */
+  function openNewGroup() {
+    $('new-group-name').value = '';
+    renderFriendPicker($('group-friend-picker'), state.friends, []);
+    $('new-group-modal').hidden = false;
+  }
+
+  function renderFriendPicker(container, friends, excludeIds) {
+    container.innerHTML = '';
+    if (!friends.length) { container.appendChild(el('div', 'note', '还没有好友')); return; }
+    friends.forEach(function (f) {
+      if (excludeIds.indexOf(f.id) >= 0) return;
+      var label = el('label', 'picker-item');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = f.id; cb.className = 'picker-cb';
+      var av = el('div', 'avatar sm');
+      setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
+      var info = el('div', 'info');
+      info.appendChild(el('div', 'nm', f.remark || f.nickname));
+      info.appendChild(el('div', 'ph', f.phone));
+      label.appendChild(cb); label.appendChild(av); label.appendChild(info);
+      container.appendChild(label);
+    });
+  }
+
+  function createGroup() {
+    var name = $('new-group-name').value.trim() || ('群聊' + (state.groups.length + 1));
+    var checks = $('group-friend-picker').querySelectorAll('input[type=checkbox]:checked');
+    if (!checks.length) { toast('至少选择一位好友'); return; }
+    var memberIds = [];
+    checks.forEach(function (c) { memberIds.push(c.value); });
+    var btn = $('new-group-create');
+    btn.disabled = true; btn.textContent = '创建中…';
+    sb.from('groups').insert({ name: name, owner_id: state.uid }).select().single()
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var gid = r.data.id;
+        var members = [state.uid].concat(memberIds).map(function (uid) { return { group_id: gid, user_id: uid }; });
+        return sb.from('group_members').insert(members).then(function (r2) {
+          if (r2.error) throw r2.error;
+          return gid;
+        });
+      })
+      .then(function (gid) {
+        $('new-group-modal').hidden = true;
+        return loadGroups().then(function () { return gid; });
+      })
+      .then(function (gid) {
+        var g = groupById(gid);
+        if (g) openChat(g);
+        toast('群聊已创建');
+      })
+      .catch(function (e) { toast(friendlyError(e)); })
+      .then(function () { btn.disabled = false; btn.textContent = '创建'; });
+  }
+
+  /* ---------- 群资料 / 管理 ---------- */
+  function openGroupInfo() {
+    if (!state.active || state.active.type !== 'group') return;
+    var g = state.active;
+    $('group-info-name').value = g.name;
+    $('group-info-name').disabled = !g.iAmOwner;
+    $('group-name-field').hidden = !g.iAmOwner;
+    $('group-info-save').hidden = !g.iAmOwner;
+    $('group-info-add').hidden = !g.iAmOwner;
+    renderMemberList(g);
+    $('group-info-modal').hidden = false;
+  }
+
+  function renderMemberList(g) {
+    var list = $('group-member-list');
+    list.innerHTML = '';
+    $('group-member-count').textContent = g.memberIds.length;
+    g.memberIds.forEach(function (uid) {
+      var p = state.profilesById[uid] || { nickname: '用户', phone: '' };
+      var li = el('li', 'member-item');
+      var av = el('div', 'avatar sm');
+      av.textContent = (p.nickname || '?').charAt(0);
+      av.style.background = colorOf(p.phone || uid);
+      var info = el('div', 'info');
+      var tag = (uid === g.ownerId) ? '（群主）' : (uid === state.uid ? '（我）' : '');
+      info.appendChild(el('div', 'nm', (p.nickname || '用户') + tag));
+      li.appendChild(av); li.appendChild(info);
+      if (g.iAmOwner && uid !== g.ownerId) {
+        var tr = el('button', 'mini-ok', '转让'); tr.type = 'button';
+        tr.onclick = function () { transferOwner(g, uid); };
+        li.appendChild(tr);
+      }
+      if (g.iAmOwner && uid !== g.ownerId && uid !== state.uid) {
+        var rm = el('button', 'mini-no', '移除'); rm.type = 'button';
+        rm.onclick = function () { removeMember(g, uid); };
+        li.appendChild(rm);
+      }
+      list.appendChild(li);
+    });
+  }
+
+  function removeMember(g, uid) {
+    sb.from('group_members').delete().eq('group_id', g.id).eq('user_id', uid)
+      .then(function (r) { if (r.error) throw r.error; toast('已移除成员'); return loadGroups(); })
+      .then(function () {
+        var ng = groupById(g.id);
+        if (ng) { state.active = ng; renderMemberList(ng); renderGroups(); }
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  function transferOwner(g, uid) {
+    sb.from('groups').update({ owner_id: uid }).eq('id', g.id)
+      .then(function (r) { if (r.error) throw r.error; toast('已转让群主'); return loadGroups(); })
+      .then(function () {
+        var ng = groupById(g.id);
+        if (ng) { state.active = ng; openGroupInfo(); }
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  function leaveGroup() {
+    if (!state.active || state.active.type !== 'group') return;
+    var g = state.active;
+    if (g.iAmOwner) { toast('你是群主，请先转让群主再退群'); return; }
+    sb.from('group_members').delete().eq('group_id', g.id).eq('user_id', state.uid)
+      .then(function (r) { if (r.error) throw r.error; toast('已退出群聊'); $('group-info-modal').hidden = true; return loadGroups(); })
+      .then(function () {
+        state.active = null;
+        $('chat-room').hidden = true;
+        $('chat-empty').hidden = false;
+        renderGroups();
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  /* ---------- 群聊按钮事件绑定 ---------- */
+  $('new-group-btn').addEventListener('click', openNewGroup);
+  $('new-group-create').addEventListener('click', createGroup);
+  $('new-group-close').addEventListener('click', function () { $('new-group-modal').hidden = true; });
+  $('new-group-cancel').addEventListener('click', function () { $('new-group-modal').hidden = true; });
+  $('new-group-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+
+  $('group-info-btn').addEventListener('click', openGroupInfo);
+  $('group-info-close').addEventListener('click', function () { $('group-info-modal').hidden = true; });
+  $('group-info-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  $('group-info-save').addEventListener('click', function () {
+    if (!state.active || !state.active.iAmOwner) return;
+    var name = $('group-info-name').value.trim();
+    if (!name) { toast('群名称不能为空'); return; }
+    sb.from('groups').update({ name: name }).eq('id', state.active.id)
+      .then(function (r) { if (r.error) throw r.error; toast('已保存'); return loadGroups(); })
+      .then(function () {
+        var ng = groupById(state.active.id);
+        if (ng) { $('peer-name').textContent = ng.name; openGroupInfo(); }
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  });
+  $('group-info-leave').addEventListener('click', leaveGroup);
+
+  $('group-info-add').addEventListener('click', function () {
+    if (!state.active) return;
+    var g = state.active;
+    var candidates = state.friends.filter(function (f) { return g.memberIds.indexOf(f.id) < 0; });
+    renderFriendPicker($('add-member-picker'), candidates, []);
+    $('add-member-modal').hidden = false;
+  });
+  $('add-member-confirm').addEventListener('click', function () {
+    if (!state.active) return;
+    var g = state.active;
+    var checks = $('add-member-picker').querySelectorAll('input[type=checkbox]:checked');
+    if (!checks.length) { toast('请选择要添加的好友'); return; }
+    var ids = []; checks.forEach(function (c) { ids.push(c.value); });
+    var members = ids.map(function (uid) { return { group_id: g.id, user_id: uid }; });
+    sb.from('group_members').insert(members)
+      .then(function (r) { if (r.error) throw r.error; toast('已添加成员'); $('add-member-modal').hidden = true; return loadGroups(); })
+      .then(function () {
+        var ng = groupById(g.id);
+        if (ng) { state.active = ng; renderMemberList(ng); renderGroups(); }
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  });
+  $('add-member-close').addEventListener('click', function () { $('add-member-modal').hidden = true; });
+  $('add-member-cancel').addEventListener('click', function () { $('add-member-modal').hidden = true; });
+  $('add-member-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+
   /* ---------- 按手机号搜索并添加 ---------- */
   $('search-btn').addEventListener('click', doSearch);
   $('search-phone').addEventListener('keydown', function (e) {
@@ -605,46 +869,53 @@
   /* ============================================================
    *  会话与消息
    * ============================================================ */
-  function openChat(friend) {
-    state.active = friend;
-    delete state.unread[friend.id];
-    renderFriends();
+  function openChat(peer) {
+    var isGroup = peer.type === 'group';
+    state.active = peer;
+    delete state.unread[peer.id];
+    if (isGroup) renderGroups(); else renderFriends();
 
     $('chat-empty').hidden = true;
     $('chat-room').hidden = false;
     document.querySelector('.app-view').classList.add('show-chat');
 
-    $('peer-name').textContent = friend.remark || friend.nickname;
-    $('peer-phone').textContent = friend.phone;
+    $('peer-name').textContent = isGroup ? peer.name : (peer.remark || peer.nickname);
+    $('peer-phone').textContent = isGroup ? (peer.memberCount + ' 位成员') : peer.phone;
+
     var av = $('peer-avatar');
-    setAvatar(av, { nickname: friend.remark || friend.nickname, phone: friend.phone, avatarPath: friend.avatar });
+    if (isGroup) {
+      av.textContent = peer.name ? peer.name.charAt(0) : '群';
+      av.style.background = '#7f77dd';
+      var oldImg = av.querySelector('img'); if (oldImg) oldImg.remove();
+    } else {
+      setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
+    }
 
     var rb = $('peer-remark-btn');
-    if (rb) {
-      if (friend.group) { rb.hidden = true; }
-      else {
-        rb.hidden = false;
-        rb.onclick = function () { editRemark(friend); };
-      }
-    }
+    if (rb) { rb.hidden = isGroup; if (!isGroup) rb.onclick = function () { editRemark(peer); }; }
+    $('group-info-btn').hidden = !isGroup;
 
     var box = $('messages');
     box.innerHTML = '';
     box.appendChild(el('div', 'day-sep', '加载中…'));
 
-    sb.from('messages').select('*')
-      .or('and(sender_id.eq.' + state.uid + ',receiver_id.eq.' + friend.id + '),' +
-          'and(sender_id.eq.' + friend.id + ',receiver_id.eq.' + state.uid + ')')
-      .order('created_at', { ascending: false })
-      .limit(LIMIT)
+    var query = sb.from('messages')
+      .select('*, sender:profiles!messages_sender_id_fkey(id,nickname,avatar_path)');
+    if (isGroup) {
+      query = query.eq('group_id', peer.id);
+      loadGroupMemberProfiles(peer.id);
+    } else {
+      query = query.or('and(sender_id.eq.' + state.uid + ',receiver_id.eq.' + peer.id + '),' +
+                        'and(sender_id.eq.' + peer.id + ',receiver_id.eq.' + state.uid + ')');
+    }
+
+    query.order('created_at', { ascending: false }).limit(LIMIT)
       .then(function (r) {
         if (r.error) throw r.error;
-        if (!state.active || state.active.id !== friend.id) return;
+        if (!state.active || state.active.id !== peer.id) return;
         box.innerHTML = '';
         var rows = (r.data || []).slice().reverse();
-        if (!rows.length) {
-          box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧'));
-        }
+        if (!rows.length) box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧'));
         var lastDay = null;
         rows.forEach(function (m) {
           var k = dayKey(m.created_at);
@@ -727,6 +998,14 @@
       signedUrl(m.file_path).then(function (u) { if (u) { a.href = u; a.download = m.file_name || ''; } });
     }
 
+    var isGroup = !!(state.active && state.active.type === 'group');
+    if (!out && isGroup) {
+      var sName = (m.sender && m.sender.nickname) ||
+                  (state.profilesById[m.sender_id] && state.profilesById[m.sender_id].nickname) ||
+                  '成员';
+      wrap.classList.add('group-in');
+      wrap.appendChild(el('div', 'msg-sender', sName));
+    }
     wrap.appendChild(bubble);
     wrap.appendChild(el('div', 'msg-time', fmtTime(m.created_at)));
 
@@ -786,12 +1065,15 @@
     input.value = '';
     input.style.height = 'auto';
 
-    sb.from('messages').insert({
+    var payload = {
       sender_id: state.uid,
-      receiver_id: state.active.id,
       kind: 'text',
       content: text
-    }).select().single()
+    };
+    if (state.active.type === 'group') payload.group_id = state.active.id;
+    else payload.receiver_id = state.active.id;
+
+    sb.from('messages').insert(payload).select().single()
       .then(function (r) {
         if (r.error) throw r.error;
         appendMessage(r.data);
@@ -837,14 +1119,16 @@
     sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
       .then(function (r) {
         if (r.error) throw r.error;
-        return sb.from('messages').insert({
+        var fpayload = {
           sender_id: state.uid,
-          receiver_id: target.id,
           kind: kind,
           file_path: path,
           file_name: file.name,
           file_size: file.size
-        }).select().single();
+        };
+        if (state.active.type === 'group') fpayload.group_id = target.id;
+        else fpayload.receiver_id = target.id;
+        return sb.from('messages').insert(fpayload).select().single();
       })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -863,31 +1147,49 @@
 
     state.channel = sb.channel('chat-' + state.uid)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'messages',
-        filter: 'receiver_id=eq.' + state.uid
+        event: '*', schema: 'public', table: 'messages'
       }, function (payload) {
         if (payload.eventType === 'DELETE') return;
         var m = payload.new;
         if (!m) return;
-        if (state.active && m.sender_id === state.active.id) {
-          if (payload.eventType === 'UPDATE' || m.recalled) {
-            var old = $('messages').querySelector('[data-id="' + m.id + '"]');
-            if (old) old.replaceWith(renderMessage(m));
-          } else {
+        // 自己发出的消息已在本地追加，实时回显跳过（避免重复）
+        if (m.sender_id === state.uid) return;
+
+        if (m.recalled) {
+          var old = $('messages').querySelector('[data-id="' + m.id + '"]');
+          if (old) old.replaceWith(renderMessage(m));
+          return;
+        }
+
+        if (m.group_id) {
+          if (state.active && state.active.type === 'group' && state.active.id === m.group_id) {
             appendMessage(m);
+          } else {
+            state.unread[m.group_id] = (state.unread[m.group_id] || 0) + 1;
+            renderGroups();
+            var g = groupById(m.group_id);
+            if (g) toast(g.name + ' 发来一条消息');
           }
-        } else if (!m.recalled) {
-          state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
-          renderFriends();
-          var from = state.friends.filter(function (f) { return f.id === m.sender_id; })[0];
-          if (from) toast(from.nickname + ' 发来一条消息');
+        } else if (m.receiver_id === state.uid) {
+          if (state.active && state.active.type === 'friend' && state.active.id === m.sender_id) {
+            appendMessage(m);
+          } else {
+            state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
+            renderFriends();
+            var from = friendById(m.sender_id);
+            if (from) toast(from.nickname + ' 发来一条消息');
+          }
         }
       })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'friendships'
-      }, function () {
-        loadRelations();
-      })
+      }, function () { loadRelations(); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'groups'
+      }, function () { loadGroups(); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'group_members'
+      }, function () { loadGroups(); })
       .subscribe();
   }
 
