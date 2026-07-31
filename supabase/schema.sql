@@ -12,6 +12,7 @@ create table if not exists public.profiles (
   phone        text unique not null,
   nickname     text not null,
   avatar_color text not null default '#4f7cf7',
+  avatar_path  text,            -- 自定义头像在存储桶中的路径，留空则用首字母色块
   created_at   timestamptz not null default now()
 );
 
@@ -62,6 +63,10 @@ alter table public.messages
 alter table public.friendships
   add column if not exists requester_remark text,
   add column if not exists addressee_remark text;
+
+-- 个人设置：自定义头像路径（幂等，可重复跑）
+alter table public.profiles
+  add column if not exists avatar_path text;
 
 create index if not exists messages_pair_idx
   on public.messages (sender_id, receiver_id, created_at desc);
@@ -237,4 +242,13 @@ create policy "chat_files_delete_own" on storage.objects
   using (
     bucket_id = 'chat-files'
     and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- 头像读取：登录用户均可读取 */avatars/* 下的头像（好友互相可见）
+drop policy if exists "chat_files_avatar_read" on storage.objects;
+create policy "chat_files_avatar_read" on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'chat-files'
+    and (storage.foldername(name))[2] = 'avatars'
   );
