@@ -48,8 +48,13 @@ create table if not exists public.messages (
   file_path   text,
   file_name   text,
   file_size   bigint,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  recalled    boolean not null default false
 );
+
+-- 已部署过的旧库不会因上面的建表语句自动加列，这里用 ALTER 补齐（幂等）
+alter table public.messages
+  add column if not exists recalled boolean not null default false;
 
 create index if not exists messages_pair_idx
   on public.messages (sender_id, receiver_id, created_at desc);
@@ -161,6 +166,13 @@ drop policy if exists "messages_delete_own" on public.messages;
 create policy "messages_delete_own" on public.messages
   for delete to authenticated
   using (auth.uid() = sender_id);
+
+-- 撤回功能：只允许更新自己发出的消息（软删除：置 recalled=true 并清空内容）
+drop policy if exists "messages_update_own" on public.messages;
+create policy "messages_update_own" on public.messages
+  for update to authenticated
+  using (auth.uid() = sender_id)
+  with check (auth.uid() = sender_id);
 
 -- ------------------------------------------------------------
 -- 7. 开启实时推送（新消息、好友申请即时到达）
