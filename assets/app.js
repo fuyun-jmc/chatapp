@@ -266,7 +266,7 @@
    * ============================================================ */
   function loadRelations() {
     return sb.from('friendships')
-      .select('id,status,requester_id,addressee_id,created_at,' +
+      .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,' +
               'requester:profiles!friendships_requester_id_fkey(id,phone,nickname),' +
               'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname)')
       .or('requester_id.eq.' + state.uid + ',addressee_id.eq.' + state.uid)
@@ -280,7 +280,15 @@
           var other = iAmRequester ? row.addressee : row.requester;
           if (!other) return;
           if (row.status === 'accepted') {
-            friends.push(other);
+            var myRemark = iAmRequester ? row.requester_remark : row.addressee_remark;
+            friends.push({
+              id: other.id,
+              phone: other.phone,
+              nickname: other.nickname,
+              remark: myRemark,
+              relId: row.id,
+              iAmRequester: iAmRequester
+            });
           } else if (row.status === 'pending' && !iAmRequester) {
             incoming.push({ rowId: row.id, user: other });
           }
@@ -341,16 +349,46 @@
     state.friends.forEach(function (f) {
       var li = el('li');
       if (state.active && state.active.id === f.id) li.classList.add('is-active');
-      var av = el('div', 'avatar sm', initialOf(f.nickname));
+      var av = el('div', 'avatar sm', initialOf(f.remark || f.nickname));
       av.style.background = colorOf(f.phone);
       var info = el('div', 'info');
-      info.appendChild(el('div', 'nm', f.nickname));
-      info.appendChild(el('div', 'ph', f.phone));
+      info.appendChild(el('div', 'nm', f.remark || f.nickname));
+      info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
       li.appendChild(av); li.appendChild(info);
+
+      var rem = el('button', 'remark-btn', '备注');
+      rem.type = 'button';
+      rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
+      li.appendChild(rem);
+
       if (state.unread[f.id]) li.appendChild(el('div', 'dot'));
       li.onclick = function () { openChat(f); };
       list.appendChild(li);
     });
+  }
+
+  /* ---------- 编辑好友备注 ---------- */
+  function editRemark(f) {
+    var cur = f.remark || '';
+    var input = window.prompt('给好友设置备注名（留空可清除）：', cur);
+    if (input === null) return; // 取消
+    var val = input.trim().slice(0, 20);
+    var payload = { updated_at: new Date().toISOString() };
+    if (f.iAmRequester) payload.requester_remark = val || null;
+    else payload.addressee_remark = val || null;
+
+    sb.from('friendships').update(payload).eq('id', f.relId)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        f.remark = val || null;
+        renderFriends();
+        if (state.active && state.active.id === f.id) {
+          $('peer-name').textContent = f.remark || f.nickname;
+          $('peer-avatar').textContent = initialOf(f.remark || f.nickname);
+        }
+        toast(val ? '已设置备注：' + val : '已清除备注');
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
   }
 
   /* ---------- 按手机号搜索并添加 ---------- */
@@ -452,10 +490,10 @@
     $('chat-room').hidden = false;
     document.querySelector('.app-view').classList.add('show-chat');
 
-    $('peer-name').textContent = friend.nickname;
+    $('peer-name').textContent = friend.remark || friend.nickname;
     $('peer-phone').textContent = friend.phone;
     var av = $('peer-avatar');
-    av.textContent = initialOf(friend.nickname);
+    av.textContent = initialOf(friend.remark || friend.nickname);
     av.style.background = colorOf(friend.phone);
 
     var box = $('messages');
