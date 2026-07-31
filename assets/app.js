@@ -429,6 +429,23 @@
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
+  /* ---------- 删除好友 ---------- */
+  function deleteFriend(f) {
+    if (!window.confirm('确定删除好友「' + (f.remark || f.nickname) + '」吗？\n删除后将从双方好友列表中移除（聊天记录仍保留）。')) return;
+    if (!f.relId) { toast('找不到好友关系记录'); return; }
+    sb.from('friendships').delete().eq('id', f.relId)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已删除好友');
+        return loadRelations();
+      })
+      .then(function () {
+        // loadRelations 内部会在当前会话好友已不存在时收起聊天窗
+        $('peer-del-btn').hidden = true;
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
   /* ============================================================
    *  个人设置（头像 + 名称）
    * ============================================================ */
@@ -893,6 +910,8 @@
 
     var rb = $('peer-remark-btn');
     if (rb) { rb.hidden = isGroup; if (!isGroup) rb.onclick = function () { editRemark(peer); }; }
+    var db = $('peer-del-btn');
+    if (db) { db.hidden = isGroup; if (!isGroup) db.onclick = function () { deleteFriend(peer); }; }
     $('group-info-btn').hidden = !isGroup;
 
     var box = $('messages');
@@ -949,6 +968,13 @@
     var out = m.sender_id === state.uid;
     var wrap = el('div', 'msg ' + (out ? 'out' : 'in'));
     wrap.dataset.id = m.id;
+
+    // 本端已删除：仅自己可见，显示占位（对方无感）
+    if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) {
+      wrap.className = 'msg recalled';
+      wrap.appendChild(el('div', 'recalled-note', '你已删除此消息'));
+      return wrap;
+    }
 
     if (m.recalled) {
       wrap.className = 'msg recalled';
@@ -1014,6 +1040,12 @@
       rb.type = 'button';
       rb.onclick = function () { recallMessage(m.id); };
       wrap.appendChild(rb);
+    } else {
+      var db = el('button', 'del-btn', '删除');
+      db.type = 'button';
+      db.title = '仅自己删除，对方仍可看到';
+      db.onclick = function () { deleteMessageForMe(m.id); };
+      wrap.appendChild(db);
     }
     return wrap;
   }
@@ -1027,6 +1059,20 @@
       .then(function (r) {
         if (r.error) throw r.error;
         if (old) old.replaceWith(renderMessage({ id: id, sender_id: state.uid, recalled: true }));
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  /* ---------- 本端删除（仅自己不可见，对方无感） ---------- */
+  function deleteMessageForMe(id) {
+    if (!window.confirm('删除后仅自己不可见，对方仍能看到。确定删除吗？')) return;
+    var box = $('messages');
+    var old = box.querySelector('[data-id="' + id + '"]');
+    sb.rpc('delete_message_for_me', { msg_id: id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (old) old.replaceWith(renderMessage({ id: id, sender_id: state.uid, deleted_by: [state.uid] }));
+        toast('已删除（仅自己可见）');
       })
       .catch(function (e) { toast(friendlyError(e)); });
   }
@@ -1152,12 +1198,19 @@
         if (payload.eventType === 'DELETE') return;
         var m = payload.new;
         if (!m) return;
-        // 自己发出的消息已在本地追加，实时回显跳过（避免重复）
-        if (m.sender_id === state.uid) return;
 
-        if (m.recalled) {
-          var old = $('messages').querySelector('[data-id="' + m.id + '"]');
-          if (old) old.replaceWith(renderMessage(m));
+        var box = $('messages');
+        var existing = box.querySelector('[data-id="' + m.id + '"]');
+
+        // 自己发出的消息：本地已处理，这里只同步「更新」（撤回 / 本端删除）的回显，避免重复追加
+        if (m.sender_id === state.uid) {
+          if (existing) existing.replaceWith(renderMessage(m));
+          return;
+        }
+
+        // 他人消息：若已显示则原地更新（对方撤回、或我本端删除的回显）；否则作为新消息处理
+        if (existing) {
+          existing.replaceWith(renderMessage(m));
           return;
         }
 
