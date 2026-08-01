@@ -202,6 +202,17 @@ input, textarea { font-family: inherit; font-size: 15px; }
   padding: 0 6px; font-size: 11px; line-height: 16px;
 }
 
+/* 会话列表上方的“新建群聊”按钮 */
+.new-group-bar {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: calc(100% - 28px); margin: 8px 14px 4px;
+  padding: 10px 12px; border: none; border-radius: 10px;
+  background: var(--brand); color: #fff;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.new-group-bar:active { opacity: .85; }
+.ng-plus { font-size: 17px; line-height: 1; }
+
 /* 本地好友搜索框 */
 .friend-search {
   display: flex; align-items: center; gap: 6px;
