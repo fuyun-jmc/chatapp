@@ -512,6 +512,18 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 .lightbox video { max-width: 100%; max-height: 100%; border-radius: 8px; background: #000; }
 
+/* ---------- 登录设备 ---------- */
+.device-section .form-hint { margin-top: 4px; margin-bottom: 10px; }
+#device-list { margin: 0 0 10px; }
+.device-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 10px;
+  background: rgba(127,119,221,.10); margin-bottom: 6px;
+}
+.device-info { flex: 1; min-width: 0; }
+.device-name { font-size: 14px; font-weight: 600; }
+.device-meta { font-size: 12px; opacity: .62; margin-top: 2px; }
+
 /* ---------- 提示条 ---------- */
 .toast {
   position: absolute; left: 50%; top: 22px; transform: translateX(-50%);
