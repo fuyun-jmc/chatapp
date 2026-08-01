@@ -1266,7 +1266,7 @@
   }
 
   function removeMember(g, uid) {
-    sb.from('group_members').delete().eq('group_id', g.id).eq('user_id', uid)
+    sb.rpc('remove_group_member', { p_group_id: g.id, p_user_id: uid })
       .then(function (r) { if (r.error) throw r.error; toast('已移除成员'); return loadGroups(); })
       .then(function () {
         var ng = groupById(g.id);
@@ -1276,8 +1276,12 @@
   }
 
   function transferOwner(g, uid) {
-    sb.from('groups').update({ owner_id: uid }).eq('id', g.id)
-      .then(function (r) { if (r.error) throw r.error; toast('已转让群主'); return loadGroups(); })
+    sb.rpc('transfer_group_owner', { p_group_id: g.id, p_new_owner: uid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已转让群主');
+        return loadGroups();
+      })
       .then(function () {
         var ng = groupById(g.id);
         if (ng) { state.active = ng; openGroupInfo(); }
@@ -1289,7 +1293,7 @@
     if (!state.active || state.active.type !== 'group') return;
     var g = state.active;
     if (g.iAmOwner) { toast('你是群主，请先转让群主再退群'); return; }
-    sb.from('group_members').delete().eq('group_id', g.id).eq('user_id', state.uid)
+    sb.rpc('remove_group_member', { p_group_id: g.id, p_user_id: state.uid })
       .then(function (r) { if (r.error) throw r.error; toast('已退出群聊'); hideModal('group-info-modal'); return loadGroups(); })
       .then(function () {
         state.active = null;
@@ -1314,7 +1318,7 @@
     if (!state.active || !state.active.iAmOwner) return;
     var name = $('group-info-name').value.trim();
     if (!name) { toast('群名称不能为空'); return; }
-    sb.from('groups').update({ name: name }).eq('id', state.active.id)
+    sb.rpc('update_group', { p_group_id: state.active.id, p_name: name })
       .then(function (r) { if (r.error) throw r.error; toast('已保存'); return loadGroups(); })
       .then(function () {
         var ng = groupById(state.active.id);
