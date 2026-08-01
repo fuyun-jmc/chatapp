@@ -24,6 +24,7 @@ html, body {
 }
 
 body {
+  position: relative;        /* 作为 .modal/.lightbox 等 absolute 定位的参照，避免依赖 position:fixed（部分手机 WebView 不生效） */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   background: var(--bg);
@@ -504,8 +505,10 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 
 /* ---------- 弹窗（顶部居中，兼容各设备） ---------- */
+/* 用 absolute 而非 fixed：部分手机内置浏览器/WebView 的 position:fixed 不生效，
+   会导致弹窗相对错误容器定位而“不显示”。absolute 相对已设 position:relative 的 body 铺满视口即可。 */
 .modal {
-  position: fixed; inset: 0; z-index: 110;
+  position: absolute; inset: 0; z-index: 110;
   background: rgba(20,22,28,.5);
   display: flex;
   justify-content: center;   /* 水平居中 */
