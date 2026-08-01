@@ -385,26 +385,61 @@
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
-  function renderFriends() {
-    var list = $('friend-list');
+  function renderFriends() { renderConversations(); }
+
+  // 统一会话列表：好友 + 群聊合并渲染到 #chat-list
+  function renderConversations() {
+    var list = $('chat-list');
+    if (!list) return;
     list.innerHTML = '';
 
-    $('friend-empty').hidden = state.friends.length > 0;
-
-    // 按置顶分成两组；每组内“有新消息（未读）”的排到最前，其余保持原顺序
-    var pinned = state.friends.filter(function (f) { return f.pinned; });
-    var normal  = state.friends.filter(function (f) { return !f.pinned; });
+    var all = state.groups.concat(state.friends);
+    var pinned = all.filter(function (x) { return x.pinned; });
+    var normal = all.filter(function (x) { return !x.pinned; });
     sortUnreadFirst(pinned);
     sortUnreadFirst(normal);
 
+    var emptyTip = $('chat-empty-tip');
+    if (emptyTip) emptyTip.hidden = all.length > 0;
+
     if (pinned.length) {
       list.appendChild(el('li', 'list-section', '置顶'));
-      pinned.forEach(function (f) { list.appendChild(makeFriendItem(f, list)); });
+      pinned.forEach(function (x) { list.appendChild(makeConversationItem(x)); });
     }
     if (normal.length) {
-      list.appendChild(el('li', 'list-section', pinned.length ? '非置顶' : '好友'));
-      normal.forEach(function (f) { list.appendChild(makeFriendItem(f, list)); });
+      if (pinned.length) list.appendChild(el('li', 'list-section', '会话'));
+      normal.forEach(function (x) { list.appendChild(makeConversationItem(x)); });
     }
+  }
+
+  function makeConversationItem(x) {
+    return x.type === 'group' ? makeGroupItem(x) : makeFriendItem(x);
+  }
+
+  function makeGroupItem(g) {
+    var li = el('li');
+    if (state.active && state.active.id === g.id) li.classList.add('is-active');
+    var av = el('div', 'avatar sm');
+    av.textContent = g.name ? g.name.charAt(0) : '群';
+    av.style.background = '#7f77dd';
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'nm', g.name));
+    info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
+    li.appendChild(av); li.appendChild(info);
+
+    var pin = el('button', 'pin-btn', g.pinned ? '已置顶' : '置顶');
+    pin.type = 'button';
+    if (g.pinned) pin.classList.add('pinned');
+    pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); toggleGroupPin(g); };
+    li.appendChild(pin);
+
+    var cnt = state.unread[g.id] || 0;
+    if (cnt > 0) {
+      var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
+      li.appendChild(badge);
+    }
+    li.onclick = function () { var gg = groupById(g.id); if (gg) openChat(gg); };
+    return li;
   }
 
   // 把“有新消息”的好友排到数组最前（稳定排序，保持其余相对顺序）
@@ -519,15 +554,15 @@
   function onUnifiedSearch() {
     var kw = $('search-box').value.trim();
     var panel = $('search-result');
-    var list = $('friend-list');
+    var list = $('chat-list');
     if (!kw) {
       panel.hidden = true; panel.innerHTML = '';
       list.hidden = false;
-      $('friend-empty').hidden = state.friends.length > 0;
+      $('chat-empty-tip').hidden = (state.friends.length + state.groups.length) > 0;
       return;
     }
     list.hidden = true;
-    $('friend-empty').hidden = true;
+    $('chat-empty-tip').hidden = true;
     panel.hidden = false; panel.innerHTML = '';
 
     var q = kw.toLowerCase();
@@ -800,37 +835,7 @@
       });
   }
 
-  function renderGroups() {
-    var list = $('group-list');
-    if (!list) return;
-    list.innerHTML = '';
-    $('group-empty').hidden = state.groups.length > 0;
-    state.groups.forEach(function (g) {
-      var li = el('li');
-      if (state.active && state.active.type === 'group' && state.active.id === g.id) li.classList.add('is-active');
-      var av = el('div', 'avatar sm');
-      av.textContent = g.name ? g.name.charAt(0) : '群';
-      av.style.background = '#7f77dd';
-      var info = el('div', 'info');
-      info.appendChild(el('div', 'nm', g.name));
-      info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
-      li.appendChild(av); li.appendChild(info);
-
-      var pin = el('button', 'pin-btn', g.pinned ? '已置顶' : '置顶');
-      pin.type = 'button';
-      if (g.pinned) pin.classList.add('pinned');
-      pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); toggleGroupPin(g); };
-      li.appendChild(pin);
-
-      var cnt = state.unread[g.id] || 0;
-      if (cnt > 0) {
-        var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
-        li.appendChild(badge);
-      }
-      li.onclick = function () { var gg = groupById(g.id); if (gg) openChat(gg); };
-      list.appendChild(li);
-    });
-  }
+  function renderGroups() { renderConversations(); }
 
   function toggleGroupPin(g) {
     sb.rpc('toggle_group_pin', { p_group_id: g.id })
