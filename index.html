@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=10">
+<link rel="stylesheet" href="assets/style.css?v=11">
 </head>
 <body>
 
@@ -79,11 +79,13 @@
       </button>
     </header>
 
-    <div class="add-friend">
-      <input type="tel" id="search-phone" inputmode="numeric" maxlength="11" placeholder="输入手机号添加好友">
-      <button class="btn-mini" id="search-btn" type="button">搜索</button>
+    <div class="unified-search">
+      <div class="friend-search" id="search-wrap">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="search-box" placeholder="搜索好友或输入手机号添加" autocomplete="off">
+      </div>
+      <div class="search-result" id="search-result" hidden></div>
     </div>
-    <div class="search-result" id="search-result" hidden></div>
 
     <div class="side-scroll">
       <div class="side-section" id="requests-section" hidden>
@@ -99,13 +101,8 @@
 
       <div class="side-section">
         <div class="side-title">好友</div>
-        <div class="friend-search">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" id="friend-search" placeholder="搜索好友（手机号/昵称/备注）">
-        </div>
         <ul class="friend-list" id="friend-list"></ul>
-        <p class="empty-tip" id="friend-empty">还没有好友，用上方手机号搜索添加。</p>
-        <p class="empty-tip" id="friend-search-empty" hidden>没有匹配的好友</p>
+        <p class="empty-tip" id="friend-empty">还没有好友，用上方搜索框添加。</p>
       </div>
     </div>
   </aside>
@@ -287,7 +284,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=10"></script>
-<script src="assets/app.js?v=10"></script>
+<script src="assets/config.js?v=11"></script>
+<script src="assets/app.js?v=11"></script>
 </body>
 </html>
