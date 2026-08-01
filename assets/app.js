@@ -1236,8 +1236,10 @@
         if (!u) return;
         img.src = u;
         img.onclick = function () {
-          $('lightbox-img').src = u;
-          $('lightbox').hidden = false;
+          var lb = $('lightbox');
+          var im = $('lightbox-img'), vv = $('lightbox-video');
+          vv.hidden = true; im.hidden = false; im.src = u;
+          lb.hidden = false;
         };
       });
     } else if (m.kind === 'video') {
@@ -1247,7 +1249,23 @@
       vid.preload = 'metadata';
       vid.playsInline = true;
       bubble.appendChild(vid);
-      signedUrl(m.file_path).then(function (u) { if (u) vid.src = u; });
+      signedUrl(m.file_path).then(function (u) {
+        if (!u) return;
+        vid.src = u;
+        // 点视频控件本身只控制播放，不触发全屏 lightbox
+        vid.onclick = function (e) { e.stopPropagation(); };
+      });
+      // 点气泡空白处 → 全屏内联播放（不开新网页）
+      bubble.onclick = function () {
+        signedUrl(m.file_path).then(function (u) {
+          if (!u) return;
+          var lb = $('lightbox');
+          var im = $('lightbox-img'), vv = $('lightbox-video');
+          im.hidden = true; vv.hidden = false; vv.src = u;
+          lb.hidden = false;
+          vv.play().catch(function () {});
+        });
+      };
     } else {
       bubble = el('div', 'bubble');
       var a = document.createElement('a');
@@ -1347,7 +1365,11 @@
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
-  $('lightbox').addEventListener('click', function () { this.hidden = true; });
+  $('lightbox').addEventListener('click', function () {
+    this.hidden = true;
+    var vv = $('lightbox-video');
+    if (vv) { vv.pause(); vv.removeAttribute('src'); vv.load(); }
+  });
 
   function signedUrl(path) {
     if (!path) return Promise.resolve(null);
