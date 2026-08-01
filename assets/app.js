@@ -301,6 +301,7 @@
   function loadRelations() {
     return sb.from('friendships')
       .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,' +
+              'pinned_by_requester,pinned_by_addressee,' +
               'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path),' +
               'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path)')
       .or('requester_id.eq.' + state.uid + ',addressee_id.eq.' + state.uid)
@@ -315,6 +316,7 @@
           if (!other) return;
           if (row.status === 'accepted') {
             var myRemark = iAmRequester ? row.requester_remark : row.addressee_remark;
+            var pinned = iAmRequester ? row.pinned_by_requester : row.pinned_by_addressee;
             friends.push({
               id: other.id,
               phone: other.phone,
@@ -323,12 +325,15 @@
               remark: myRemark,
               relId: row.id,
               iAmRequester: iAmRequester,
+              pinned: !!pinned,
               type: 'friend'
             });
           } else if (row.status === 'pending' && !iAmRequester) {
             incoming.push({ rowId: row.id, user: other });
           }
         });
+        // 置顶的好友排到最前；其余保持原有（创建时间倒序）顺序
+        friends.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
         state.friends = friends;
         state.incoming = incoming;
         friends.forEach(function (f) {
@@ -396,6 +401,12 @@
       info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
       li.appendChild(av); li.appendChild(info);
 
+      var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
+      pin.type = 'button';
+      if (f.pinned) pin.classList.add('pinned');
+      pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); togglePin(f); };
+      li.appendChild(pin);
+
       var rem = el('button', 'remark-btn', '备注');
       rem.type = 'button';
       rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
@@ -410,6 +421,21 @@
       li.onclick = function () { openChat(f); };
       list.appendChild(li);
     });
+  }
+
+  function togglePin(f) {
+    var col = f.iAmRequester ? 'pinned_by_requester' : 'pinned_by_addressee';
+    var next = !f.pinned;
+    var upd = {}; upd[col] = next;
+    sb.from('friendships').update(upd).eq('id', f.relId)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        f.pinned = next;
+        if (state.active && state.active.id === f.id) state.active.pinned = next;
+        state.friends.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
+        renderFriends();
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
   }
 
   function makeResultRow(user) {
