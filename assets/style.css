@@ -188,6 +188,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   transition: background .15s, color .15s;
 }
 .icon-btn:hover { background: var(--bg); color: var(--text); }
+.icon-btn svg { pointer-events: none; }   /* 防止 SVG 子元素吞掉点击（部分 WebView 下点击图标不会触发按钮） */
 
 .add-friend { display: flex; gap: 8px; padding: 12px 14px; }
 .add-friend input {
