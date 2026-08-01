@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=19">
+<link rel="stylesheet" href="assets/style.css?v=20">
 </head>
 <body>
 
@@ -256,6 +256,22 @@
         <input type="text" id="settings-name" maxlength="20" placeholder="你的昵称" autocomplete="off">
       </label>
       <p class="form-hint">名称会显示给你的好友，可随时修改。</p>
+
+      <div class="divider"></div>
+
+      <div class="pwd-section">
+        <div class="section-title">修改登录密码</div>
+        <label class="field">
+          <span>新密码</span>
+          <input type="password" id="settings-newpwd" placeholder="至少 6 位" autocomplete="new-password">
+        </label>
+        <label class="field">
+          <span>确认新密码</span>
+          <input type="password" id="settings-confirm-pwd" placeholder="再次输入新密码" autocomplete="new-password">
+        </label>
+        <p class="form-error" id="change-pwd-error" hidden></p>
+        <button class="btn-primary" id="change-pwd-btn" type="button">更新密码</button>
+      </div>
     </div>
 
     <footer class="modal-foot">
@@ -285,7 +301,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=19"></script>
-<script src="assets/app.js?v=19"></script>
+<script src="assets/config.js?v=20"></script>
+<script src="assets/app.js?v=20"></script>
 </body>
 </html>
