@@ -238,6 +238,20 @@
     try { return localStorage.getItem(LAST_PHONE_KEY) || ''; } catch (e) { return ''; }
   }
 
+  // 被其他设备注销时，清掉本机「该账号」的登录痕迹：从账号列表移除、清除上次登录标记、
+  // 清除本机设备令牌，使目标设备回到干净登录页且不再自动登录。仅作用于当前账号，不影响同机其他账号。
+  function clearCurrentAccountLocal() {
+    try {
+      var phone = (state.profile && state.profile.phone) || getLastPhone();
+      if (!phone) return;
+      removeAccount(phone);
+      if (getLastPhone() === phone) {
+        try { localStorage.removeItem(LAST_PHONE_KEY); } catch (e) {}
+      }
+      try { localStorage.removeItem('chatapp_device_token'); } catch (e) {}
+    } catch (e) {}
+  }
+
   // 渲染登录页的「已登录账号」列表：点击账号自动填入手机号并聚焦密码框，
   // 密码需用户自行输入（出于安全不保存密码）。
   function renderAccountList() {
@@ -339,8 +353,12 @@
           if (r && r.data === null) {
             clearInterval(state.heartbeat); state.heartbeat = null;
             toast('你的账号已在其他设备被注销');
+            // 清掉本机该账号的登录痕迹（账号列表项/上次登录标记/设备令牌），目标设备不再自动登录
+            clearCurrentAccountLocal();
             // 仅清本机会话，避免 global 作用域误伤其他设备（含执行踢出的当前设备）
-            sb.auth.signOut({ scope: 'local' });
+            sb.auth.signOut({ scope: 'local' })
+              .then(function () { initLoginRemembered(); })
+              .catch(function () { initLoginRemembered(); });
           } else if (r && r.error) {
             console.warn('heartbeat check:', r.error.message);
           }
