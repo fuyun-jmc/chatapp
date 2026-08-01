@@ -351,14 +351,8 @@
         })
         .then(function (r) {
           if (r && r.data === null) {
-            clearInterval(state.heartbeat); state.heartbeat = null;
-            toast('你的账号已在其他设备被注销');
-            // 清掉本机该账号的登录痕迹（账号列表项/上次登录标记/设备令牌），目标设备不再自动登录
-            clearCurrentAccountLocal();
-            // 仅清本机会话，避免 global 作用域误伤其他设备（含执行踢出的当前设备）
-            sb.auth.signOut({ scope: 'local' })
-              .then(function () { initLoginRemembered(); })
-              .catch(function () { initLoginRemembered(); });
+            // 心跳兜底：本机设备行已不存在 → 立即下线并清除登录信息
+            forceLogoutByRemote('你的账号已在其他设备被注销');
           } else if (r && r.error) {
             console.warn('heartbeat check:', r.error.message);
           }
@@ -405,6 +399,8 @@
       .then(function (r) {
         if (r.error) { toast(friendlyError(r.error)); return; }
         toast('已注销该设备');
+        // 实时广播：让目标设备秒级下线（心跳作为兜底）
+        broadcastKick({ token: token });
         if (li) li.remove();
       })
       .catch(function (e) { toast(friendlyError(e)); });
@@ -416,9 +412,61 @@
       .then(function (r) {
         if (r.error) { toast(friendlyError(r.error)); return; }
         toast('已登出其他所有设备');
+        // 实时广播：让其他设备秒级下线（心跳作为兜底）
+        broadcastKick({ exceptToken: state.deviceToken });
         loadDeviceSessions();
       })
       .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  // ------------------------------------------------------------
+  // Realtime 即时踢人：订阅 kick-{uid} 广播频道，收到针对本机的注销
+  // 信号立即下线，避免等 30s 心跳轮询。心跳仍作为最终兜底。
+  // ------------------------------------------------------------
+  function setupKickChannel() {
+    if (!state.uid) return;
+    try {
+      if (state.kickChannel) { sb.removeChannel(state.kickChannel); state.kickChannel = null; }
+      state.kickChannel = sb.channel('kick-' + state.uid, {
+        config: { broadcast: { self: false } }
+      })
+      .on('broadcast', { event: 'kick' }, function (payload) {
+        var p = payload && payload.payload;
+        if (!p) return;
+        // 单台注销：payload.token 命中本机设备令牌
+        if (p.token && p.token === state.deviceToken) {
+          forceLogoutByRemote('你的账号已在其他设备被注销');
+          return;
+        }
+        // 登出其他所有设备：排除本机令牌之外的全部下线
+        if (p.exceptToken !== undefined && p.exceptToken !== state.deviceToken) {
+          forceLogoutByRemote('你的账号已在其他设备被注销');
+        }
+      })
+      .subscribe();
+    } catch (e) {
+      // Realtime 不可用（如项目未开启广播）时静默降级，仍靠心跳兜底
+      state.kickChannel = null;
+    }
+  }
+
+  function broadcastKick(payload) {
+    if (!state.kickChannel) return;
+    try {
+      state.kickChannel.send({ type: 'broadcast', event: 'kick', payload: payload });
+    } catch (e) {}
+  }
+
+  // 被远端注销后的统一本地下线：清本机会话 + 清该账号登录痕迹，不影响其他设备
+  function forceLogoutByRemote(reason) {
+    if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
+    if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
+    clearCurrentAccountLocal();
+    toast(reason || '你的账号已在其他设备被注销');
+    // 仅清本机会话，避免误伤其他设备
+    sb.auth.signOut({ scope: 'local' })
+      .then(function () { teardown(); initLoginRemembered(); })
+      .catch(function () { teardown(); initLoginRemembered(); });
   }
 
   /* ============================================================
@@ -633,6 +681,7 @@
   function teardown() {
     if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
     if (state.channel) { sb.removeChannel(state.channel); state.channel = null; }
+    if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
     state.uid = null; state.profile = null; state.friends = [];
     state.incoming = []; state.active = null; state.unread = {}; state.urlCache = {};
     $('app-view').hidden = true;
@@ -649,6 +698,7 @@
 
     registerDeviceSession();
     startHeartbeat();
+    setupKickChannel();
 
     loadProfile()
       .then(loadRelations)
