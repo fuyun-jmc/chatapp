@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=28">
+<link rel="stylesheet" href="assets/style.css?v=29">
 </head>
 <body>
 
@@ -272,6 +272,15 @@
         <p class="form-error" id="change-pwd-error" hidden></p>
         <button class="btn-primary" id="change-pwd-btn" type="button">更新密码</button>
       </div>
+
+      <div class="divider"></div>
+
+      <div class="device-section">
+        <div class="section-title">登录设备</div>
+        <p class="form-hint">查看当前账号登录过的设备，可逐个注销或一键登出其他设备。</p>
+        <ul class="friend-list" id="device-list"></ul>
+        <button class="btn-ghost" id="logout-other-devices" type="button">登出其他所有设备</button>
+      </div>
     </div>
 
     <footer class="modal-foot">
@@ -301,7 +310,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=28"></script>
-<script src="assets/app.js?v=28"></script>
+<script src="assets/config.js?v=29"></script>
+<script src="assets/app.js?v=29"></script>
 </body>
 </html>
