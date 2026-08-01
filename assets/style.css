@@ -544,6 +544,10 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .modal-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
 .settings-body { padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+.divider { height: 1px; background: var(--line); margin: 2px 0; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.pwd-section { display: flex; flex-direction: column; gap: 14px; }
+.pwd-section .btn-primary { width: 100%; justify-content: center; }
 .avatar-edit { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .avatar-edit .avatar { box-shadow: 0 4px 14px rgba(0,0,0,.12); }
 .modal-foot { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--line); }
