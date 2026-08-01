@@ -766,8 +766,29 @@
     $('group-name-field').hidden = !g.iAmOwner;
     $('group-info-save').hidden = !g.iAmOwner;
     $('group-info-add').hidden = !g.iAmOwner;
+    // 群主显示「解散群聊」、隐藏「退出群聊」；普通成员反之
+    $('group-info-dissolve').hidden = !g.iAmOwner;
+    $('group-info-leave').hidden = g.iAmOwner;
     renderMemberList(g);
     showModal('group-info-modal');
+  }
+
+  function dissolveGroup() {
+    if (!state.active || state.active.type !== 'group') return;
+    var g = state.active;
+    if (!g.iAmOwner) { toast('只有群主能解散群聊'); return; }
+    if (!window.confirm('确定要解散「' + g.name + '」吗？\n该操作不可恢复，所有成员和聊天记录将被删除。')) return;
+    sb.rpc('dissolve_group', { p_group_id: g.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        hideModal('group-info-modal');
+        state.active = null;
+        $('chat-room').hidden = true;
+        $('chat-empty').hidden = false;
+        return loadGroups();
+      })
+      .then(function () { toast('群聊已解散'); })
+      .catch(function (e) { toast(friendlyError(e)); });
   }
 
   function renderMemberList(g) {
@@ -856,6 +877,7 @@
       .catch(function (e) { toast(friendlyError(e)); });
   });
   $('group-info-leave').addEventListener('click', leaveGroup);
+  $('group-info-dissolve').addEventListener('click', dissolveGroup);
 
   $('group-info-add').addEventListener('click', function () {
     if (!state.active) return;
