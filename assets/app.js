@@ -459,7 +459,11 @@
     if (state.deviceToken) {
       sb.from('device_sessions').delete().eq('token', state.deviceToken).catch(function () {});
     }
-    sb.auth.signOut();
+    // 无论 signOut 成功还是失败（特殊设备/弱网可能 reject），
+    // 都兜底强制切回登录页，避免“点了登出没反应”
+    sb.auth.signOut()
+      .then(function () { teardown(); })
+      .catch(function () { teardown(); });
   });
 
   /* ============================================================
