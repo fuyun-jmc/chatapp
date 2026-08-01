@@ -488,6 +488,7 @@
     }
     li.onclick = function () { openChat(f); };
     return li;
+  }
 
   function togglePin(f) {
     var col = f.iAmRequester ? 'pinned_by_requester' : 'pinned_by_addressee';
