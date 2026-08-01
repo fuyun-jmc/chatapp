@@ -35,7 +35,6 @@
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
-    friendFilter: '',   // 好友本地搜索关键词（手机号/昵称/备注）
     recallTimer: null,  // 定时刷新“撤回/删除”按钮的定时器
     urlCache: {},       // file_path -> signed url
     channel: null
@@ -381,19 +380,9 @@
     var list = $('friend-list');
     list.innerHTML = '';
 
-    var kw = (state.friendFilter || '').trim().toLowerCase();
-    var items = state.friends.filter(function (f) {
-      if (!kw) return true;
-      var hay = [f.phone, f.nickname, f.remark, (f.remark ? f.nickname : '')]
-        .filter(Boolean).join(' ').toLowerCase();
-      return hay.indexOf(kw) !== -1;
-    });
-
     $('friend-empty').hidden = state.friends.length > 0;
-    $('friend-search-empty').hidden = !(kw && items.length === 0);
-    if (state.friends.length === 0) $('friend-search-empty').hidden = true;
 
-    items.forEach(function (f) {
+    state.friends.forEach(function (f) {
       var li = el('li');
       if (state.active && state.active.id === f.id) li.classList.add('is-active');
       var av = el('div', 'avatar sm');
@@ -419,9 +408,68 @@
     });
   }
 
-  function onFriendSearch() {
-    state.friendFilter = $('friend-search').value || '';
-    renderFriends();
+  function makeResultRow(user) {
+    var row = el('div', 'row');
+    var av = el('div', 'avatar sm');
+    setAvatar(av, { nickname: user.nickname, phone: user.phone, avatarPath: user.avatar_path });
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'nm', user.nickname));
+    info.appendChild(el('div', 'ph', user.phone));
+    row.appendChild(av); row.appendChild(info);
+    return row;
+  }
+
+  function onUnifiedSearch() {
+    var kw = $('search-box').value.trim();
+    var panel = $('search-result');
+    var list = $('friend-list');
+    if (!kw) {
+      panel.hidden = true; panel.innerHTML = '';
+      list.hidden = false;
+      $('friend-empty').hidden = state.friends.length > 0;
+      return;
+    }
+    list.hidden = true;
+    $('friend-empty').hidden = true;
+    panel.hidden = false; panel.innerHTML = '';
+
+    var q = kw.toLowerCase();
+    var local = state.friends.filter(function (f) {
+      var hay = [f.phone, f.nickname, f.remark, (f.remark ? f.nickname : '')]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+
+    local.forEach(function (f) {
+      var row = makeResultRow(f);
+      row.classList.add('clickable');
+      row.onclick = function () {
+        $('search-box').value = '';
+        onUnifiedSearch();
+        openChat(f);
+      };
+      panel.appendChild(row);
+    });
+
+    if (PHONE_RE.test(kw)) {
+      sb.from('profiles').select('id,phone,nickname,avatar_path').eq('phone', kw).maybeSingle()
+        .then(function (r) {
+          if (r.error) { toast(friendlyError(r.error)); return; }
+          if (!r.data) {
+            if (local.length === 0) panel.appendChild(el('div', 'note', '没有找到该手机号的用户，可能还没注册。'));
+            return;
+          }
+          if (state.friends.some(function (f) { return f.id === r.data.id; })) return;
+          var row = makeResultRow(r.data);
+          var add = el('button', 'btn-mini', '加为好友');
+          add.style.padding = '6px 12px';
+          add.onclick = function (ev) { ev.stopPropagation(); sendRequest(r.data, add); };
+          row.appendChild(add);
+          panel.appendChild(row);
+        });
+    } else if (local.length === 0) {
+      panel.appendChild(el('div', 'note', '没有找到相关好友'));
+    }
   }
 
   /* ---------- 编辑好友备注 ---------- */
@@ -836,56 +884,8 @@
   $('add-member-cancel').addEventListener('click', function () { $('add-member-modal').hidden = true; });
   $('add-member-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
 
-  /* ---------- 按手机号搜索并添加 ---------- */
-  $('search-btn').addEventListener('click', doSearch);
-  $('search-phone').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
-  });
-
-  /* ---------- 本地好友搜索（手机号/昵称/备注） ---------- */
-  $('friend-search').addEventListener('input', onFriendSearch);
-
-  function doSearch() {
-    var phone = $('search-phone').value.trim();
-    var box = $('search-result');
-    if (!PHONE_RE.test(phone)) { toast('请输入正确的 11 位手机号'); return; }
-    if (phone === state.profile.phone) { toast('这是你自己的手机号'); return; }
-
-    var btn = $('search-btn');
-    btn.disabled = true;
-    sb.from('profiles').select('id,phone,nickname,avatar_path').eq('phone', phone).maybeSingle()
-      .then(function (r) {
-        if (r.error) throw r.error;
-        box.hidden = false;
-        box.innerHTML = '';
-        if (!r.data) {
-          box.appendChild(el('div', 'note', '没有找到该手机号的用户，可能还没注册。'));
-          return null;
-        }
-        var user = r.data;
-        var row = el('div', 'row');
-        var av = el('div', 'avatar sm');
-        setAvatar(av, { nickname: user.nickname, phone: user.phone, avatarPath: user.avatar_path });
-        var info = el('div', 'info');
-        info.appendChild(el('div', 'nm', user.nickname));
-        info.appendChild(el('div', 'ph', user.phone));
-        row.appendChild(av); row.appendChild(info);
-        box.appendChild(row);
-
-        var already = state.friends.some(function (f) { return f.id === user.id; });
-        if (already) {
-          box.appendChild(el('div', 'note', '已经是好友了'));
-          return null;
-        }
-        var add = el('button', 'btn-mini', '加为好友');
-        add.style.padding = '6px 12px';
-        add.onclick = function () { sendRequest(user, add); };
-        row.appendChild(add);
-        return null;
-      })
-      .catch(function (e) { toast(friendlyError(e)); })
-      .then(function () { btn.disabled = false; });
-  }
+  /* ---------- 统一搜索：搜好友 + 手机号加好友 ---------- */
+  $('search-box').addEventListener('input', onUnifiedSearch);
 
   function sendRequest(user, btn) {
     btn.disabled = true;
