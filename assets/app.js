@@ -41,7 +41,9 @@
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
     recallTimer: null,  // 定时刷新“撤回/删除”按钮的定时器
     urlCache: {},       // file_path -> signed url
-    channel: null
+    channel: null,
+    deviceToken: null,  // 本机设备会话 token（持久在 localStorage）
+    heartbeat: null     // 心跳定时器
   };
 
   /* ============================================================
@@ -146,6 +148,144 @@
     return n;
   }
 
+  function fmtDateTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /* ============================================================
+   *  登录设备管理（查看 / 注销设备）
+   * ============================================================ */
+  function detectDeviceName() {
+    var ua = navigator.userAgent || '';
+    var os = '未知系统';
+    if (/iPhone/.test(ua)) os = 'iPhone';
+    else if (/iPad/.test(ua)) os = 'iPad';
+    else if (/Android/.test(ua)) os = 'Android 设备';
+    else if (/Windows Phone/.test(ua)) os = 'Windows Phone';
+    else if (/Windows/.test(ua)) os = 'Windows';
+    else if (/Mac OS X|Macintosh/.test(ua)) os = 'Mac';
+    else if (/Linux/.test(ua)) os = 'Linux';
+    var br = '浏览器';
+    if (/Edg\//.test(ua)) br = 'Edge';
+    else if (/OPR\//.test(ua)) br = 'Opera';
+    else if (/Chrome\//.test(ua)) br = 'Chrome';
+    else if (/Firefox\//.test(ua)) br = 'Firefox';
+    else if (/Safari\//.test(ua)) br = 'Safari';
+    return os + ' · ' + br;
+  }
+
+  function getDeviceToken() {
+    try {
+      var k = 'chatapp_device_token';
+      var t = localStorage.getItem(k);
+      if (!t) {
+        t = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+            : Date.now() + '-' + Math.random().toString(36).slice(2);
+        localStorage.setItem(k, t);
+      }
+      return t;
+    } catch (e) { return 'anon-' + Math.random().toString(36).slice(2); }
+  }
+
+  // 登录时记录本机设备；表不存在（未跑迁移）时静默失败，不影响登录
+  function registerDeviceSession() {
+    if (!state.uid) return;
+    var token = getDeviceToken();
+    state.deviceToken = token;
+    sb.from('device_sessions').upsert({
+      token: token,
+      user_id: state.uid,
+      device_name: detectDeviceName(),
+      user_agent: navigator.userAgent || '',
+      last_seen: new Date().toISOString()
+    }, { onConflict: 'token' })
+      .then(function (r) { if (r.error) console.warn('registerDeviceSession:', r.error.message); })
+      .catch(function (e) { console.warn('registerDeviceSession failed:', e && e.message); });
+  }
+
+  // 每 30s 保活 + 检测本机行是否被注销（被踢则自动登出）
+  function startHeartbeat() {
+    if (state.heartbeat) clearInterval(state.heartbeat);
+    state.heartbeat = setInterval(function () {
+      if (!state.uid || !state.deviceToken) return;
+      var token = state.deviceToken;
+      sb.from('device_sessions').update({ last_seen: new Date().toISOString() })
+        .eq('token', token)
+        .then(function (r) {
+          if (r.error && /does not exist|relation/.test(r.error.message || '')) return;
+          return sb.from('device_sessions').select('token').eq('token', token).maybeSingle();
+        })
+        .then(function (r) {
+          if (r && r.data === null) {
+            clearInterval(state.heartbeat); state.heartbeat = null;
+            toast('你的账号已在其他设备被注销');
+            sb.auth.signOut();
+          } else if (r && r.error) {
+            console.warn('heartbeat check:', r.error.message);
+          }
+        })
+        .catch(function () {});
+    }, 30000);
+  }
+
+  function loadDeviceSessions() {
+    var box = $('device-list');
+    if (!box) return;
+    box.innerHTML = '<li class="list-section">加载中…</li>';
+    sb.from('device_sessions').select('id,token,device_name,created_at,last_seen')
+      .eq('user_id', state.uid).order('last_seen', { ascending: false })
+      .then(function (r) {
+        if (r.error) { box.innerHTML = '<li class="list-section">设备列表加载失败</li>'; return; }
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<li class="list-section">暂无设备记录</li>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (d) {
+          var li = el('li', 'device-item');
+          var isMe = d.token === state.deviceToken;
+          var info = el('div', 'device-info');
+          info.appendChild(el('div', 'device-name',
+            (isMe ? '📱 ' : '') + d.device_name + (isMe ? '（本机）' : '')));
+          info.appendChild(el('div', 'device-meta',
+            '登录 ' + fmtDateTime(d.created_at) + ' · 活跃 ' + fmtDateTime(d.last_seen)));
+          li.appendChild(info);
+          if (!isMe) {
+            var btn = el('button', 'del-btn', '注销');
+            btn.type = 'button';
+            btn.onclick = function () { kickDevice(d.token, li); };
+            li.appendChild(btn);
+          }
+          box.appendChild(li);
+        });
+      })
+      .catch(function () { box.innerHTML = '<li class="list-section">设备列表加载失败</li>'; });
+  }
+
+  function kickDevice(token, li) {
+    sb.from('device_sessions').delete().eq('token', token)
+      .then(function (r) {
+        if (r.error) { toast(friendlyError(r.error)); return; }
+        toast('已注销该设备');
+        if (li) li.remove();
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  function logoutOtherDevices() {
+    if (!state.deviceToken) return;
+    sb.from('device_sessions').delete()
+      .eq('user_id', state.uid).neq('token', state.deviceToken)
+      .then(function (r) {
+        if (r.error) { toast(friendlyError(r.error)); return; }
+        toast('已登出其他所有设备');
+        loadDeviceSessions();
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
   /* ============================================================
    *  登录 / 注册
    * ============================================================ */
@@ -216,6 +356,10 @@
   });
 
   $('logout-btn').addEventListener('click', function () {
+    // 退出前清理本机设备记录
+    if (state.deviceToken) {
+      sb.from('device_sessions').delete().eq('token', state.deviceToken).catch(function () {});
+    }
     sb.auth.signOut();
   });
 
@@ -245,6 +389,7 @@
   });
 
   function teardown() {
+    if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
     if (state.channel) { sb.removeChannel(state.channel); state.channel = null; }
     state.uid = null; state.profile = null; state.friends = [];
     state.incoming = []; state.active = null; state.unread = {}; state.urlCache = {};
@@ -259,6 +404,9 @@
     $('auth-view').hidden = true;
     $('app-view').hidden = false;
     sb.realtime.setAuth(session.access_token);
+
+    registerDeviceSession();
+    startHeartbeat();
 
     loadProfile()
       .then(loadRelations)
@@ -676,6 +824,7 @@
       avatarPath: state.profile.avatar_path
     });
     resetPwdFields();
+    loadDeviceSessions();
     showModal('settings-modal');
   }
 
@@ -763,6 +912,7 @@
   });
 
   $('change-pwd-btn').addEventListener('click', changePassword);
+  $('logout-other-devices').addEventListener('click', logoutOtherDevices);
 
   $('settings-save').addEventListener('click', function () {
     var name = $('settings-name').value.trim();
