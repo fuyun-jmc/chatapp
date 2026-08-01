@@ -504,19 +504,24 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .bubble.media img, .bubble.media video { max-width: 62vw; }
 }
 
-/* ---------- 弹窗（顶部居中，兼容各设备） ---------- */
-/* 用 absolute 而非 fixed：部分手机内置浏览器/WebView 的 position:fixed 不生效，
-   会导致弹窗相对错误容器定位而“不显示”。absolute 相对已设 position:relative 的 body 铺满视口即可。 */
+/* ---------- 弹窗（原生 <dialog>，top-layer 渲染，任何设备都置顶显示） ---------- */
+/* 用原生 <dialog> + showModal()：弹窗渲染在浏览器 top-layer，不受任何祖先
+   transform / 层叠上下文 / 视口或 iframe 限制影响，彻底解决“特殊设备不显示”。 */
 .modal {
-  position: absolute; inset: 0; z-index: 110;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;   /* 显式四边，避免 inset 兼容问题 */
+  margin: 0; padding: 24px 16px; border: 0;
+  width: auto; max-width: none; max-height: none;
   background: rgba(20,22,28,.5);
+  color: inherit;
   display: flex;
   justify-content: center;   /* 水平居中 */
   align-items: flex-start;   /* 靠顶部对齐 */
-  padding: 24px 16px;
   overflow-y: auto;          /* 内容超高时整体可滚动 */
   -webkit-overflow-scrolling: touch;
 }
+.modal::backdrop { background: rgba(20,22,28,.5); }
+/* 关闭态（无 open 属性）必须隐藏；否则作者样式 display:flex 会盖过 UA 的 display:none */
+.modal:not([open]) { display: none; }
 .modal-card {
   position: relative;        /* 不用 absolute 定位，避免个别设备定位异常 */
   flex: 0 0 auto;
