@@ -202,6 +202,49 @@
     } catch (e) { return 'anon-' + Math.random().toString(36).slice(2); }
   }
 
+  /* ============================================================
+   *  记住上次登录的手机号（用于自动预填，降低重新登录成本）
+   *  说明：Supabase 已开启 persistSession，会话未过期时打开网页会
+   *  自动恢复 session 直接登录（见 getSession 逻辑）。此处仅在
+   *  WebView 清缓存导致 session 丢失时，帮助用户省去重输手机号。
+   *  出于安全考虑，不保存密码，密码仍需手动输入。
+   * ============================================================ */
+  var LAST_PHONE_KEY = 'chatapp.lastLoginPhone';
+  function rememberLoginPhone(phone) {
+    try { localStorage.setItem(LAST_PHONE_KEY, phone); } catch (e) {}
+  }
+  function clearLoginPhone() {
+    try { localStorage.removeItem(LAST_PHONE_KEY); } catch (e) {}
+  }
+  function getLoginPhone() {
+    try { return localStorage.getItem(LAST_PHONE_KEY) || ''; } catch (e) { return ''; }
+  }
+  function initLoginRemembered() {
+    var last = getLoginPhone();
+    var tip = $('login-remembered');
+    var sw = $('switch-account-btn');
+    if (!last) {
+      if (tip) tip.hidden = true;
+      if (sw) sw.hidden = true;
+      return;
+    }
+    $('login-phone').value = last;
+    if (tip) { tip.textContent = '上次登录：' + last; tip.hidden = false; }
+    if (sw) sw.hidden = false;
+    // 手机号已填好，直接聚焦密码框，体验更接近“自动登录”
+    try { $('login-password').focus(); } catch (e) {}
+  }
+  function switchAccount() {
+    clearLoginPhone();
+    $('login-phone').value = '';
+    $('login-password').value = '';
+    var tip = $('login-remembered');
+    var sw = $('switch-account-btn');
+    if (tip) tip.hidden = true;
+    if (sw) sw.hidden = true;
+    try { $('login-phone').focus(); } catch (e) {}
+  }
+
   // 登录时记录本机设备；表不存在（未跑迁移）时静默失败，不影响登录
   function registerDeviceSession() {
     if (!state.uid) return;
@@ -333,9 +376,15 @@
     sb.auth.signInWithPassword({ email: emailFor(phone), password: pwd })
       .then(function (r) {
         if (r.error) throw r.error;
+        rememberLoginPhone(phone); // 记住本次登录的手机号，下次自动预填
       })
     .catch(function (e) { showErr('login-error', friendlyError(e)); })
     .then(function () { btn.disabled = false; btn.textContent = '登录'; });
+  });
+
+  // 登录页「切换账号」：清除记住的手机号，重新手动输入
+  $('switch-account-btn').addEventListener('click', function () {
+    switchAccount();
   });
 
   /* ============================================================
@@ -449,6 +498,7 @@
         if (!r.data.session) {
           throw new Error('注册成功但未自动登录。请到 Supabase 后台 Authentication → Providers → Email，关闭 "Confirm email" 后重新注册。');
         }
+        rememberLoginPhone(phone); // 注册并登录成功后同样记住手机号
       })
       .catch(function (e) { showErr('reg-error', friendlyError(e)); })
       .then(function () { btn.disabled = false; btn.textContent = '注册并登录'; });
@@ -486,13 +536,20 @@
   });
 
   sb.auth.getSession().then(function (r) {
+    removeBootLoader();
     if (r.data && r.data.session) {
       state.uid = r.data.session.user.id;
       start(r.data.session);
     } else {
       $('auth-view').hidden = false;
+      initLoginRemembered(); // 预填上次登录的手机号
     }
   });
+
+  function removeBootLoader() {
+    var b = $('boot');
+    if (b) { b.parentNode.removeChild(b); }
+  }
 
   function teardown() {
     if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
