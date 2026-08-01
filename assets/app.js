@@ -736,17 +736,11 @@
     checks.forEach(function (c) { memberIds.push(c.value); });
     var btn = $('new-group-create');
     btn.disabled = true; btn.textContent = '创建中…';
-    sb.from('groups').insert({ name: name, owner_id: state.uid }).select().single()
+    // 用 security definer 的 create_group RPC 一次性建群+加成员，绕开 RLS 写入限制
+    sb.rpc('create_group', { p_name: name, p_member_ids: memberIds })
       .then(function (r) {
         if (r.error) throw r.error;
-        var gid = r.data.id;
-        var members = [state.uid].concat(memberIds).map(function (uid) { return { group_id: gid, user_id: uid }; });
-        return sb.from('group_members').insert(members).then(function (r2) {
-          if (r2.error) throw r2.error;
-          return gid;
-        });
-      })
-      .then(function (gid) {
+        var gid = r.data;
         $('new-group-modal').hidden = true;
         return loadGroups().then(function () { return gid; });
       })
