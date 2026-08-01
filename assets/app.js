@@ -769,12 +769,15 @@
 
   function loadGroups() {
     return sb.from('groups')
-      .select('id,name,owner_id, group_members(user_id)')
+      .select('id,name,owner_id, group_members(user_id, pinned)')
       .order('created_at', { ascending: false })
       .then(function (r) {
         if (r.error) throw r.error;
         state.groups = (r.data || []).map(function (g) {
           var members = (g.group_members || []).map(function (m) { return m.user_id; });
+          // 找出“我”的成员行，取其 pinned 作为本端置顶标记
+          var mine = (g.group_members || []).filter(function (m) { return m.user_id === state.uid; })[0];
+          var pinned = mine ? !!mine.pinned : false;
           return {
             type: 'group',
             id: g.id,
@@ -782,9 +785,12 @@
             ownerId: g.owner_id,
             memberIds: members,
             memberCount: members.length,
-            iAmOwner: g.owner_id === state.uid
+            iAmOwner: g.owner_id === state.uid,
+            pinned: pinned
           };
         });
+        // 置顶的群排到最前，其余保持（创建时间倒序）
+        state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
         if (state.active && state.active.type === 'group') {
           var fresh = groupById(state.active.id);
           if (fresh) state.active = fresh;
@@ -809,6 +815,13 @@
       info.appendChild(el('div', 'nm', g.name));
       info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
       li.appendChild(av); li.appendChild(info);
+
+      var pin = el('button', 'pin-btn', g.pinned ? '已置顶' : '置顶');
+      pin.type = 'button';
+      if (g.pinned) pin.classList.add('pinned');
+      pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); toggleGroupPin(g); };
+      li.appendChild(pin);
+
       var cnt = state.unread[g.id] || 0;
       if (cnt > 0) {
         var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
@@ -817,6 +830,17 @@
       li.onclick = function () { var gg = groupById(g.id); if (gg) openChat(gg); };
       list.appendChild(li);
     });
+  }
+
+  function toggleGroupPin(g) {
+    sb.rpc('toggle_group_pin', { p_group_id: g.id })
+      .then(function (res) {
+        g.pinned = !!res;
+        if (state.active && state.active.type === 'group' && state.active.id === g.id) state.active.pinned = g.pinned;
+        state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
+        renderGroups();
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
   }
 
   function loadGroupMemberProfiles(groupId) {
