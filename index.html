@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=30">
+<link rel="stylesheet" href="assets/style.css?v=31">
 </head>
 <body>
 
@@ -39,6 +39,7 @@
       </label>
       <p class="form-error" id="login-error" hidden></p>
       <button class="btn-primary" type="submit" id="login-submit">登录</button>
+      <button class="link-btn" type="button" id="recovery-btn">忘记密码 / 找回账号</button>
     </form>
 
     <form id="register-form" class="auth-form" autocomplete="on" hidden>
@@ -245,6 +246,9 @@
     </header>
 
     <div class="settings-body">
+      <div class="force-pwd-banner" id="force-pwd-banner" hidden>
+        账号通过好友验证找回，出于安全请<strong>立即修改密码</strong>（关闭按钮已禁用，改完密码后方可关闭）。
+      </div>
       <div class="avatar-edit">
         <div class="avatar lg" id="settings-avatar">我</div>
         <button class="btn-mini" id="settings-avatar-btn" type="button">更换头像</button>
@@ -309,8 +313,54 @@
   </div>
 </div>
 
+<div class="modal" id="recovery-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>找回账号</h3>
+      <button class="icon-btn" id="recovery-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="settings-body">
+      <p class="form-hint" id="recovery-tip">
+        输入你的手机号，系统生成 6 位验证码。把它私下告诉至少 2 位好友，让好友在聊天里把这个 6 位数发给你；收到后回来输入验证码即可登录（登录后会强制修改密码）。
+      </p>
+
+      <!-- 步骤 1：输入手机号生成验证码 -->
+      <div id="rec-step1">
+        <label class="field">
+          <span>手机号</span>
+          <input type="tel" id="rec-phone" inputmode="numeric" maxlength="11" placeholder="11 位手机号" autocomplete="off">
+        </label>
+        <button class="btn-primary" id="rec-gen-btn" type="button">生成验证码</button>
+      </div>
+
+      <!-- 步骤 2：展示验证码 + 输入好友发来的码验证 -->
+      <div id="rec-step2" hidden>
+        <div class="rec-code-box">
+          <div class="rec-code-label">把此验证码告诉至少 2 位好友：</div>
+          <div class="rec-code" id="rec-code-display">------</div>
+          <div class="rec-code-sub">验证码 30 分钟内有效，让好友在聊天中把它原样发给你。</div>
+        </div>
+        <label class="field">
+          <span>好友发给你的验证码</span>
+          <input type="text" id="rec-code-input" inputmode="numeric" maxlength="6" placeholder="6 位数字" autocomplete="off">
+        </label>
+        <button class="btn-primary" id="rec-verify-btn" type="button">验证并登录</button>
+      </div>
+
+      <p class="form-error" id="rec-error" hidden></p>
+    </div>
+
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="rec-reset-btn" type="button">重新输入手机号</button>
+    </footer>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=30"></script>
-<script src="assets/app.js?v=30"></script>
+<script src="assets/config.js?v=31"></script>
+<script src="assets/app.js?v=31"></script>
 </body>
 </html>
