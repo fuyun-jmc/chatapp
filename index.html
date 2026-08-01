@@ -5,9 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=35">
+<link rel="stylesheet" href="assets/style.css?v=36">
 </head>
 <body>
+
+<div id="boot" class="boot">
+  <div class="boot-spinner"></div>
+  <div class="boot-text">正在登录…</div>
+</div>
+
 
 <div id="config-warning" class="config-warning" hidden>
   <strong>还没配置后端</strong>
@@ -39,6 +45,8 @@
       </label>
       <p class="form-error" id="login-error" hidden></p>
       <button class="btn-primary" type="submit" id="login-submit">登录</button>
+      <p class="form-hint" id="login-remembered" hidden></p>
+      <button class="link-btn" type="button" id="switch-account-btn" hidden>切换账号</button>
       <button class="link-btn" type="button" id="recovery-btn">忘记密码 / 找回账号</button>
     </form>
 
@@ -360,7 +368,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=35"></script>
-<script src="assets/app.js?v=35"></script>
+<script src="assets/config.js?v=36"></script>
+<script src="assets/app.js?v=36"></script>
 </body>
 </html>
