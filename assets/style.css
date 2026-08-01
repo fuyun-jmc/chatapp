@@ -500,14 +500,21 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .modal {
   position: fixed; inset: 0; z-index: 110;
   background: rgba(20,22,28,.5);
-  display: flex; align-items: center; justify-content: center; padding: 18px;
 }
 .modal-card {
+  position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 360px; background: var(--panel);
   border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.22);
-  overflow: hidden; animation: pop .18s ease;
+  max-height: calc(100vh - 48px); overflow-y: auto; animation: pop .18s ease;
 }
-@keyframes pop { from { transform: scale(.96); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+@keyframes pop { from { transform: translateX(-50%) scale(.96); opacity: .4; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.btn-danger {
+  flex: 1; border: 0; background: var(--danger); color: #fff;
+  padding: 12px; border-radius: 10px; font-size: 15px; font-weight: 500;
+  cursor: pointer; transition: background .15s; justify-content: center;
+}
+.btn-danger:hover { filter: brightness(.93); }
+.confirm-text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-2); }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--line);
