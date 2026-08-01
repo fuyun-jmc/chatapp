@@ -209,40 +209,102 @@
    *  WebView 清缓存导致 session 丢失时，帮助用户省去重输手机号。
    *  出于安全考虑，不保存密码，密码仍需手动输入。
    * ============================================================ */
-  var LAST_PHONE_KEY = 'chatapp.lastLoginPhone';
-  function rememberLoginPhone(phone) {
+  var ACCOUNTS_KEY = 'chatapp.accounts';          // JSON 数组，最新在前，保存登录过的账号
+  var LAST_PHONE_KEY = 'chatapp.lastLoginPhone';  // 标记上次登录的账号（用于高亮/默认选中）
+
+  // 记住一个登录过的账号：去重并放到列表最前，最多保留 8 个
+  function rememberAccount(phone) {
+    phone = (phone || '').trim();
+    if (!phone) return;
+    var list = getAccounts().filter(function (p) { return p !== phone; });
+    list.unshift(phone);
+    if (list.length > 8) list = list.slice(0, 8);
+    try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list)); } catch (e) {}
     try { localStorage.setItem(LAST_PHONE_KEY, phone); } catch (e) {}
   }
-  function clearLoginPhone() {
-    try { localStorage.removeItem(LAST_PHONE_KEY); } catch (e) {}
+  function getAccounts() {
+    try {
+      var raw = localStorage.getItem(ACCOUNTS_KEY);
+      if (!raw) return [];
+      var arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.filter(function (p) { return typeof p === 'string' && p; }) : [];
+    } catch (e) { return []; }
   }
-  function getLoginPhone() {
+  function removeAccount(phone) {
+    var list = getAccounts().filter(function (p) { return p !== phone; });
+    try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  function getLastPhone() {
     try { return localStorage.getItem(LAST_PHONE_KEY) || ''; } catch (e) { return ''; }
   }
+
+  // 渲染登录页的「已登录账号」列表：点击账号自动填入手机号并聚焦密码框，
+  // 密码需用户自行输入（出于安全不保存密码）。
+  function renderAccountList() {
+    var wrap = $('account-list');
+    if (!wrap) return;
+    var list = getAccounts();
+    wrap.innerHTML = '';
+    if (!list.length) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    wrap.appendChild(el('div', 'account-list-title', '选择账号'));
+    var last = getLastPhone();
+    list.forEach(function (phone) {
+      var chip = el('button', 'account-chip' + (phone === last ? ' is-last' : ''), '');
+      chip.type = 'button';
+      chip.setAttribute('data-phone', phone);
+      chip.appendChild(el('span', 'account-phone', phone));
+      var del = el('span', 'account-del', '×');
+      del.setAttribute('data-del', phone);
+      del.title = '移除该账号';
+      chip.appendChild(del);
+      wrap.appendChild(chip);
+    });
+    var other = el('button', 'account-chip account-chip-other', '使用其他账号');
+    other.type = 'button';
+    other.setAttribute('data-other', '1');
+    wrap.appendChild(other);
+  }
+
+  // 页面切回登录态时刷新账号列表，并默认填好“上次登录”的手机号
   function initLoginRemembered() {
-    var last = getLoginPhone();
-    var tip = $('login-remembered');
-    var sw = $('switch-account-btn');
-    if (!last) {
-      if (tip) tip.hidden = true;
-      if (sw) sw.hidden = true;
+    renderAccountList();
+    var phone = getLastPhone() || getAccounts()[0] || '';
+    if (phone) {
+      $('login-phone').value = phone;
+      try { $('login-password').focus(); } catch (e) {}
+    }
+  }
+
+  // 登录页账号列表点击委托：删除账号 / 选中账号填入 / 使用其他账号
+  function onAccountListClick(e) {
+    function up(node, sel) {
+      while (node && node.nodeType === 1) {
+        if (node.matches && node.matches(sel)) return node;
+        node = node.parentNode;
+      }
+      return null;
+    }
+    var del = up(e.target, '.account-del');
+    if (del) {
+      e.preventDefault();
+      removeAccount(del.getAttribute('data-del'));
+      renderAccountList();
       return;
     }
-    $('login-phone').value = last;
-    if (tip) { tip.textContent = '上次登录：' + last; tip.hidden = false; }
-    if (sw) sw.hidden = false;
-    // 手机号已填好，直接聚焦密码框，体验更接近“自动登录”
-    try { $('login-password').focus(); } catch (e) {}
-  }
-  function switchAccount() {
-    clearLoginPhone();
-    $('login-phone').value = '';
+    var chip = up(e.target, '.account-chip');
+    if (!chip) return;
+    if (chip.getAttribute('data-other')) {
+      $('login-phone').value = '';
+      $('login-password').value = '';
+      try { $('login-phone').focus(); } catch (e2) {}
+      return;
+    }
+    var phone = chip.getAttribute('data-phone') || '';
+    if (!phone) return;
+    $('login-phone').value = phone;
     $('login-password').value = '';
-    var tip = $('login-remembered');
-    var sw = $('switch-account-btn');
-    if (tip) tip.hidden = true;
-    if (sw) sw.hidden = true;
-    try { $('login-phone').focus(); } catch (e) {}
+    try { $('login-password').focus(); } catch (e2) {}
   }
 
   // 登录时记录本机设备；表不存在（未跑迁移）时静默失败，不影响登录
@@ -376,16 +438,14 @@
     sb.auth.signInWithPassword({ email: emailFor(phone), password: pwd })
       .then(function (r) {
         if (r.error) throw r.error;
-        rememberLoginPhone(phone); // 记住本次登录的手机号，下次自动预填
+        rememberAccount(phone); // 记住本次登录的账号，下次在列表中点选
       })
     .catch(function (e) { showErr('login-error', friendlyError(e)); })
     .then(function () { btn.disabled = false; btn.textContent = '登录'; });
   });
 
-  // 登录页「切换账号」：清除记住的手机号，重新手动输入
-  $('switch-account-btn').addEventListener('click', function () {
-    switchAccount();
-  });
+  // 登录页账号列表：点击委托（选中填号 / 删除账号 / 使用其他账号）
+  $('account-list').addEventListener('click', onAccountListClick);
 
   /* ============================================================
    *  账号找回（社交关系找回）
@@ -498,7 +558,7 @@
         if (!r.data.session) {
           throw new Error('注册成功但未自动登录。请到 Supabase 后台 Authentication → Providers → Email，关闭 "Confirm email" 后重新注册。');
         }
-        rememberLoginPhone(phone); // 注册并登录成功后同样记住手机号
+        rememberAccount(phone); // 注册并登录成功后同样记住账号
       })
       .catch(function (e) { showErr('reg-error', friendlyError(e)); })
       .then(function () { btn.disabled = false; btn.textContent = '注册并登录'; });
@@ -1006,8 +1066,8 @@
     pendingAvatar = null;
   }
 
-  // 个人设置内「切换账号」：登出当前账号并返回登录页，清空记住的手机号，
-  // 避免登录页仍预填旧号；强制改密码期间禁用。
+  // 个人设置内「切换账号」：登出当前账号并返回登录页，保留已记住的账号列表，
+  // 下次可在登录页点选；强制改密码期间禁用。
   function switchAccountFromSettings() {
     if (state.forceChangePwd) {
       toast('出于安全，请先修改密码后再切换账号');
@@ -1019,10 +1079,9 @@
         .then(function () {})
         .catch(function () {});
     }
-    clearLoginPhone();
     pendingAvatar = null;
     hideModal('settings-modal');
-    // 无论 signOut 成功与否都兜底回到登录页（与登出按钮一致）
+    // 无论 signOut 成功与否都兜底回到登录页（与登出按钮一致），并刷新账号列表
     sb.auth.signOut()
       .then(function () { teardown(); initLoginRemembered(); })
       .catch(function () { teardown(); initLoginRemembered(); });
