@@ -36,6 +36,7 @@
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
     friendFilter: '',   // 好友本地搜索关键词（手机号/昵称/备注）
+    recallTimer: null,  // 定时刷新“撤回/删除”按钮的定时器
     urlCache: {},       // file_path -> signed url
     channel: null
   };
@@ -909,6 +910,7 @@
   function openChat(peer) {
     var isGroup = peer.type === 'group';
     state.active = peer;
+    if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
     if (isGroup) renderGroups(); else renderFriends();
 
@@ -962,6 +964,8 @@
           box.appendChild(renderMessage(m));
         });
         scrollBottom();
+        if (state.recallTimer) clearInterval(state.recallTimer);
+        state.recallTimer = setInterval(refreshRecallButtons, 15000);
       })
       .catch(function (e) { toast(friendlyError(e)); });
   }
@@ -988,6 +992,7 @@
     var out = m.sender_id === state.uid;
     var wrap = el('div', 'msg ' + (out ? 'out' : 'in'));
     wrap.dataset.id = m.id;
+    if (out && m.created_at) wrap.dataset.ts = new Date(m.created_at).getTime();
 
     // 本端已删除：仅自己可见，显示占位（对方无感）
     if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) {
@@ -1056,10 +1061,19 @@
     wrap.appendChild(el('div', 'msg-time', fmtTime(m.created_at)));
 
     if (out) {
-      var rb = el('button', 'recall-btn', '撤回');
-      rb.type = 'button';
-      rb.onclick = function () { recallMessage(m.id); };
-      wrap.appendChild(rb);
+      var withinRecall = (Date.now() - new Date(m.created_at).getTime()) < 5 * 60 * 1000;
+      if (withinRecall) {
+        var rb = el('button', 'recall-btn', '撤回');
+        rb.type = 'button';
+        rb.onclick = function () { recallMessage(m.id); };
+        wrap.appendChild(rb);
+      } else {
+        var db = el('button', 'del-btn', '删除');
+        db.type = 'button';
+        db.title = '仅自己删除，对方仍可看到';
+        db.onclick = function () { deleteMessageForMe(m.id); };
+        wrap.appendChild(db);
+      }
     } else {
       var db = el('button', 'del-btn', '删除');
       db.type = 'button';
@@ -1068,6 +1082,27 @@
       wrap.appendChild(db);
     }
     return wrap;
+  }
+
+  // 每 15s 检查一次：自己发出的消息若已超出 5 分钟撤回窗口，
+  // 把仍显示“撤回”的按钮替换为“删除”（本端删除，对方无感）
+  function refreshRecallButtons() {
+    var box = $('messages');
+    Array.prototype.forEach.call(box.querySelectorAll('.msg.out'), function (node) {
+      var ts = parseInt(node.dataset.ts || '0', 10);
+      if (!ts) return;
+      if (Date.now() - ts >= 5 * 60 * 1000) {
+        var rb = node.querySelector('.recall-btn');
+        if (rb) {
+          var id = node.dataset.id;
+          var del = el('button', 'del-btn', '删除');
+          del.type = 'button';
+          del.title = '仅自己删除，对方仍可看到';
+          del.onclick = function () { deleteMessageForMe(id); };
+          rb.replaceWith(del);
+        }
+      }
+    });
   }
 
   function recallMessage(id) {
