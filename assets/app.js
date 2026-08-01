@@ -35,6 +35,7 @@
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
+    friendFilter: '',   // 好友本地搜索关键词（手机号/昵称/备注）
     urlCache: {},       // file_path -> signed url
     channel: null
   };
@@ -377,9 +378,20 @@
   function renderFriends() {
     var list = $('friend-list');
     list.innerHTML = '';
-    $('friend-empty').hidden = state.friends.length > 0;
 
-    state.friends.forEach(function (f) {
+    var kw = (state.friendFilter || '').trim().toLowerCase();
+    var items = state.friends.filter(function (f) {
+      if (!kw) return true;
+      var hay = [f.phone, f.nickname, f.remark, (f.remark ? f.nickname : '')]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(kw) !== -1;
+    });
+
+    $('friend-empty').hidden = state.friends.length > 0;
+    $('friend-search-empty').hidden = !(kw && items.length === 0);
+    if (state.friends.length === 0) $('friend-search-empty').hidden = true;
+
+    items.forEach(function (f) {
       var li = el('li');
       if (state.active && state.active.id === f.id) li.classList.add('is-active');
       var av = el('div', 'avatar sm');
@@ -403,6 +415,11 @@
       li.onclick = function () { openChat(f); };
       list.appendChild(li);
     });
+  }
+
+  function onFriendSearch() {
+    state.friendFilter = $('friend-search').value || '';
+    renderFriends();
   }
 
   /* ---------- 编辑好友备注 ---------- */
@@ -801,6 +818,9 @@
   $('search-phone').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
   });
+
+  /* ---------- 本地好友搜索（手机号/昵称/备注） ---------- */
+  $('friend-search').addEventListener('input', onFriendSearch);
 
   function doSearch() {
     var phone = $('search-phone').value.trim();
