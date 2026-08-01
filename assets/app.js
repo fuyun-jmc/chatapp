@@ -391,37 +391,103 @@
 
     $('friend-empty').hidden = state.friends.length > 0;
 
-    state.friends.forEach(function (f) {
-      var li = el('li');
-      if (state.active && state.active.id === f.id) li.classList.add('is-active');
-      var av = el('div', 'avatar sm');
-      setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
-      var info = el('div', 'info');
-      info.appendChild(el('div', 'nm', f.remark || f.nickname));
-      info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
-      li.appendChild(av); li.appendChild(info);
+    // 按置顶分成两组；每组内“有新消息（未读）”的排到最前，其余保持原顺序
+    var pinned = state.friends.filter(function (f) { return f.pinned; });
+    var normal  = state.friends.filter(function (f) { return !f.pinned; });
+    sortUnreadFirst(pinned);
+    sortUnreadFirst(normal);
 
-      var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
-      pin.type = 'button';
-      if (f.pinned) pin.classList.add('pinned');
-      pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); togglePin(f); };
-      li.appendChild(pin);
+    if (pinned.length) {
+      list.appendChild(el('li', 'list-section', '置顶'));
+      pinned.forEach(function (f) { list.appendChild(makeFriendItem(f, list)); });
+    }
+    if (normal.length) {
+      list.appendChild(el('li', 'list-section', pinned.length ? '非置顶' : '好友'));
+      normal.forEach(function (f) { list.appendChild(makeFriendItem(f, list)); });
+    }
+  }
 
-      var rem = el('button', 'remark-btn', '备注');
-      rem.type = 'button';
-      rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
-      li.appendChild(rem);
-
-      var cnt = parseInt(state.unread[f.id] || 0, 10) || 0;
-      if (cnt > 0) {
-        var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
-        badge.setAttribute('aria-label', '未读消息 ' + cnt + ' 条');
-        li.appendChild(badge);
-      }
-      li.onclick = function () { openChat(f); };
-      list.appendChild(li);
+  // 把“有新消息”的好友排到数组最前（稳定排序，保持其余相对顺序）
+  function sortUnreadFirst(arr) {
+    arr.sort(function (a, b) {
+      var ua = parseInt(state.unread[a.id] || 0, 10) || 0;
+      var ub = parseInt(state.unread[b.id] || 0, 10) || 0;
+      return (ub > 0 ? 1 : 0) - (ua > 0 ? 1 : 0);
     });
   }
+
+  // 把好友按“置顶 / 非置顶”分组渲染进容器；每组内未读优先。clickFn 为点击回调
+  function renderGroupedFriends(container, friends, clickFn) {
+    var pinned = friends.filter(function (f) { return f.pinned; });
+    var normal  = friends.filter(function (f) { return !f.pinned; });
+    sortUnreadFirst(pinned);
+    sortUnreadFirst(normal);
+
+    if (pinned.length) {
+      container.appendChild(el('div', 'list-section', '置顶'));
+      pinned.forEach(function (f) { container.appendChild(makeFriendRow(f, clickFn)); });
+    }
+    if (normal.length) {
+      container.appendChild(el('div', 'list-section', pinned.length ? '非置顶' : '好友'));
+      normal.forEach(function (f) { container.appendChild(makeFriendRow(f, clickFn)); });
+    }
+  }
+
+  // 搜索结果用的行（带置顶/备注按钮与未读徽标），点击触发 clickFn
+  function makeFriendRow(f, clickFn) {
+    var row = el('div', 'row clickable');
+    var av = el('div', 'avatar sm');
+    setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'nm', f.remark || f.nickname));
+    info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
+    row.appendChild(av); row.appendChild(info);
+
+    var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
+    pin.type = 'button';
+    if (f.pinned) pin.classList.add('pinned');
+    pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); togglePin(f); };
+    row.appendChild(pin);
+
+    var cnt = parseInt(state.unread[f.id] || 0, 10) || 0;
+    if (cnt > 0) {
+      var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
+      badge.setAttribute('aria-label', '未读消息 ' + cnt + ' 条');
+      row.appendChild(badge);
+    }
+    row.onclick = function () { clickFn(f); };
+    return row;
+  }
+
+  function makeFriendItem(f) {
+    var li = el('li');
+    if (state.active && state.active.id === f.id) li.classList.add('is-active');
+    var av = el('div', 'avatar sm');
+    setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'nm', f.remark || f.nickname));
+    info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
+    li.appendChild(av); li.appendChild(info);
+
+    var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
+    pin.type = 'button';
+    if (f.pinned) pin.classList.add('pinned');
+    pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); togglePin(f); };
+    li.appendChild(pin);
+
+    var rem = el('button', 'remark-btn', '备注');
+    rem.type = 'button';
+    rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
+    li.appendChild(rem);
+
+    var cnt = parseInt(state.unread[f.id] || 0, 10) || 0;
+    if (cnt > 0) {
+      var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
+      badge.setAttribute('aria-label', '未读消息 ' + cnt + ' 条');
+      li.appendChild(badge);
+    }
+    li.onclick = function () { openChat(f); };
+    return li;
 
   function togglePin(f) {
     var col = f.iAmRequester ? 'pinned_by_requester' : 'pinned_by_addressee';
@@ -432,7 +498,6 @@
         if (r.error) throw r.error;
         f.pinned = next;
         if (state.active && state.active.id === f.id) state.active.pinned = next;
-        state.friends.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
         renderFriends();
       })
       .catch(function (e) { toast(friendlyError(e)); });
@@ -471,15 +536,10 @@
       return hay.indexOf(q) !== -1;
     });
 
-    local.forEach(function (f) {
-      var row = makeResultRow(f);
-      row.classList.add('clickable');
-      row.onclick = function () {
-        $('search-box').value = '';
-        onUnifiedSearch();
-        openChat(f);
-      };
-      panel.appendChild(row);
+    renderGroupedFriends(panel, local, function (f) {
+      $('search-box').value = '';
+      onUnifiedSearch();
+      openChat(f);
     });
 
     if (PHONE_RE.test(kw)) {
