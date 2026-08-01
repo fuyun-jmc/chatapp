@@ -1006,6 +1006,28 @@
     pendingAvatar = null;
   }
 
+  // 个人设置内「切换账号」：登出当前账号并返回登录页，清空记住的手机号，
+  // 避免登录页仍预填旧号；强制改密码期间禁用。
+  function switchAccountFromSettings() {
+    if (state.forceChangePwd) {
+      toast('出于安全，请先修改密码后再切换账号');
+      return;
+    }
+    if (state.deviceToken) {
+      // Supabase query builder 是 thenable 而非完整 Promise，必须先 .then() 再 .catch()
+      sb.from('device_sessions').delete().eq('token', state.deviceToken)
+        .then(function () {})
+        .catch(function () {});
+    }
+    clearLoginPhone();
+    pendingAvatar = null;
+    hideModal('settings-modal');
+    // 无论 signOut 成功与否都兜底回到登录页（与登出按钮一致）
+    sb.auth.signOut()
+      .then(function () { teardown(); initLoginRemembered(); })
+      .catch(function () { teardown(); initLoginRemembered(); });
+  }
+
   function resetPwdFields() {
     $('settings-newpwd').value = '';
     $('settings-confirm-pwd').value = '';
@@ -1049,6 +1071,7 @@
 
   $('settings-btn').addEventListener('click', openSettings);
   $('settings-close').addEventListener('click', closeSettings);
+  $('switch-account-settings').addEventListener('click', switchAccountFromSettings);
   $('settings-cancel').addEventListener('click', closeSettings);
   $('settings-modal').addEventListener('click', function (e) {
     if (e.target === this) closeSettings();
