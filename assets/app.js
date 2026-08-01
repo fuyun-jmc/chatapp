@@ -411,10 +411,11 @@
   function makeResultRow(user) {
     var row = el('div', 'row');
     var av = el('div', 'avatar sm');
-    setAvatar(av, { nickname: user.nickname, phone: user.phone, avatarPath: user.avatar_path });
+    var remark = user.remark || '';
+    setAvatar(av, { nickname: remark || user.nickname, phone: user.phone, avatarPath: user.avatar_path });
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', user.nickname));
-    info.appendChild(el('div', 'ph', user.phone));
+    info.appendChild(el('div', 'nm', remark || user.nickname));
+    info.appendChild(el('div', 'ph', user.phone + (remark ? ' · ' + user.nickname : '')));
     row.appendChild(av); row.appendChild(info);
     return row;
   }
