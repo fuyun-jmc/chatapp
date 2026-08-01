@@ -319,7 +319,8 @@
               avatar: other.avatar_path,
               remark: myRemark,
               relId: row.id,
-              iAmRequester: iAmRequester
+              iAmRequester: iAmRequester,
+              type: 'friend'
             });
           } else if (row.status === 'pending' && !iAmRequester) {
             incoming.push({ rowId: row.id, user: other });
@@ -1279,7 +1280,7 @@
             if (g) toast(g.name + ' 发来一条消息');
           }
         } else if (m.receiver_id === state.uid) {
-          if (state.active && state.active.type === 'friend' && state.active.id === m.sender_id) {
+          if (state.active && state.active.type !== 'group' && state.active.id === m.sender_id) {
             appendMessage(m);
           } else {
             state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
