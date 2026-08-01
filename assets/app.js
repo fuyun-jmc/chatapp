@@ -319,7 +319,8 @@
   }
 
   function kickDevice(token, li) {
-    sb.from('device_sessions').delete().eq('token', token)
+    // 用 security definer RPC 绕开 device_sessions 的 DELETE RLS
+    sb.rpc('kick_device', { p_token: token })
       .then(function (r) {
         if (r.error) { toast(friendlyError(r.error)); return; }
         toast('已注销该设备');
@@ -330,8 +331,7 @@
 
   function logoutOtherDevices() {
     if (!state.deviceToken) return;
-    sb.from('device_sessions').delete()
-      .eq('user_id', state.uid).neq('token', state.deviceToken)
+    sb.rpc('logout_other_devices', { p_keep_token: state.deviceToken })
       .then(function (r) {
         if (r.error) { toast(friendlyError(r.error)); return; }
         toast('已登出其他所有设备');
