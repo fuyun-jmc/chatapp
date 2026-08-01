@@ -11,6 +11,10 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  /* 原生 <dialog> 弹窗开关（安全：重复打开/关闭不抛异常） */
+  function showModal(id) { var m = $(id); if (m && typeof m.showModal === 'function' && !m.open) m.showModal(); }
+  function hideModal(id) { var m = $(id); if (m && m.open) m.close(); }
+
   /* ---------- 配置检查 ---------- */
   var configured = CFG.SUPABASE_URL && CFG.SUPABASE_URL.indexOf('YOUR_') === -1 &&
                    CFG.SUPABASE_ANON_KEY && CFG.SUPABASE_ANON_KEY.indexOf('YOUR_') === -1;
@@ -505,18 +509,18 @@
     pendingDelFriend = f;
     $('del-friend-text').textContent =
       '确定删除好友「' + (f.remark || f.nickname) + '」吗？\n删除后将从双方好友列表中移除（聊天记录仍保留）。';
-    $('del-friend-modal').hidden = false;
+    showModal('del-friend-modal');
   }
 
   function closeDelFriend() {
-    $('del-friend-modal').hidden = true;
+    hideModal('del-friend-modal');
     pendingDelFriend = null;
   }
 
   function confirmDelFriend() {
     var f = pendingDelFriend;
     if (!f) return;
-    $('del-friend-modal').hidden = true;
+    hideModal('del-friend-modal');
     pendingDelFriend = null;
     sb.from('friendships').delete().eq('id', f.relId)
       .then(function (r) {
@@ -549,11 +553,11 @@
       phone: state.profile.phone,
       avatarPath: state.profile.avatar_path
     });
-    $('settings-modal').hidden = false;
+    showModal('settings-modal');
   }
 
   function closeSettings() {
-    $('settings-modal').hidden = true;
+    hideModal('settings-modal');
     pendingAvatar = null;
   }
 
@@ -707,7 +711,7 @@
   function openNewGroup() {
     $('new-group-name').value = '';
     renderFriendPicker($('group-friend-picker'), state.friends, []);
-    $('new-group-modal').hidden = false;
+    showModal('new-group-modal');
   }
 
   function renderFriendPicker(container, friends, excludeIds) {
@@ -741,7 +745,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         var gid = r.data;
-        $('new-group-modal').hidden = true;
+        hideModal('new-group-modal');
         return loadGroups().then(function () { return gid; });
       })
       .then(function (gid) {
@@ -763,7 +767,7 @@
     $('group-info-save').hidden = !g.iAmOwner;
     $('group-info-add').hidden = !g.iAmOwner;
     renderMemberList(g);
-    $('group-info-modal').hidden = false;
+    showModal('group-info-modal');
   }
 
   function renderMemberList(g) {
@@ -819,7 +823,7 @@
     var g = state.active;
     if (g.iAmOwner) { toast('你是群主，请先转让群主再退群'); return; }
     sb.from('group_members').delete().eq('group_id', g.id).eq('user_id', state.uid)
-      .then(function (r) { if (r.error) throw r.error; toast('已退出群聊'); $('group-info-modal').hidden = true; return loadGroups(); })
+      .then(function (r) { if (r.error) throw r.error; toast('已退出群聊'); hideModal('group-info-modal'); return loadGroups(); })
       .then(function () {
         state.active = null;
         $('chat-room').hidden = true;
@@ -832,13 +836,13 @@
   /* ---------- 群聊按钮事件绑定 ---------- */
   $('new-group-btn').addEventListener('click', openNewGroup);
   $('new-group-create').addEventListener('click', createGroup);
-  $('new-group-close').addEventListener('click', function () { $('new-group-modal').hidden = true; });
-  $('new-group-cancel').addEventListener('click', function () { $('new-group-modal').hidden = true; });
-  $('new-group-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  $('new-group-close').addEventListener('click', function () { hideModal('new-group-modal'); });
+  $('new-group-cancel').addEventListener('click', function () { hideModal('new-group-modal'); });
+  $('new-group-modal').addEventListener('click', function (e) { if (e.target === this) this.close(); });
 
   $('group-info-btn').addEventListener('click', openGroupInfo);
-  $('group-info-close').addEventListener('click', function () { $('group-info-modal').hidden = true; });
-  $('group-info-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  $('group-info-close').addEventListener('click', function () { hideModal('group-info-modal'); });
+  $('group-info-modal').addEventListener('click', function (e) { if (e.target === this) this.close(); });
   $('group-info-save').addEventListener('click', function () {
     if (!state.active || !state.active.iAmOwner) return;
     var name = $('group-info-name').value.trim();
@@ -858,7 +862,7 @@
     var g = state.active;
     var candidates = state.friends.filter(function (f) { return g.memberIds.indexOf(f.id) < 0; });
     renderFriendPicker($('add-member-picker'), candidates, []);
-    $('add-member-modal').hidden = false;
+    showModal('add-member-modal');
   });
   $('add-member-confirm').addEventListener('click', function () {
     if (!state.active) return;
@@ -866,18 +870,17 @@
     var checks = $('add-member-picker').querySelectorAll('input[type=checkbox]:checked');
     if (!checks.length) { toast('请选择要添加的好友'); return; }
     var ids = []; checks.forEach(function (c) { ids.push(c.value); });
-    var members = ids.map(function (uid) { return { group_id: g.id, user_id: uid }; });
-    sb.from('group_members').insert(members)
-      .then(function (r) { if (r.error) throw r.error; toast('已添加成员'); $('add-member-modal').hidden = true; return loadGroups(); })
+    sb.rpc('add_group_members', { p_group_id: g.id, p_user_ids: ids })
+      .then(function (r) { if (r.error) throw r.error; toast('已添加成员'); hideModal('add-member-modal'); return loadGroups(); })
       .then(function () {
         var ng = groupById(g.id);
         if (ng) { state.active = ng; renderMemberList(ng); renderGroups(); }
       })
       .catch(function (e) { toast(friendlyError(e)); });
   });
-  $('add-member-close').addEventListener('click', function () { $('add-member-modal').hidden = true; });
-  $('add-member-cancel').addEventListener('click', function () { $('add-member-modal').hidden = true; });
-  $('add-member-modal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  $('add-member-close').addEventListener('click', function () { hideModal('add-member-modal'); });
+  $('add-member-cancel').addEventListener('click', function () { hideModal('add-member-modal'); });
+  $('add-member-modal').addEventListener('click', function (e) { if (e.target === this) this.close(); });
 
   /* ---------- 统一搜索：搜好友 + 手机号加好友 ---------- */
   $('search-box').addEventListener('input', onUnifiedSearch);
