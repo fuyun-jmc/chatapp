@@ -245,6 +245,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .friend-list li:hover { background: var(--bg); }
 .friend-list li.is-active { background: #eef3fe; border-left-color: var(--brand); }
+
+/* 好友列表分组标题（置顶 / 非置顶） */
+.friend-list li.list-section {
+  cursor: default; padding: 8px 14px 4px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  color: var(--text-3); background: transparent;
+}
+.friend-list li.list-section:hover { background: transparent; }
 .friend-list .info { flex: 1; min-width: 0; }
 .friend-list .nm { font-size: 14.5px; font-weight: 500; }
 .friend-list .ph {
