@@ -393,30 +393,54 @@
       .catch(function () { box.innerHTML = '<li class="list-section">设备列表加载失败</li>'; });
   }
 
+  // 注销单台设备：优先用 security definer RPC 绕开可能的 RLS 缺失；
+  // 若该函数不存在（用户没跑迁移 SQL），退回「直删」——device_sessions 的
+  // ds_delete 策略允许删除 user_id = 自己的行（含名下其他设备），通常可直接成功。
   function kickDevice(token, li) {
-    // 用 security definer RPC 绕开 device_sessions 的 DELETE RLS
     sb.rpc('kick_device', { p_token: token })
       .then(function (r) {
-        if (r.error) { toast(friendlyError(r.error)); return; }
-        toast('已注销该设备');
-        // 实时广播：让目标设备秒级下线（心跳作为兜底）
-        broadcastKick({ token: token });
-        if (li) li.remove();
+        if (r.error) throw r.error;
+        finishKick(token, li);
       })
-      .catch(function (e) { toast(friendlyError(e)); });
+      .catch(function () {
+        sb.from('device_sessions').delete().eq('token', token)
+          .then(function (d) {
+            if (d.error) { toast(friendlyError(d.error)); return; }
+            finishKick(token, li);
+          })
+          .catch(function (e) { toast(friendlyError(e)); });
+      });
+  }
+
+  function finishKick(token, li) {
+    toast('已注销该设备');
+    // 实时广播：让目标设备秒级下线（心跳作为兜底）
+    broadcastKick({ token: token });
+    if (li) li.remove();
   }
 
   function logoutOtherDevices() {
     if (!state.deviceToken) return;
     sb.rpc('logout_other_devices', { p_keep_token: state.deviceToken })
       .then(function (r) {
-        if (r.error) { toast(friendlyError(r.error)); return; }
-        toast('已登出其他所有设备');
-        // 实时广播：让其他设备秒级下线（心跳作为兜底）
-        broadcastKick({ exceptToken: state.deviceToken });
-        loadDeviceSessions();
+        if (r.error) throw r.error;
+        finishLogoutOthers();
       })
-      .catch(function (e) { toast(friendlyError(e)); });
+      .catch(function () {
+        sb.from('device_sessions').delete().eq('user_id', state.uid).neq('token', state.deviceToken)
+          .then(function (d) {
+            if (d.error) { toast(friendlyError(d.error)); return; }
+            finishLogoutOthers();
+          })
+          .catch(function (e) { toast(friendlyError(e)); });
+      });
+  }
+
+  function finishLogoutOthers() {
+    toast('已登出其他所有设备');
+    // 实时广播：让其他设备秒级下线（心跳作为兜底）
+    broadcastKick({ exceptToken: state.deviceToken });
+    loadDeviceSessions();
   }
 
   // ------------------------------------------------------------
