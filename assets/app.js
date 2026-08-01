@@ -339,7 +339,8 @@
           if (r && r.data === null) {
             clearInterval(state.heartbeat); state.heartbeat = null;
             toast('你的账号已在其他设备被注销');
-            sb.auth.signOut();
+            // 仅清本机会话，避免 global 作用域误伤其他设备（含执行踢出的当前设备）
+            sb.auth.signOut({ scope: 'local' });
           } else if (r && r.error) {
             console.warn('heartbeat check:', r.error.message);
           }
@@ -574,7 +575,7 @@
     }
     // 无论 signOut 成功还是失败（特殊设备/弱网可能 reject），
     // 都兜底强制切回登录页，避免“点了登出没反应”
-    sb.auth.signOut()
+    sb.auth.signOut({ scope: 'local' })
       .then(function () { teardown(); })
       .catch(function () { teardown(); });
   });
@@ -1082,7 +1083,7 @@
     pendingAvatar = null;
     hideModal('settings-modal');
     // 无论 signOut 成功与否都兜底回到登录页（与登出按钮一致），并刷新账号列表
-    sb.auth.signOut()
+    sb.auth.signOut({ scope: 'local' })
       .then(function () { teardown(); initLoginRemembered(); })
       .catch(function () { teardown(); initLoginRemembered(); });
   }
