@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=27">
+<link rel="stylesheet" href="assets/style.css?v=28">
 </head>
 <body>
 
@@ -158,7 +158,10 @@
 <input type="file" id="file-video" accept="video/*" hidden>
 <input type="file" id="file-any" hidden>
 
-<div class="lightbox" id="lightbox" hidden><img id="lightbox-img" alt="图片预览"></div>
+<div class="lightbox" id="lightbox" hidden>
+  <img id="lightbox-img" alt="图片预览" hidden>
+  <video id="lightbox-video" controls playsInline hidden></video>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <!-- ==================== 创建群聊 ==================== -->
@@ -298,7 +301,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=27"></script>
-<script src="assets/app.js?v=27"></script>
+<script src="assets/config.js?v=28"></script>
+<script src="assets/app.js?v=28"></script>
 </body>
 </html>
