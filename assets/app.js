@@ -68,6 +68,14 @@
 
   function initialOf(name) { return (name || '?').trim().charAt(0).toUpperCase(); }
 
+  /* 显示名：有备注时“备注名（对方昵称）”，否则显示昵称 */
+  function displayName(peer) {
+    if (peer.remark && peer.remark !== peer.nickname) {
+      return peer.remark + '（' + peer.nickname + '）';
+    }
+    return peer.remark || peer.nickname || '用户';
+  }
+
   /* 统一渲染头像：有自定义头像图则显示图片，否则显示首字母色块 */
   function setAvatar(node, opts) {
     opts = opts || {};
@@ -717,7 +725,7 @@
     var av = el('div', 'avatar sm');
     setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', f.remark || f.nickname));
+    info.appendChild(el('div', 'nm', displayName(f)));
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
     row.appendChild(av); row.appendChild(info);
 
@@ -743,7 +751,7 @@
     var av = el('div', 'avatar sm');
     setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', f.remark || f.nickname));
+    info.appendChild(el('div', 'nm', displayName(f)));
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
     li.appendChild(av); li.appendChild(info);
 
@@ -788,7 +796,7 @@
     var remark = user.remark || '';
     setAvatar(av, { nickname: remark || user.nickname, phone: user.phone, avatarPath: user.avatar_path });
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', remark || user.nickname));
+    info.appendChild(el('div', 'nm', displayName(user)));
     info.appendChild(el('div', 'ph', user.phone + (remark ? ' · ' + user.nickname : '')));
     row.appendChild(av); row.appendChild(info);
     return row;
@@ -858,7 +866,7 @@
         f.remark = val || null;
         renderFriends();
         if (state.active && state.active.id === f.id) {
-          $('peer-name').textContent = f.remark || f.nickname;
+          $('peer-name').textContent = displayName(f);
           $('peer-avatar').textContent = initialOf(f.remark || f.nickname);
         }
         toast(val ? '已设置备注：' + val : '已清除备注');
@@ -1391,7 +1399,7 @@
     $('chat-room').hidden = false;
     document.querySelector('.app-view').classList.add('show-chat');
 
-    $('peer-name').textContent = isGroup ? peer.name : (peer.remark || peer.nickname);
+    $('peer-name').textContent = isGroup ? peer.name : displayName(peer);
     $('peer-phone').textContent = isGroup ? (peer.memberCount + ' 位成员') : peer.phone;
 
     var av = $('peer-avatar');
