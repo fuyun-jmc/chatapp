@@ -457,7 +457,10 @@
   $('logout-btn').addEventListener('click', function () {
     // 退出前清理本机设备记录
     if (state.deviceToken) {
-      sb.from('device_sessions').delete().eq('token', state.deviceToken).catch(function () {});
+      // Supabase query builder 是 thenable 而非完整 Promise，必须先 .then() 再 .catch()
+      sb.from('device_sessions').delete().eq('token', state.deviceToken)
+        .then(function () {})
+        .catch(function () {});
     }
     // 无论 signOut 成功还是失败（特殊设备/弱网可能 reject），
     // 都兜底强制切回登录页，避免“点了登出没反应”
