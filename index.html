@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=26">
+<link rel="stylesheet" href="assets/style.css?v=27">
 </head>
 <body>
 
@@ -94,7 +94,10 @@
       </div>
 
       <div class="side-section">
-        <div class="side-title">会话 <button class="mini-add" id="new-group-btn" type="button" title="创建群聊">＋</button></div>
+        <button class="new-group-bar" id="new-group-btn" type="button">
+          <span class="ng-plus">＋</span> 新建群聊
+        </button>
+        <div class="side-title">会话</div>
         <ul class="friend-list" id="chat-list"></ul>
         <p class="empty-tip" id="chat-empty-tip">还没有会话，用上方搜索框添加好友或建群。</p>
       </div>
@@ -295,7 +298,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=26"></script>
-<script src="assets/app.js?v=26"></script>
+<script src="assets/config.js?v=27"></script>
+<script src="assets/app.js?v=27"></script>
 </body>
 </html>
