@@ -1353,6 +1353,43 @@
     if (near) scrollBottom();
   }
 
+  // 视频/音频类扩展名，命中后即使消息被存成 file 类型也内联播放，绝不开新网页
+  var VIDEO_EXT = ['mp4', 'webm', 'mov', 'm4v', 'ogv', '3gp', 'mkv', 'avi'];
+
+  function isVideoFile(m) {
+    if (m.kind === 'video') return true;
+    var ext = (m.file_name || '').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return VIDEO_EXT.indexOf(ext) >= 0;
+  }
+
+  // 统一的内联视频气泡：气泡内直接 <video> 播放；点空白处进 lightbox 全屏播；全程不跳新网页
+  function buildVideoBubble(m) {
+    var bubble = el('div', 'bubble media');
+    var vid = document.createElement('video');
+    vid.controls = true;
+    vid.preload = 'metadata';
+    vid.playsInline = true;
+    bubble.appendChild(vid);
+    signedUrl(m.file_path).then(function (u) {
+      if (!u) return;
+      vid.src = u;
+      // 点视频控件本身只控制播放，不触发全屏 lightbox
+      vid.onclick = function (e) { e.stopPropagation(); };
+    });
+    // 点气泡空白处 → 全屏内联播放（不开新网页）
+    bubble.onclick = function () {
+      signedUrl(m.file_path).then(function (u) {
+        if (!u) return;
+        var lb = $('lightbox');
+        var im = $('lightbox-img'), vv = $('lightbox-video');
+        im.hidden = true; vv.hidden = false; vv.src = u;
+        lb.hidden = false;
+        vv.play().catch(function () {});
+      });
+    };
+    return bubble;
+  }
+
   function renderMessage(m) {
     var out = m.sender_id === state.uid;
     var wrap = el('div', 'msg ' + (out ? 'out' : 'in'));
@@ -1393,43 +1430,26 @@
         };
       });
     } else if (m.kind === 'video') {
-      bubble = el('div', 'bubble media');
-      var vid = document.createElement('video');
-      vid.controls = true;
-      vid.preload = 'metadata';
-      vid.playsInline = true;
-      bubble.appendChild(vid);
-      signedUrl(m.file_path).then(function (u) {
-        if (!u) return;
-        vid.src = u;
-        // 点视频控件本身只控制播放，不触发全屏 lightbox
-        vid.onclick = function (e) { e.stopPropagation(); };
-      });
-      // 点气泡空白处 → 全屏内联播放（不开新网页）
-      bubble.onclick = function () {
-        signedUrl(m.file_path).then(function (u) {
-          if (!u) return;
-          var lb = $('lightbox');
-          var im = $('lightbox-img'), vv = $('lightbox-video');
-          im.hidden = true; vv.hidden = false; vv.src = u;
-          lb.hidden = false;
-          vv.play().catch(function () {});
-        });
-      };
+      bubble = buildVideoBubble(m);
     } else {
-      bubble = el('div', 'bubble');
-      var a = document.createElement('a');
-      a.className = 'file-card';
-      a.target = '_blank';
-      a.rel = 'noopener';
-      var ext = (m.file_name || '').split('.').pop() || 'file';
-      a.appendChild(el('div', 'file-icon', ext.slice(0, 4)));
-      var meta = el('div', 'file-meta');
-      meta.appendChild(el('div', 'file-name', m.file_name || '文件'));
-      meta.appendChild(el('div', 'file-size', fmtSize(m.file_size)));
-      a.appendChild(meta);
-      bubble.appendChild(a);
-      signedUrl(m.file_path).then(function (u) { if (u) { a.href = u; a.download = m.file_name || ''; } });
+      // 视频文件即使被存成 file 类型，也内联播放，不开新网页
+      if (isVideoFile(m)) {
+        bubble = buildVideoBubble(m);
+      } else {
+        bubble = el('div', 'bubble');
+        var a = document.createElement('a');
+        a.className = 'file-card';
+        a.target = '_blank';
+        a.rel = 'noopener';
+        var ext = (m.file_name || '').split('.').pop() || 'file';
+        a.appendChild(el('div', 'file-icon', ext.slice(0, 4)));
+        var meta = el('div', 'file-meta');
+        meta.appendChild(el('div', 'file-name', m.file_name || '文件'));
+        meta.appendChild(el('div', 'file-size', fmtSize(m.file_size)));
+        a.appendChild(meta);
+        bubble.appendChild(a);
+        signedUrl(m.file_path).then(function (u) { if (u) { a.href = u; a.download = m.file_name || ''; } });
+      }
     }
 
     var isGroup = !!(state.active && state.active.type === 'group');
