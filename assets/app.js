@@ -449,9 +449,26 @@
   }
 
   /* ---------- 删除好友 ---------- */
+  var pendingDelFriend = null;
+
   function deleteFriend(f) {
-    if (!window.confirm('确定删除好友「' + (f.remark || f.nickname) + '」吗？\n删除后将从双方好友列表中移除（聊天记录仍保留）。')) return;
     if (!f.relId) { toast('找不到好友关系记录'); return; }
+    pendingDelFriend = f;
+    $('del-friend-text').textContent =
+      '确定删除好友「' + (f.remark || f.nickname) + '」吗？\n删除后将从双方好友列表中移除（聊天记录仍保留）。';
+    $('del-friend-modal').hidden = false;
+  }
+
+  function closeDelFriend() {
+    $('del-friend-modal').hidden = true;
+    pendingDelFriend = null;
+  }
+
+  function confirmDelFriend() {
+    var f = pendingDelFriend;
+    if (!f) return;
+    $('del-friend-modal').hidden = true;
+    pendingDelFriend = null;
     sb.from('friendships').delete().eq('id', f.relId)
       .then(function (r) {
         if (r.error) throw r.error;
@@ -464,6 +481,10 @@
       })
       .catch(function (e) { toast(friendlyError(e)); });
   }
+
+  $('del-friend-close').addEventListener('click', closeDelFriend);
+  $('del-friend-cancel').addEventListener('click', closeDelFriend);
+  $('del-friend-confirm').addEventListener('click', confirmDelFriend);
 
   /* ============================================================
    *  个人设置（头像 + 名称）
