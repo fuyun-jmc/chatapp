@@ -43,7 +43,10 @@
     urlCache: {},       // file_path -> signed url
     channel: null,
     deviceToken: null,  // 本机设备会话 token（持久在 localStorage）
-    heartbeat: null     // 心跳定时器
+    heartbeat: null,    // 心跳定时器
+    forceChangePwd: false, // 账号找回后强制改密码
+    recPhone: '',
+    recCode: ''
   };
 
   /* ============================================================
@@ -323,8 +326,96 @@
       .then(function (r) {
         if (r.error) throw r.error;
       })
-      .catch(function (e) { showErr('login-error', friendlyError(e)); })
-      .then(function () { btn.disabled = false; btn.textContent = '登录'; });
+    .catch(function (e) { showErr('login-error', friendlyError(e)); })
+    .then(function () { btn.disabled = false; btn.textContent = '登录'; });
+  });
+
+  /* ============================================================
+   *  账号找回（社交关系找回）
+   * ============================================================ */
+  function openRecovery() {
+    resetRecovery();
+    showModal('recovery-modal');
+    $('rec-phone').focus();
+  }
+
+  function resetRecovery() {
+    state.recPhone = '';
+    state.recCode = '';
+    $('rec-phone').value = '';
+    $('rec-code-input').value = '';
+    $('rec-error').hidden = true;
+    $('rec-step1').hidden = false;
+    $('rec-step2').hidden = true;
+  }
+
+  function genRecoveryCode() {
+    var phone = $('rec-phone').value.trim();
+    $('rec-error').hidden = true;
+    if (!PHONE_RE.test(phone)) return showErr('rec-error', '请输入正确的 11 位手机号');
+    // 客户端生成随机 6 位验证码
+    var code = String(Math.floor(100000 + Math.random() * 900000));
+    var btn = $('rec-gen-btn');
+    btn.disabled = true; btn.textContent = '生成中…';
+    sb.rpc('create_recovery_code', { p_phone: phone, p_code: code })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data) throw new Error('NO_PHONE');
+        state.recPhone = phone;
+        state.recCode = code;
+        $('rec-code-display').textContent = code;
+        $('rec-step1').hidden = true;
+        $('rec-step2').hidden = false;
+      })
+      .catch(function (e) {
+        if ((e && e.message) === 'NO_PHONE') showErr('rec-error', '该手机号未注册');
+        else showErr('rec-error', friendlyError(e));
+      })
+      .then(function () { btn.disabled = false; btn.textContent = '生成验证码'; });
+  }
+
+  function verifyRecovery() {
+    var phone = state.recPhone;
+    var code = $('rec-code-input').value.trim();
+    $('rec-error').hidden = true;
+    if (!code) return showErr('rec-error', '请输入好友发给你的验证码');
+    var btn = $('rec-verify-btn');
+    btn.disabled = true; btn.textContent = '验证中…';
+    sb.rpc('recover_account', { p_phone: phone, p_code: code })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var tmp = r.data;
+        if (!tmp) throw new Error('RECOVERY_FAIL');
+        // 标记强制改密码；登录成功后 onAuthStateChange→start 完成时会自动打开设置
+        state.forceChangePwd = true;
+        return sb.auth.signInWithPassword({ email: emailFor(phone), password: tmp });
+      })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        hideModal('recovery-modal');
+        toast('验证成功，请立即修改密码');
+      })
+      .catch(function (e) {
+        if ((e && e.message) === 'RECOVERY_FAIL') {
+          showErr('rec-error', '验证未通过：需至少 2 位好友发送该验证码，且验证码未过期/未使用');
+        } else {
+          showErr('rec-error', friendlyError(e));
+        }
+        state.forceChangePwd = false;
+      })
+      .then(function () { btn.disabled = false; btn.textContent = '验证并登录'; });
+  }
+
+  $('recovery-btn').addEventListener('click', openRecovery);
+  $('recovery-close').addEventListener('click', function () {
+    if (state.forceChangePwd) { toast('请先完成账号找回并修改密码'); return; }
+    hideModal('recovery-modal');
+  });
+  $('rec-gen-btn').addEventListener('click', genRecoveryCode);
+  $('rec-verify-btn').addEventListener('click', verifyRecovery);
+  $('rec-reset-btn').addEventListener('click', resetRecovery);
+  $('recovery-modal').addEventListener('click', function (e) {
+    if (e.target === this && !state.forceChangePwd) hideModal('recovery-modal');
   });
 
   $('register-form').addEventListener('submit', function (ev) {
@@ -412,6 +503,10 @@
       .then(loadRelations)
       .then(loadGroups)
       .then(subscribeRealtime)
+      .then(function () {
+        // 账号找回后：资料加载完即强制打开设置改密码
+        if (state.forceChangePwd) openSettings();
+      })
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
@@ -825,10 +920,16 @@
     });
     resetPwdFields();
     loadDeviceSessions();
+    // 账号找回后强制改密码：显示提示条，并禁用关闭
+    $('force-pwd-banner').hidden = !state.forceChangePwd;
     showModal('settings-modal');
   }
 
   function closeSettings() {
+    if (state.forceChangePwd) {
+      toast('出于安全，请先修改密码后再关闭');
+      return;
+    }
     hideModal('settings-modal');
     pendingAvatar = null;
   }
@@ -852,8 +953,15 @@
     sb.auth.updateUser({ password: np })
       .then(function (r) {
         if (r.error) throw r.error;
-        toast('密码已更新，下次登录生效');
         resetPwdFields();
+        if (state.forceChangePwd) {
+          state.forceChangePwd = false;
+          $('force-pwd-banner').hidden = true;
+          hideModal('settings-modal');
+          toast('密码已修改，账号已恢复');
+        } else {
+          toast('密码已更新，下次登录生效');
+        }
       })
       .catch(function (e) {
         var m = (e && e.message) || '';
