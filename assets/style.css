@@ -503,18 +503,27 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .bubble.media img, .bubble.media video { max-width: 62vw; }
 }
 
-/* ---------- 个人设置弹窗 ---------- */
+/* ---------- 弹窗（顶部居中，兼容各设备） ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 110;
   background: rgba(20,22,28,.5);
+  display: flex;
+  justify-content: center;   /* 水平居中 */
+  align-items: flex-start;   /* 靠顶部对齐 */
+  padding: 24px 16px;
+  overflow-y: auto;          /* 内容超高时整体可滚动 */
+  -webkit-overflow-scrolling: touch;
 }
 .modal-card {
-  position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
-  width: 100%; max-width: 360px; background: var(--panel);
+  position: relative;        /* 不用 absolute 定位，避免个别设备定位异常 */
+  flex: 0 0 auto;
+  width: 100%; max-width: 360px;
+  background: var(--panel);
   border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.22);
-  max-height: calc(100vh - 48px); overflow-y: auto; animation: pop .18s ease;
+  max-height: calc(100vh - 48px); overflow-y: auto;
+  animation: pop .18s ease;
 }
-@keyframes pop { from { transform: translateX(-50%) scale(.96); opacity: .4; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+@keyframes pop { from { transform: translateY(-8px) scale(.98); opacity: .4; } to { transform: translateY(0) scale(1); opacity: 1; } }
 .btn-danger {
   flex: 1; border: 0; background: var(--danger); color: #fff;
   padding: 12px; border-radius: 10px; font-size: 15px; font-weight: 500;
