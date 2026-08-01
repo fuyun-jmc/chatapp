@@ -553,12 +553,47 @@
       phone: state.profile.phone,
       avatarPath: state.profile.avatar_path
     });
+    resetPwdFields();
     showModal('settings-modal');
   }
 
   function closeSettings() {
     hideModal('settings-modal');
     pendingAvatar = null;
+  }
+
+  function resetPwdFields() {
+    $('settings-newpwd').value = '';
+    $('settings-confirm-pwd').value = '';
+    $('change-pwd-error').hidden = true;
+  }
+
+  function changePassword() {
+    var np = $('settings-newpwd').value;
+    var cp = $('settings-confirm-pwd').value;
+    var err = $('change-pwd-error');
+    err.hidden = true;
+    if (np.length < 6) { err.textContent = '新密码至少 6 位'; err.hidden = false; return; }
+    if (np !== cp) { err.textContent = '两次输入的密码不一致'; err.hidden = false; return; }
+
+    var btn = $('change-pwd-btn');
+    btn.disabled = true; btn.textContent = '更新中…';
+    sb.auth.updateUser({ password: np })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('密码已更新，下次登录生效');
+        resetPwdFields();
+      })
+      .catch(function (e) {
+        var m = (e && e.message) || '';
+        if (/re-authenticat|recent login|sign in recently/i.test(m)) {
+          err.textContent = '出于安全需要，请先退出登录并重新登录后再修改密码';
+        } else {
+          err.textContent = friendlyError(e);
+        }
+        err.hidden = false;
+      })
+      .then(function () { btn.disabled = false; btn.textContent = '更新密码'; });
   }
 
   $('settings-btn').addEventListener('click', openSettings);
@@ -604,6 +639,8 @@
       .catch(function (e) { toast(friendlyError(e)); })
       .then(function () { btn.disabled = false; btn.textContent = '更换头像'; });
   });
+
+  $('change-pwd-btn').addEventListener('click', changePassword);
 
   $('settings-save').addEventListener('click', function () {
     var name = $('settings-name').value.trim();
