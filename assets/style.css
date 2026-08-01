@@ -595,6 +595,12 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .device-info { flex: 1; min-width: 0; }
 .device-name { font-size: 14px; font-weight: 600; }
 .device-meta { font-size: 12px; opacity: .62; margin-top: 2px; }
+.device-item .del-btn {
+  opacity: .85; margin-left: 2px;
+  padding: 5px 9px; border-radius: 8px;
+  background: rgba(217, 75, 75, .08);
+}
+.device-item .del-btn:hover { opacity: 1; background: rgba(217, 75, 75, .18); color: var(--danger); }
 
 /* ---------- 提示条 ---------- */
 .toast {
