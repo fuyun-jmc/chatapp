@@ -807,32 +807,43 @@
       .select('id,name,owner_id, group_members(user_id, pinned)')
       .order('created_at', { ascending: false })
       .then(function (r) {
-        if (r.error) throw r.error;
-        state.groups = (r.data || []).map(function (g) {
-          var members = (g.group_members || []).map(function (m) { return m.user_id; });
-          // 找出“我”的成员行，取其 pinned 作为本端置顶标记
-          var mine = (g.group_members || []).filter(function (m) { return m.user_id === state.uid; })[0];
-          var pinned = mine ? !!mine.pinned : false;
-          return {
-            type: 'group',
-            id: g.id,
-            name: g.name,
-            ownerId: g.owner_id,
-            memberIds: members,
-            memberCount: members.length,
-            iAmOwner: g.owner_id === state.uid,
-            pinned: pinned
-          };
-        });
-        // 置顶的群排到最前，其余保持（创建时间倒序）
-        state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
-        if (state.active && state.active.type === 'group') {
-          var fresh = groupById(state.active.id);
-          if (fresh) state.active = fresh;
+        if (!r.error) return parseGroups(true, r);
+        var msg = (r.error.message || '') + ' ' + (r.error.details || '') + ' ' + (r.error.hint || '');
+        // 如果 pinned 列还没建，自动降级到不带 pinned 的查询，保证列表能显示
+        if (msg.indexOf('pinned') !== -1) {
+          return sb.from('groups')
+            .select('id,name,owner_id, group_members(user_id)')
+            .order('created_at', { ascending: false })
+            .then(function (r2) { return parseGroups(false, r2); });
         }
-        renderGroups();
-        return state.groups;
+        throw r.error;
       });
+  }
+
+  function parseGroups(withPin, r) {
+    if (r.error) throw r.error;
+    state.groups = (r.data || []).map(function (g) {
+      var members = (g.group_members || []).map(function (m) { return m.user_id; });
+      var mine = (g.group_members || []).filter(function (m) { return m.user_id === state.uid; })[0];
+      var pinned = withPin && mine ? !!mine.pinned : false;
+      return {
+        type: 'group',
+        id: g.id,
+        name: g.name,
+        ownerId: g.owner_id,
+        memberIds: members,
+        memberCount: members.length,
+        iAmOwner: g.owner_id === state.uid,
+        pinned: pinned
+      };
+    });
+    state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
+    if (state.active && state.active.type === 'group') {
+      var fresh = groupById(state.active.id);
+      if (fresh) state.active = fresh;
+    }
+    renderGroups();
+    return state.groups;
   }
 
   function renderGroups() { renderConversations(); }
@@ -840,12 +851,21 @@
   function toggleGroupPin(g) {
     sb.rpc('toggle_group_pin', { p_group_id: g.id })
       .then(function (res) {
-        g.pinned = !!res;
+        if (res && res.error) throw res.error;
+        var val = res && res.data !== undefined ? res.data : res;
+        g.pinned = !!val;
         if (state.active && state.active.type === 'group' && state.active.id === g.id) state.active.pinned = g.pinned;
         state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
         renderGroups();
       })
-      .catch(function (e) { toast(friendlyError(e)); });
+      .catch(function (e) {
+        var msg = friendlyError(e);
+        if (/pinned|toggle_group_pin|column .* does not exist/i.test(msg)) {
+          toast('群置顶功能需要先在 Supabase 运行 20260801_group_pin.sql 迁移');
+          return;
+        }
+        toast(msg);
+      });
   }
 
   function loadGroupMemberProfiles(groupId) {
