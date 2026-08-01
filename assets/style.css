@@ -182,7 +182,9 @@ input, textarea { font-family: inherit; font-size: 15px; }
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
   font-size: 14px;
 }
-.search-result .row { display: flex; align-items: center; gap: 9px; }
+.search-result .row { display: flex; align-items: center; gap: 9px; padding: 5px 4px; border-radius: 8px; }
+.search-result .row.clickable { cursor: pointer; }
+.search-result .row.clickable:hover { background: var(--line); }
 .search-result .info { flex: 1; min-width: 0; }
 .search-result .nm { font-weight: 500; }
 .search-result .ph { font-size: 12.5px; color: var(--text-3); }
@@ -212,6 +214,11 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .friend-search input::placeholder { color: var(--text-3); }
 .friend-search:focus-within { box-shadow: 0 0 0 1.5px var(--brand); }
+
+/* 合并后的统一搜索框（顶部） */
+.unified-search { padding: 12px 14px 6px; }
+.unified-search .friend-search { margin: 0; }
+.unified-search .search-result { margin: 8px 0 0; max-height: 52vh; overflow-y: auto; }
 
 .request-list, .friend-list { list-style: none; margin: 0; padding: 0; }
 
