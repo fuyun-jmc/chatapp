@@ -710,7 +710,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* ---------- 绝对管理员入口（小而隐蔽） ---------- */
 .gm-layer {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-  pointer-events: none; z-index: 5;
+  pointer-events: none; z-index: 10000;
 }
 .gm-entry {
   position: absolute; right: 8px; bottom: 8px;
