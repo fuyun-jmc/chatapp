@@ -501,14 +501,17 @@
       .order('granted_at', { ascending: false })
       .then(function (r) {
         if (r.error) { box.innerHTML = '<div class="title-loading">称号加载失败</div>'; return; }
-        var rows = (r.data || []).map(function (u) { return u.titles; }).filter(Boolean);
+        var rows = (r.data || [])
+          .map(function (u) { return { t: u.titles, granted_at: u.granted_at, source: u.source }; })
+          .filter(function (x) { return x.t; });
         var wornId = state.titlesMap && state.titlesMap[state.uid] && state.titlesMap[state.uid].titleId;
         box.innerHTML = '';
         if (!rows.length) {
           if (empty) empty.hidden = false;
           return;
         }
-        rows.forEach(function (t) {
+        rows.forEach(function (x) {
+          var t = x.t;
           var worn = t.id === wornId;
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
           // 边框预览
@@ -520,6 +523,11 @@
           var info = el('div', 'title-info');
           info.appendChild(el('div', 'title-name', t.name));
           if (t.description) info.appendChild(el('div', 'title-desc', t.description));
+          // 获得时间与来源
+          var meta = el('div', 'title-meta');
+          meta.appendChild(el('span', 'title-time', '获得于 ' + fmtDateTime(x.granted_at)));
+          meta.appendChild(el('span', 'title-src', x.source === 'auto' ? '自动获得' : '手动授予'));
+          info.appendChild(meta);
           card.appendChild(info);
           var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : ''), worn ? '取消佩戴' : '佩戴');
           btn.type = 'button';
@@ -2569,8 +2577,12 @@
           var main = el('div', 'pt-main');
           main.appendChild(el('div', 'tn', t.name));
           if (t.description) main.appendChild(el('div', 'td', t.description));
+          // 获得时间与来源
+          var meta = el('div', 'pt-meta');
+          meta.appendChild(el('span', 'pt-time', '获得于 ' + fmtDateTime(t.granted_at)));
+          meta.appendChild(el('span', 'src', t.source === 'auto' ? '自动获得' : '授予'));
+          main.appendChild(meta);
           row.appendChild(main);
-          row.appendChild(el('span', 'src', t.source === 'auto' ? '自动获得' : '授予'));
           box.appendChild(row);
         });
       })
