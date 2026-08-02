@@ -46,8 +46,13 @@
     heartbeat: null,    // 心跳定时器
     forceChangePwd: false, // 账号找回后强制改密码
     recPhone: '',
-    recCode: ''
+    recCode: '',
+    lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
+    onlineTimer: null   // 在线状态轮询定时器
   };
+
+  // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
+  var ONLINE_WINDOW_MS = 2 * 60 * 1000;
 
   /* ============================================================
    *  工具函数
@@ -335,6 +340,8 @@
     }, { onConflict: 'token' })
       .then(function (r) { if (r.error) console.warn('registerDeviceSession:', r.error.message); })
       .catch(function (e) { console.warn('registerDeviceSession failed:', e && e.message); });
+    // 登录即标记在线
+    touchLastActive();
   }
 
   // 每 30s 保活 + 检测本机行是否被注销（被踢则自动登出）
@@ -343,6 +350,8 @@
     state.heartbeat = setInterval(function () {
       if (!state.uid || !state.deviceToken) return;
       var token = state.deviceToken;
+      // 保活自己的在线状态
+      touchLastActive();
       sb.from('device_sessions').update({ last_seen: new Date().toISOString() })
         .eq('token', token)
         .then(function (r) {
@@ -359,6 +368,59 @@
         })
         .catch(function () {});
     }, 30000);
+  }
+
+  // 上报自己的活跃时间（写入 profiles.last_active，仅自己的行受策略允许）
+  function touchLastActive() {
+    if (!state.uid) return;
+    sb.from('profiles').update({ last_active: new Date().toISOString() })
+      .eq('id', state.uid)
+      .then(function (r) { if (r.error) console.warn('touchLastActive:', r.error.message); })
+      .catch(function () {});
+  }
+
+  // 某 uid 当前是否在线（last_active 在窗口内）
+  function isOnline(uid) {
+    var t = state.lastActive[uid];
+    if (!t) return false;
+    var ms = Date.parse(t);
+    if (isNaN(ms)) return false;
+    return (Date.now() - ms) < ONLINE_WINDOW_MS;
+  }
+
+  // 在头像右上角追加在线绿点（离线则不显示）
+  function addOnlineDot(av, uid) {
+    if (!av) return;
+    var old = av.querySelector('.online-dot');
+    if (old) old.remove();
+    if (!isOnline(uid)) return;
+    var dot = el('span', 'online-dot');
+    av.appendChild(dot);
+  }
+
+  // 拉取所有好友的在线状态：直接查 profiles（全员可读），失败则静默降级为全离线
+  function refreshOnline() {
+    var ids = state.friends.map(function (f) { return f.id; });
+    if (!ids.length) return;
+    sb.from('profiles').select('id, last_active').in('id', ids)
+      .then(function (r) {
+        if (r.error) return;
+        var map = {};
+        (r.data || []).forEach(function (p) { map[p.id] = p.last_active; });
+        state.lastActive = map;
+        renderConversations();
+        if (state.active && state.active.type === 'friend') updatePeerOnline();
+      })
+      .catch(function () {});
+  }
+
+  // 当前打开的好友聊天里，刷新头部在线指示（绿点 + “在线”文字）
+  function updatePeerOnline() {
+    if (!state.active || state.active.type !== 'friend') return;
+    var av = $('peer-avatar');
+    if (av) addOnlineDot(av, state.active.id);
+    var ph = $('peer-phone');
+    if (ph) ph.textContent = state.active.phone + (isOnline(state.active.id) ? ' · 在线' : '');
   }
 
   function loadDeviceSessions() {
@@ -704,6 +766,7 @@
 
   function teardown() {
     if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
+    if (state.onlineTimer) { clearInterval(state.onlineTimer); state.onlineTimer = null; }
     if (state.channel) { sb.removeChannel(state.channel); state.channel = null; }
     if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
     state.uid = null; state.profile = null; state.friends = [];
@@ -723,6 +786,11 @@
     registerDeviceSession();
     startHeartbeat();
     setupKickChannel();
+
+    // 在线状态：登录后拉一次，之后每 30s 轮询（好友登入/登出即可反映）
+    refreshOnline();
+    if (state.onlineTimer) clearInterval(state.onlineTimer);
+    state.onlineTimer = setInterval(refreshOnline, 30000);
 
     loadProfile()
       .then(loadRelations)
@@ -809,6 +877,7 @@
         });
         renderFriends();
         renderRequests();
+        refreshOnline(); // 好友加载完后立即拉一次在线状态
 
         // 当前会话对象被删除好友时收起聊天窗
         if (state.active && !friends.some(function (f) { return f.id === state.active.id; })) {
@@ -945,6 +1014,7 @@
     info.appendChild(el('div', 'nm', displayName(f)));
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
     row.appendChild(av); row.appendChild(info);
+    addOnlineDot(av, f.id);
 
     var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
     pin.type = 'button';
@@ -971,6 +1041,7 @@
     info.appendChild(el('div', 'nm', displayName(f)));
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
     li.appendChild(av); li.appendChild(info);
+    addOnlineDot(av, f.id);
 
     var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
     pin.type = 'button';
@@ -1643,7 +1714,8 @@
     document.querySelector('.app-view').classList.add('show-chat');
 
     $('peer-name').textContent = isGroup ? peer.name : displayName(peer);
-    $('peer-phone').textContent = isGroup ? (peer.memberCount + ' 位成员') : peer.phone;
+    $('peer-phone').textContent = isGroup ? (peer.memberCount + ' 位成员')
+      : peer.phone + (isOnline(peer.id) ? ' · 在线' : '');
 
     var av = $('peer-avatar');
     if (isGroup) {
@@ -1652,6 +1724,7 @@
       var oldImg = av.querySelector('img'); if (oldImg) oldImg.remove();
     } else {
       setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
+      addOnlineDot(av, peer.id);
     }
 
     var rb = $('peer-remark-btn');
