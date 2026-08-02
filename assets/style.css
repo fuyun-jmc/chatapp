@@ -586,6 +586,11 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .device-section .form-hint { margin-top: 4px; margin-bottom: 10px; }
 .account-section { margin-top: 2px; }
 .account-section .btn-ghost { margin-top: 10px; }
+
+/* 危险操作区：注销账号 */
+.danger-zone { margin-top: 2px; }
+.danger-zone .danger-title { color: var(--danger); }
+.danger-zone .btn-danger { width: 100%; justify-content: center; margin-top: 10px; }
 #device-list { margin: 0 0 10px; }
 .device-item {
   display: flex; align-items: center; gap: 10px;
