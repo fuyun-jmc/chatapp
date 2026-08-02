@@ -737,3 +737,43 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-row-sub { font-size: 12px; color: var(--text-3); }
 .gm-danger { color: var(--danger); border-color: var(--danger); }
 .gm-danger:hover { background: rgba(217,75,75,.08); }
+
+/* GM 称号管理 */
+.gm-tabs { display: flex; gap: 6px; margin: 0 8px; }
+.gm-tab { font-size: 12px; color: var(--text-3); background: none; border: none; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+.gm-tab.active { color: #fff; background: var(--brand); }
+.gm-titles { padding: 12px 14px 16px; overflow-y: auto; }
+.gm-titles-bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.gm-title-card { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.gm-title-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gm-title-name { font-size: 14px; font-weight: 700; border: 1px solid #ffd700; border-radius: 6px; padding: 1px 8px; }
+.gm-title-cond { font-size: 12px; color: var(--text-3); }
+.gm-title-desc { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+.gm-title-usage { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.gm-title-actions { display: flex; gap: 8px; margin-top: 8px; }
+.gm-grant-box { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gm-grant-box input { flex: 1 1 140px; min-width: 120px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; }
+.gm-grant-result { flex-basis: 100%; margin-top: 6px; }
+.gm-grant-user { font-size: 13px; color: var(--text); margin-bottom: 6px; }
+.gm-confirm { color: var(--brand); border-color: var(--brand); }
+.gm-titles-sub { margin-top: 4px; }
+.gm-title-modal { background: rgba(0,0,0,.45); }
+.gm-title-modal .modal-head { padding: 14px 16px 0; }
+.gm-title-modal .settings-body { padding: 12px 16px 16px; }
+.gm-title-modal .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.gm-title-modal .field > span { font-size: 12px; color: var(--text-3); }
+.gm-title-modal .field input[type=text], .gm-title-modal .field input, .gm-title-modal .field select {
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px;
+}
+.gm-title-modal .field input[type=color] { width: 48px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+
+/* 称号徽标（名字后的小标签） */
+.title-badge {
+  display: inline-block; vertical-align: middle;
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: #1a1a1a; line-height: 1.5;
+  white-space: nowrap;
+}
+/* friend-list 里的 nm 行需要给徽标留空间 */
+.friend-list .nm, .info .nm { display: flex; align-items: center; flex-wrap: wrap; }
+
