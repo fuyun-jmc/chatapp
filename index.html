@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=56">
+<link rel="stylesheet" href="assets/style.css?v=57">
 </head>
 <body>
 
@@ -473,7 +473,10 @@
       <div class="gm-title-list" id="gm-title-list"><div class="gm-empty">加载中…</div></div>
     </div>
 
-    <!-- 新建称号表单（弹层） -->
+  </div>
+</div>
+
+    <!-- 新建称号表单（独立顶层 modal，避免嵌套在 gm-panel 内被 overflow 裁剪 / 定位异常） -->
     <div class="modal gm-title-modal" id="gm-title-modal" hidden>
       <div class="gm-title-card">
         <header class="modal-head">
@@ -510,9 +513,6 @@
         </div>
       </div>
     </div>
-
-  </div>
-</div>
 
 <div class="modal" id="recovery-modal">
   <div class="modal-card">
@@ -561,7 +561,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=56"></script>
-<script src="assets/app.js?v=56"></script>
+<script src="assets/config.js?v=57"></script>
+<script src="assets/app.js?v=57"></script>
 </body>
 </html>
