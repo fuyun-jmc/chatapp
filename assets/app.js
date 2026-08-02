@@ -51,10 +51,12 @@
     lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
     onlineTimer: null,  // 在线状态轮询定时器
     presenceChannel: null, // 在线状态 Realtime 广播频道
-    titlesMap: {},       // uid -> { primary:{titleId,titleName,frameColor,frameStyle}|null, admin:{...}|null }（展示称号，用于头像框；admin 为强制佩戴的管理员称号）
+    titlesMap: {},       // uid -> { primary:{titleId,titleName,frameColor,frameStyle}|null, admin:{...}|null, dev:{...}|null }
+                         // primary=自选展示称号；admin=强制佩戴的「管理员」；dev=强制佩戴的「开发者」（专属头像框）
     gmAdminUid: null,    // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
     forbiddenWords: [],  // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
     isAdmin: false,      // 是否持有「管理员」称号（会话内显示违禁接收卡片的开关）
+    isDev: false,        // 是否持有「开发者」称号（专属头像框）
     ownedTitles: []      // 当前用户已拥有的全部称号名称
   };
 
@@ -454,7 +456,13 @@
             frameColor: t.admin_title_color || '#ffd700',
             frameStyle: t.admin_title_frame || 'ring'
           } : null;
-          state.titlesMap[t.user_id] = { primary: primary, admin: admin };
+          var dev = t.dev_title_id ? {
+            titleId: t.dev_title_id,
+            titleName: t.dev_title_name,
+            frameColor: t.dev_title_color || '#7c4dff',
+            frameStyle: 'dev'   // 开发者专属头像框，忽略 frame_style
+          } : null;
+          state.titlesMap[t.user_id] = { primary: primary, admin: admin, dev: dev };
         });
         // 重新渲染好友列表，让头像框生效
         if (typeof renderConversations === 'function') renderConversations();
@@ -462,40 +470,58 @@
       .catch(function () { state.titlesMap = state.titlesMap || {}; });
   }
 
-  // 给头像元素套上称号边框（环 / 发光 / 加粗环）
-  // 管理员称号强制佩戴：持有『管理员』时优先用其边框（最醒目），否则用自选边框
+  // 强制佩戴的特殊称号名称（前端按名称精确匹配，不可自行取消佩戴）
+  var FORCED_TITLES = ['开发者', '管理员'];
+  function isForcedTitle(name) { return FORCED_TITLES.indexOf(name) >= 0; }
+
+  // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选（按 titleId 去重）
+  function titleSlots(uid) {
+    var m = state.titlesMap && state.titlesMap[uid];
+    if (!m) return [];
+    var list = [];
+    var seen = {};
+    [m.dev, m.admin, m.primary].forEach(function (t) {
+      if (!t || !t.titleId || seen[t.titleId]) return;
+      seen[t.titleId] = 1;
+      list.push(t);
+    });
+    return list;
+  }
+
+  // 给头像元素套上称号边框（环 / 发光 / 加粗环 / 开发者专属框）
+  // 优先级：开发者专属框 > 管理员（强制佩戴）> 自选称号
   function applyTitleFrame(av, uid) {
     if (!av) return;
     av.style.boxShadow = '';
     av.style.border = '';
-    var m = state.titlesMap && state.titlesMap[uid];
-    if (!m) return;
-    var t = m.admin || m.primary;
-    if (!t || !t.titleId) return;
+    if (av.classList) av.classList.remove('dev-frame');
+    var list = titleSlots(uid);
+    if (!list.length) return;
+    var t = list[0];
     var c = t.frameColor || '#ffd700';
-    if (t.frameStyle === 'solid')      av.style.boxShadow = '0 0 0 4px ' + c;
+    if (t.frameStyle === 'dev') {
+      // 开发者专属：内白圈 + 彩色双环 + 光晕（普通称号无法配置出这种样式）
+      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px ' + c + ', 0 0 14px 4px ' + c;
+      if (av.classList) av.classList.add('dev-frame');
+    }
+    else if (t.frameStyle === 'solid') av.style.boxShadow = '0 0 0 4px ' + c;
     else if (t.frameStyle === 'glow')  av.style.boxShadow = '0 0 10px 3px ' + c;
     else                               av.style.boxShadow = '0 0 0 3px ' + c; // ring
-    // tooltip 合并两个称号名（管理员强制显示）
-    var names = [];
-    if (m.primary) names.push(m.primary.titleName);
-    if (m.admin && (!m.primary || m.admin.titleId !== m.primary.titleId)) names.push(m.admin.titleName);
+    // tooltip 合并全部称号名
+    var names = list.map(function (x) { return x.titleName; });
     if (names.length) av.title = names.join(' · ');
   }
 
-  // 在名字容器后追加称号小徽标（管理员强制佩戴 + 可选自选，去重）
+  // 在名字容器后追加称号小徽标（开发者/管理员强制佩戴 + 自选，去重）
   function addTitleBadge(container, uid) {
     if (!container) return;
     var olds = container.querySelectorAll('.title-badge');
     for (var i = 0; i < olds.length; i++) olds[i].remove();
-    var m = state.titlesMap && state.titlesMap[uid];
-    if (!m) return;
-    var list = [];
-    if (m.primary) list.push(m.primary);
-    if (m.admin && (!m.primary || m.admin.titleId !== m.primary.titleId)) list.push(m.admin);
-    list.forEach(function (t) {
-      var b = el('span', 'title-badge', t.titleName);
-      b.style.background = t.frameColor || '#ffd700';
+    titleSlots(uid).forEach(function (t) {
+      var isDev = t.frameStyle === 'dev';
+      var b = el('span', 'title-badge' + (isDev ? ' badge-dev' : ''), t.titleName);
+      // 开发者徽标用 CSS 渐变（专属），其余用称号自身颜色
+      if (!isDev) b.style.background = t.frameColor || '#ffd700';
       container.appendChild(b);
     });
   }
@@ -532,14 +558,20 @@
         }
         rows.forEach(function (x) {
           var t = x.t;
-          var isAdminTitle = t.name === '管理员';   // 管理员称号强制佩戴，不可取消
-          var worn = isAdminTitle ? true : (t.id === wornId);
+          var isDevTitle = t.name === '开发者';     // 开发者称号强制佩戴 + 专属头像框
+          var forced = isForcedTitle(t.name);       // 开发者 / 管理员：强制佩戴，不可取消
+          var worn = forced ? true : (t.id === wornId);
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
           // 边框预览
-          var prev = el('div', 'title-prev');
+          var prev = el('div', 'title-prev' + (isDevTitle ? ' dev-frame' : ''));
           prev.style.background = '#fff';
-          prev.style.boxShadow = (t.frame_style === 'solid' ? '0 0 0 4px ' :
-                                  t.frame_style === 'glow' ? '0 0 10px 3px ' : '0 0 0 3px ') + (t.frame_color || '#ffd700');
+          if (isDevTitle) {
+            var dc = t.frame_color || '#7c4dff';
+            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px ' + dc + ', 0 0 14px 4px ' + dc;
+          } else {
+            prev.style.boxShadow = (t.frame_style === 'solid' ? '0 0 0 4px ' :
+                                    t.frame_style === 'glow' ? '0 0 10px 3px ' : '0 0 0 3px ') + (t.frame_color || '#ffd700');
+          }
           card.appendChild(prev);
           var info = el('div', 'title-info');
           info.appendChild(el('div', 'title-name', t.name));
@@ -550,7 +582,7 @@
           meta.appendChild(el('span', 'title-src', x.source === 'auto' ? '自动获得' : '手动授予'));
           info.appendChild(meta);
           card.appendChild(info);
-          if (isAdminTitle) {
+          if (forced) {
             // 强制佩戴：显示标签，不可取消
             card.appendChild(el('span', 'title-forced', '强制佩戴'));
           } else {
@@ -571,8 +603,8 @@
     sb.rpc('set_my_title', { p_title_id: titleId })
       .then(function (r) {
         if (r.error) throw r.error;
-        // 更新本地展示称号（仅改自选 primary，保留强制佩戴的 admin 称号）并立刻重绘头像框
-        var prev = (state.titlesMap && state.titlesMap[state.uid]) || { primary: null, admin: null };
+        // 更新本地展示称号（仅改自选 primary，保留强制佩戴的 开发者/管理员 称号）并立刻重绘头像框
+        var prev = (state.titlesMap && state.titlesMap[state.uid]) || { primary: null, admin: null, dev: null };
         state.titlesMap = state.titlesMap || {};
         if (titleId) {
           prev.primary = { titleId: titleId, titleName: name, frameColor: color || '#ffd700', frameStyle: style || 'ring' };
@@ -2037,6 +2069,7 @@
         var names = (r.data || []).map(function (x) { return x.titles && x.titles.name; }).filter(Boolean);
         state.ownedTitles = names;
         state.isAdmin = names.indexOf('管理员') >= 0;
+        state.isDev = names.indexOf('开发者') >= 0;
         updateAdminCard();
       })
       .catch(function () {});
