@@ -605,6 +605,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .title-info { flex: 1; min-width: 0; }
 .title-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .title-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text-3); }
+.title-meta .title-src { color: var(--brand); }
 .btn-outline {
   background: transparent; border: 1px solid var(--brand); color: var(--brand);
 }
@@ -823,6 +825,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .profile-title .pt-main { display: flex; flex-direction: column; min-width: 0; }
 .profile-title .tn { font-size: 14px; font-weight: 600; color: var(--text); }
 .profile-title .td { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile-title .src { margin-left: auto; font-size: 11px; color: var(--text-3); flex: 0 0 auto; }
+.profile-title .pt-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-size: 11px; color: var(--text-3); }
+.profile-title .pt-time { flex: 1; }
+.profile-title .src { font-size: 11px; color: var(--brand); flex: 0 0 auto; }
 
 
