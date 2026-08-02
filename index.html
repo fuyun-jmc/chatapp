@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=50">
+<link rel="stylesheet" href="assets/style.css?v=51">
 </head>
 <body>
 
@@ -267,6 +267,15 @@
         <input type="text" id="settings-name" maxlength="20" placeholder="你的昵称" autocomplete="off">
       </label>
       <p class="form-hint">名称会显示给你的好友，可随时修改。</p>
+
+      <div class="divider"></div>
+
+      <div class="title-section" id="my-titles-section">
+        <div class="section-title">我的称号</div>
+        <p class="form-hint">选择佩戴的称号，将显示在头像框上；不佩戴则取消头像框。</p>
+        <div class="title-list" id="my-titles-list"></div>
+        <p class="title-empty" id="my-titles-empty" hidden>暂无称号，达成条件或等待管理员授予后即可佩戴。</p>
+      </div>
 
       <div class="divider"></div>
 
@@ -549,7 +558,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=50"></script>
-<script src="assets/app.js?v=50"></script>
+<script src="assets/config.js?v=51"></script>
+<script src="assets/app.js?v=51"></script>
 </body>
 </html>
