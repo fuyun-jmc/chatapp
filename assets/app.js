@@ -3079,19 +3079,21 @@
     if (!text || !state.active) return;
     // 禁言检查（不清空输入，方便解除后重发）
     if (!(await ensureNotMuted())) return;
-    input.value = '';
     input.style.height = 'auto';
 
     var peerId = state.active.id;
     var isGroup = state.active.type === 'group';
 
-    // 违禁词检测：命中则记录一次警告（清零连续清净天数），仍照常发送
+    // 违禁词检测：命中则拦截发送 + 记录一次警告（清零连续清净天数）
     var badWord = matchForbidden(text);
     if (badWord) {
       sb.rpc('record_word_warning', { p_word: badWord })
         .then(function () {}).catch(function () {});
-      toast('⚠️ 消息包含违禁词「' + badWord + '」，已记录提醒');
+      toast('⚠️ 消息包含违禁内容，已被拦截，未能发送。请文明发言。');
+      return;   // 拦截：不发送、不清空输入，便于修改后重发
     }
+
+    input.value = '';   // 确认无违禁词后才清空输入框
 
     var payload = {
       sender_id: state.uid,
