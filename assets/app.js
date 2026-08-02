@@ -951,6 +951,7 @@
 
   function teardown() {
     if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
+    if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
     if (state.onlineTimer) { clearInterval(state.onlineTimer); state.onlineTimer = null; }
     if (state.channel) { sb.removeChannel(state.channel); state.channel = null; }
     if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
@@ -993,6 +994,7 @@
       .then(loadDisplayTitles)
       .then(applySelfTitle)
       .then(subscribeRealtime)
+      .then(startPoll)
       .then(function () {
         // 账号找回后：资料加载完即强制打开设置改密码
         if (state.forceChangePwd) openSettings();
@@ -2574,6 +2576,11 @@
           box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧'));
         }
         scrollBottom();
+        // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
+        state.lastSeenTs = rows.reduce(function (mx, x) {
+          var t = x.created_at ? new Date(x.created_at).getTime() : 0;
+          return t > mx ? t : mx;
+        }, 0);
         if (state.recallTimer) clearInterval(state.recallTimer);
         state.recallTimer = setInterval(refreshRecallButtons, 15000);
       })
@@ -2642,6 +2649,8 @@
 
   function appendMessage(m) {
     var box = $('messages');
+    // 幂等：同一消息只渲染一次，避免实时推送与兜底轮询重复追加
+    if (m && m.id && box.querySelector('[data-id="' + m.id + '"]')) return;
     var sep = box.querySelector('.day-sep');
     if (sep && sep.textContent === '还没有消息，打个招呼吧') sep.remove();
     var near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
@@ -2956,6 +2965,14 @@
   function subscribeRealtime() {
     if (state.channel) sb.removeChannel(state.channel);
 
+    // 网络恢复时自动重连实时通道（特殊设备 WebSocket 易在断网/锁屏后掉线）
+    if (!state._rtOnlineBound) {
+      state._rtOnlineBound = true;
+      window.addEventListener('online', function () {
+        if (state.uid) subscribeRealtime();
+      });
+    }
+
     state.channel = sb.channel('chat-' + state.uid)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'messages'
@@ -3014,7 +3031,47 @@
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'group_members'
       }, function () { loadGroups(); })
-      .subscribe();
+      .subscribe(function (status) {
+        // 断线/超时时自动重连，避免实时推送永久失效
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setTimeout(function () { if (state.uid) subscribeRealtime(); }, 1500);
+        }
+      });
+  }
+
+  /* 实时推送兜底：特殊设备 WebSocket 易断线，定时拉取当前会话的新消息差量，
+     保证「发新消息不用刷新也能看到」。appendMessage 内部已按 data-id 去重。 */
+  function fillNewMessages() {
+    if (!state.active || !state.uid) return;
+    var peer = state.active;
+    var isGroup = peer.type === 'group';
+    var q = sb.from('messages').select('*');
+    if (isGroup) q = q.eq('group_id', peer.id);
+    else q = q.or('and(sender_id.eq.' + state.uid + ',receiver_id.eq.' + peer.id + '),' +
+                      'and(sender_id.eq.' + peer.id + ',receiver_id.eq.' + state.uid + ')');
+    if (state.lastSeenTs) q = q.gt('created_at', new Date(state.lastSeenTs).toISOString());
+    q.order('created_at', { ascending: true }).limit(50)
+      .then(function (r) {
+        if (r.error) return;
+        if (!state.active || state.active.id !== peer.id) return;
+        (r.data || []).forEach(function (m) {
+          appendMessage(m);
+          var t = m.created_at ? new Date(m.created_at).getTime() : 0;
+          if (t > (state.lastSeenTs || 0)) state.lastSeenTs = t;
+        });
+      })
+      .catch(function () {});
+  }
+
+  function startPoll() {
+    if (state.pollTimer) return;
+    state.pollTimer = setInterval(function () {
+      if (document.hidden || !state.uid || !state.active) return;
+      fillNewMessages();
+    }, 6000);
+  }
+  function stopPoll() {
+    if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
   }
 
   /* 页面重新可见时补拉一次，避免长时间挂起丢消息 */
@@ -3022,6 +3079,7 @@
     if (!document.hidden && state.uid) {
       loadRelations();
       if (state.active) openChat(state.active);
+      fillNewMessages();
     }
   });
 })();
