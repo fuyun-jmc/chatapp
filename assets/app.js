@@ -1408,9 +1408,9 @@
     // 强制改密码期间不允许注销账号（先完成安全流程）
     var dab = $('delete-account-btn');
     if (dab) dab.hidden = !!state.forceChangePwd;
-    // 同样在强制改密码期间隐藏 GM 入口
+    // GM 入口仅对管理员账号可见；其他用户一律不显示（强制改密码期间也隐藏）
     var ge = $('gm-entry');
-    if (ge) ge.style.display = state.forceChangePwd ? 'none' : '';
+    if (ge) ge.style.display = (state.forceChangePwd || state.uid !== GM_ADMIN_UID) ? 'none' : '';
     showModal('settings-modal');
   }
 
@@ -1537,6 +1537,9 @@
    * ============================================================ */
   var gmPwd = '';        // 本次会话的管理员口令（仅内存）
   var gmCurrent = null;  // 当前正在查看的目标用户 { uid, name, phone }
+  // 管理员账号 uid（须与数据库 gm_admin_uid() 一致）。仅用于控制 GM 入口的可见性，
+  // 真正的权限仍由后端 gm_check 校验 auth.uid() === gm_admin_uid() 且口令正确，前端拿不到权限。
+  var GM_ADMIN_UID = '66f0744b-007b-4d5f-a9bc-2c5e4462baf9';
 
   function openGmEntry() {
     $('gm-pwd-input').value = '';
