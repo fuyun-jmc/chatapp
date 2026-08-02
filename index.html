@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=67">
+<link rel="stylesheet" href="assets/style.css?v=68">
 </head>
 <body>
 
@@ -308,6 +308,7 @@
         <div class="section-title">账号</div>
         <p class="form-hint">退出当前账号并返回登录页，以便切换到其他账号。</p>
         <button class="btn-ghost" id="switch-account-settings" type="button">切换账号</button>
+        <button class="btn-ghost gm-open-btn" id="gm-open-btn" type="button">进入 GM 后台</button>
       </div>
 
       <div class="divider"></div>
@@ -323,12 +324,6 @@
       <button class="btn-ghost" id="settings-cancel" type="button">取消</button>
       <button class="btn-primary" id="settings-save" type="button">保存</button>
     </footer>
-
-    <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
-         放在 modal-card 内并相对于卡片绝对定位，确保随卡片一起出现在视口内。 -->
-    <div class="gm-layer" id="gm-layer" hidden>
-      <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
-    </div>
 
   </div>
 </div>
@@ -586,7 +581,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=67"></script>
-<script src="assets/app.js?v=67"></script>
+<script src="assets/config.js?v=68"></script>
+<script src="assets/app.js?v=68"></script>
 </body>
 </html>
