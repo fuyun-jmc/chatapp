@@ -1216,6 +1216,9 @@
     // 强制改密码期间不允许注销账号（先完成安全流程）
     var dab = $('delete-account-btn');
     if (dab) dab.hidden = !!state.forceChangePwd;
+    // 同样在强制改密码期间隐藏 GM 入口
+    var ge = $('gm-entry');
+    if (ge) ge.style.display = state.forceChangePwd ? 'none' : '';
     showModal('settings-modal');
   }
 
@@ -1333,6 +1336,193 @@
       });
   }
 
+  /* ============================================================
+   *  绝对管理员（GM）后台
+   *  入口在个人设置底部（刻意隐蔽）；输入口令后进入页面内覆盖层，
+   *  可搜索全站用户、查看其群聊/好友，并强制删除群聊/好友/账号。
+   *  口令仅存于本次会话内存，不写入 localStorage；所有 GM 操作 RPC
+   *  均在数据库端再次校验口令（gm_check），保证前端拿不到口令也能拦住。
+   * ============================================================ */
+  var gmPwd = '';        // 本次会话的管理员口令（仅内存）
+  var gmCurrent = null;  // 当前正在查看的目标用户 { uid, name, phone }
+
+  function openGmEntry() {
+    $('gm-pwd-input').value = '';
+    $('gm-pwd-error').hidden = true;
+    showModal('gm-pwd-modal');
+    try { $('gm-pwd-input').focus(); } catch (e) {}
+  }
+
+  function gmTryAuth() {
+    var pwd = $('gm-pwd-input').value;
+    var err = $('gm-pwd-error');
+    err.hidden = true;
+    if (!pwd) { err.textContent = '请输入口令'; err.hidden = false; return; }
+    var btn = $('gm-pwd-confirm');
+    btn.disabled = true; btn.textContent = '验证中…';
+    sb.rpc('gm_auth', { p_pwd: pwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data) throw new Error('GM_AUTH_FAIL');
+        gmPwd = pwd;
+        hideModal('gm-pwd-modal');
+        closeSettings();
+        openGmPanel();
+      })
+      .catch(function (e) {
+        err.textContent = '口令错误，无法进入';
+        err.hidden = false;
+        btn.disabled = false; btn.textContent = '进入';
+      });
+  }
+
+  function openGmPanel() {
+    $('gm-search-input').value = '';
+    $('gm-results').innerHTML = '';
+    $('gm-detail').hidden = true;
+    $('gm-detail').innerHTML = '';
+    showModal('gm-panel');
+    try { $('gm-search-input').focus(); } catch (e) {}
+  }
+
+  function closeGm() { hideModal('gm-panel'); }
+
+  function gmSearch() {
+    var q = $('gm-search-input').value.trim();
+    var box = $('gm-results');
+    box.innerHTML = '<div class="gm-empty">搜索中…</div>';
+    $('gm-detail').hidden = true;
+    $('gm-detail').innerHTML = '';
+    sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: q })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">未找到匹配用户</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (u) {
+          var card = el('div', 'gm-user');
+          var main = el('div', 'gm-user-main');
+          var av = el('div', 'avatar sm');
+          av.style.background = colorOf(u.nickname || u.phone);
+          av.textContent = initialOf(u.nickname || u.phone);
+          var info = el('div', 'gm-user-info');
+          info.appendChild(el('div', 'gm-user-name', u.nickname || '(无昵称)'));
+          info.appendChild(el('div', 'gm-user-phone', u.phone || ''));
+          main.appendChild(av); main.appendChild(info);
+          var btn = el('button', 'btn-mini', '管理');
+          btn.type = 'button';
+          btn.onclick = function () { gmLoadDetail(u.id, u.nickname, u.phone); };
+          card.appendChild(main); card.appendChild(btn);
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box.innerHTML = '<div class="gm-empty">搜索失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function gmLoadDetail(uid, name, phone) {
+    gmCurrent = { uid: uid, name: name, phone: phone };
+    var box = $('gm-detail');
+    box.hidden = false;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('gm_list_user_groups', { p_pwd: gmPwd, p_user_id: uid })
+      .then(function (gr) {
+        if (gr.error) throw gr.error;
+        var groups = gr.data || [];
+        return sb.rpc('gm_list_user_friends', { p_pwd: gmPwd, p_user_id: uid })
+          .then(function (fr) {
+            if (fr.error) throw fr.error;
+            renderGmDetail(uid, name, phone, groups, fr.data || []);
+          });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function renderGmDetail(uid, name, phone, groups, friends) {
+    var box = $('gm-detail');
+    box.innerHTML = '';
+
+    var head = el('div', 'gm-detail-head');
+    head.appendChild(el('div', 'gm-detail-name', (name || '(无昵称)') + '  ·  ' + (phone || '')));
+    var accBtn = el('button', 'btn-danger gm-acc-del', '注销该账号');
+    accBtn.type = 'button';
+    accBtn.onclick = function () { gmForceDeleteAccount(uid, name); };
+    head.appendChild(accBtn);
+    box.appendChild(head);
+
+    box.appendChild(el('div', 'gm-subtitle', '群聊（' + groups.length + '）'));
+    if (!groups.length) box.appendChild(el('div', 'gm-empty', '无群聊'));
+    groups.forEach(function (g) {
+      var row = el('div', 'gm-row');
+      var txt = el('div', 'gm-row-text');
+      txt.appendChild(el('div', 'gm-row-name', g.name));
+      txt.appendChild(el('div', 'gm-row-sub', (g.is_owner ? '群主' : '成员') + ' · ' + (g.member_count || 0) + ' 人'));
+      row.appendChild(txt);
+      var b = el('button', 'btn-mini gm-danger', '强制删除');
+      b.type = 'button';
+      b.onclick = function () { gmForceDeleteGroup(uid, g.group_id, g.name); };
+      row.appendChild(b);
+      box.appendChild(row);
+    });
+
+    box.appendChild(el('div', 'gm-subtitle', '好友（' + friends.length + '）'));
+    if (!friends.length) box.appendChild(el('div', 'gm-empty', '无好友'));
+    friends.forEach(function (f) {
+      var row = el('div', 'gm-row');
+      var txt = el('div', 'gm-row-text');
+      txt.appendChild(el('div', 'gm-row-name', f.other_nickname || '(无昵称)'));
+      txt.appendChild(el('div', 'gm-row-sub', (f.other_phone || '') + ' · ' + (f.status || '')));
+      row.appendChild(txt);
+      var b = el('button', 'btn-mini gm-danger', '删除好友');
+      b.type = 'button';
+      b.onclick = function () { gmForceDeleteFriend(uid, f.other_id, f.other_nickname); };
+      row.appendChild(b);
+      box.appendChild(row);
+    });
+  }
+
+  function gmForceDeleteGroup(uid, gid, gname) {
+    if (!window.confirm('确认强制删除群聊「' + (gname || gid) + '」？该群所有成员与消息将一并删除。')) return;
+    sb.rpc('gm_force_delete_group', { p_pwd: gmPwd, p_group_id: gid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已强制删除群聊：' + (gname || ''));
+        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone);
+      })
+      .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
+  }
+
+  function gmForceDeleteFriend(uid, otherId, otherName) {
+    if (!window.confirm('确认删除该好友关系（' + (otherName || otherId) + '）？双方都会失去这段好友关系。')) return;
+    sb.rpc('gm_force_delete_friendship', { p_pwd: gmPwd, p_user_a: uid, p_user_b: otherId })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已删除好友关系：' + (otherName || ''));
+        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone);
+      })
+      .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
+  }
+
+  function gmForceDeleteAccount(uid, name) {
+    if (!window.confirm('确认注销账号「' + (name || uid) + '」？该账号及全部数据将被永久删除，不可恢复。')) return;
+    sb.rpc('gm_force_delete_account', { p_pwd: gmPwd, p_user_id: uid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已注销账号：' + (name || ''));
+        $('gm-detail').hidden = true;
+        $('gm-detail').innerHTML = '';
+        gmSearch();
+      })
+      .catch(function (e) { toast('注销失败：' + friendlyError(e)); });
+  }
+
   function changePassword() {
     var np = $('settings-newpwd').value;
     var cp = $('settings-confirm-pwd').value;
@@ -1387,6 +1577,17 @@
   $('settings-modal').addEventListener('click', function (e) {
     if (e.target === this) closeSettings();
   });
+
+  // 绝对管理员（GM）后台：入口与各步骤
+  $('gm-entry').addEventListener('click', openGmEntry);
+  $('gm-pwd-close').addEventListener('click', function () { hideModal('gm-pwd-modal'); });
+  $('gm-pwd-cancel').addEventListener('click', function () { hideModal('gm-pwd-modal'); });
+  $('gm-pwd-confirm').addEventListener('click', gmTryAuth);
+  $('gm-pwd-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') gmTryAuth(); });
+  $('gm-close').addEventListener('click', closeGm);
+  $('gm-panel').addEventListener('click', function (e) { if (e.target === this) closeGm(); });
+  $('gm-search-btn').addEventListener('click', gmSearch);
+  $('gm-search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') gmSearch(); });
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
