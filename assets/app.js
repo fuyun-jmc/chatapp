@@ -12,8 +12,8 @@
   var $ = function (id) { return document.getElementById(id); };
 
   /* 原生 <dialog> 弹窗开关（安全：重复打开/关闭不抛异常） */
-  function showModal(id) { var m = $(id); if (m) m.classList.add('open'); }
-  function hideModal(id) { var m = $(id); if (m) m.classList.remove('open'); }
+  function showModal(id) { var m = $(id); if (m) { m.classList.add('open'); m.removeAttribute('hidden'); } }
+  function hideModal(id) { var m = $(id); if (m) { m.classList.remove('open'); m.setAttribute('hidden', ''); } }
 
   /* ---------- 配置检查 ---------- */
   var configured = CFG.SUPABASE_URL && CFG.SUPABASE_URL.indexOf('YOUR_') === -1 &&
