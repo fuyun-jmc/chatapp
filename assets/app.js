@@ -1424,7 +1424,7 @@
     var dab = $('delete-account-btn');
     if (dab) dab.hidden = !!state.forceChangePwd;
     var gob = $('gm-open-btn');
-    if (gob) gob.hidden = !!state.forceChangePwd;
+    if (gob) gob.hidden = !isGmAdmin() || !!state.forceChangePwd;
     showModal('settings-modal');
   }
 
