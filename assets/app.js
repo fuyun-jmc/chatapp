@@ -1400,9 +1400,10 @@
 
   function openSettings() {
     if (!state.profile) return;
-    // GM 入口仅对管理员账号可见（放在最前，避免后续渲染异常把显隐逻辑连坐跳过）。
-    // 其余用户、以及强制改密码期间一律隐藏。
-    var showGm = (!state.forceChangePwd && isGmAdmin());
+    // GM 入口对登录用户都可见（小圆点）；点击后仍需正确口令才进得去后台，
+    // 真正的权限闸门在后端 gm_auth，因此前端可见性不依赖账号 UID，避免把自己挡在门外。
+    // 强制改密码期间隐藏，避免安全流程被打断。
+    var showGm = !state.forceChangePwd;
     var gl0 = $('gm-layer');
     var ge0 = $('gm-entry');
     if (gl0) gl0.hidden = !showGm;
