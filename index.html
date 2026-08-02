@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=55">
+<link rel="stylesheet" href="assets/style.css?v=56">
 </head>
 <body>
 
@@ -325,8 +325,10 @@
     </footer>
 
     <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
-         放在 .modal 直接子级（非 modal-card 内），钉在屏幕右下角，避免窗口缩小 / 卡片滚动时丢失 -->
-    <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
+         用 .gm-layer 非 flex 铺满层作为定位参照，避免 .modal 的 flex 布局影响 absolute 子元素位置 -->
+    <div class="gm-layer">
+      <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
+    </div>
   </div>
 </div>
 
@@ -559,7 +561,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=55"></script>
-<script src="assets/app.js?v=55"></script>
+<script src="assets/config.js?v=56"></script>
+<script src="assets/app.js?v=56"></script>
 </body>
 </html>
