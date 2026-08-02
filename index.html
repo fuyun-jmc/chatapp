@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=48">
+<link rel="stylesheet" href="assets/style.css?v=49">
 </head>
 <body>
 
@@ -308,6 +308,9 @@
         <p class="form-hint">注销账号将永久删除你的资料、好友关系、聊天记录、群组等全部数据，且无法恢复。</p>
         <button class="btn-danger" id="delete-account-btn" type="button">注销账号</button>
       </div>
+
+      <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令 -->
+      <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
     </div>
 
     <footer class="modal-foot">
@@ -402,6 +405,48 @@
   </div>
 </div>
 
+<!-- ==================== 绝对管理员：口令验证 ==================== -->
+<div class="modal" id="gm-pwd-modal">
+  <div class="modal-card gm-pwd-card">
+    <header class="modal-head">
+      <h3>验证</h3>
+      <button class="icon-btn" id="gm-pwd-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="form-hint">请输入管理员口令以进入 GM 后台。</p>
+      <label class="field">
+        <span>口令</span>
+        <input type="password" id="gm-pwd-input" placeholder="管理员口令" autocomplete="off">
+      </label>
+      <p class="form-error" id="gm-pwd-error" hidden></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="gm-pwd-cancel" type="button">取消</button>
+      <button class="btn-primary" id="gm-pwd-confirm" type="button">进入</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 绝对管理员：后台（页面内覆盖层，不新开网页） ==================== -->
+<div class="modal gm-panel" id="gm-panel">
+  <div class="gm-inner">
+    <header class="gm-head">
+      <span class="gm-title">GM 后台 · 绝对管理员</span>
+      <button class="icon-btn" id="gm-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="gm-search">
+      <input id="gm-search-input" placeholder="搜索手机号 / 昵称" autocomplete="off">
+      <button class="btn-primary" id="gm-search-btn" type="button">搜索</button>
+    </div>
+    <div class="gm-results" id="gm-results"></div>
+    <div class="gm-detail" id="gm-detail" hidden></div>
+  </div>
+</div>
+
 <div class="modal" id="recovery-modal">
   <div class="modal-card">
     <header class="modal-head">
@@ -449,7 +494,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=48"></script>
-<script src="assets/app.js?v=48"></script>
+<script src="assets/config.js?v=49"></script>
+<script src="assets/app.js?v=49"></script>
 </body>
 </html>
