@@ -2551,7 +2551,6 @@
         if (!state.active || state.active.id !== peer.id) return;
         box.innerHTML = '';
         var rows = (r.data || []).slice().reverse();
-        if (!rows.length) box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧'));
         var lastDay = null;
         rows.forEach(function (m) {
           var k = dayKey(m.created_at);
@@ -2559,6 +2558,10 @@
           var node = renderMessage(m);
           if (node) box.appendChild(node);
         });
+        // 若全部消息都已本端删除（如刚清空），给出空态提示，避免一片空白像出错
+        if (!box.querySelector('.msg')) {
+          box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧'));
+        }
         scrollBottom();
         if (state.recallTimer) clearInterval(state.recallTimer);
         state.recallTimer = setInterval(refreshRecallButtons, 15000);
