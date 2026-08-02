@@ -1331,6 +1331,7 @@
             if (local.length === 0) panel.appendChild(el('div', 'note', '没有找到该手机号的用户，可能还没注册。'));
             return;
           }
+          if (r.data.id === state.uid) return;
           if (state.friends.some(function (f) { return f.id === r.data.id; })) return;
           var row = makeResultRow(r.data);
           var add = el('button', 'btn-mini', '加为好友');
@@ -2539,6 +2540,7 @@
   $('search-box').addEventListener('input', onUnifiedSearch);
 
   function sendRequest(user, btn) {
+    if (user.id === state.uid) { toast('不能添加自己为好友'); btn.disabled = false; return; }
     btn.disabled = true;
     // 先看是否已有任一方向的关系记录
     sb.from('friendships').select('id,status,requester_id')
