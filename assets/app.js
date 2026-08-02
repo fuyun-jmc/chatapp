@@ -1867,13 +1867,16 @@
       card.appendChild(el('div', 'gm-title-usage', '已有 ' + (t.usage_count || 0) + ' 人获得'));
 
       var actions = el('div', 'gm-title-actions');
+      var editBtn = el('button', 'btn-mini', '编辑');
+      editBtn.type = 'button';
+      editBtn.onclick = function () { openTitleForm(t); };
       var grantBtn = el('button', 'btn-mini', '授予');
       grantBtn.type = 'button';
       grantBtn.onclick = function () { toggleGrantBox(card, t); };
       var delBtn = el('button', 'btn-mini gm-danger', '删除');
       delBtn.type = 'button';
       delBtn.onclick = function () { gmDeleteTitle(t.id, t.name); };
-      actions.appendChild(grantBtn); actions.appendChild(delBtn);
+      actions.appendChild(editBtn); actions.appendChild(grantBtn); actions.appendChild(delBtn);
       card.appendChild(actions);
 
       // 授予子面板（输入手机号查用户）
@@ -1948,44 +1951,102 @@
       .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
   }
 
-  // 新建称号表单
-  function openTitleForm() {
-    $('gm-title-name').value = '';
-    $('gm-title-desc').value = '';
-    $('gm-title-color').value = '#ffd700';
-    $('gm-title-style').value = 'ring';
-    $('gm-title-cond').value = 'manual';
-    $('gm-title-days-wrap').hidden = true;
-    $('gm-title-days').value = '7';
+  // 新建 / 编辑称号表单
+  function openTitleForm(editTitle) {
+    if (editTitle) {
+      state.editingTitleId = editTitle.id;
+      $('gm-title-name').value = editTitle.name || '';
+      $('gm-title-desc').value = editTitle.description || '';
+      $('gm-title-color').value = editTitle.frame_color || '#ffd700';
+      $('gm-title-style').value = editTitle.frame_style || 'ring';
+      $('gm-title-cond').value = editTitle.cond_type || 'manual';
+      $('gm-title-days').value = editTitle.cond_value || 7;
+      $('gm-title-days-wrap').hidden = (editTitle.cond_type !== 'streak');
+      $('gm-title-modal-title').textContent = '编辑称号';
+      $('gm-title-create').textContent = '保存';
+    } else {
+      state.editingTitleId = null;
+      $('gm-title-name').value = '';
+      $('gm-title-desc').value = '';
+      $('gm-title-color').value = '#ffd700';
+      $('gm-title-style').value = 'ring';
+      $('gm-title-cond').value = 'manual';
+      $('gm-title-days-wrap').hidden = true;
+      $('gm-title-days').value = '7';
+      $('gm-title-modal-title').textContent = '新建称号';
+      $('gm-title-create').textContent = '创建';
+    }
     $('gm-title-error').hidden = true;
     showModal('gm-title-modal');
   }
 
+  function readTitleForm() {
+    return {
+      name: $('gm-title-name').value.trim(),
+      desc: $('gm-title-desc').value.trim(),
+      color: $('gm-title-color').value,
+      style: $('gm-title-style').value,
+      cond: $('gm-title-cond').value,
+      days: parseInt($('gm-title-days').value, 10)
+    };
+  }
+
+  function validateTitleForm(f) {
+    if (!f.name) return '请填写称号名称';
+    if (f.cond === 'streak' && (!f.days || f.days < 1)) return '请填写有效的连续天数';
+    return null;
+  }
+
   function gmCreateTitle() {
-    var name = $('gm-title-name').value.trim();
-    var desc = $('gm-title-desc').value.trim();
-    var color = $('gm-title-color').value;
-    var style = $('gm-title-style').value;
-    var cond = $('gm-title-cond').value;
-    var days = parseInt($('gm-title-days').value, 10);
+    var f = readTitleForm();
     var err = $('gm-title-error');
     err.hidden = true;
-    if (!name) { err.textContent = '请填写称号名称'; err.hidden = false; return; }
-    if (cond === 'streak' && (!days || days < 1)) { err.textContent = '请填写有效的连续天数'; err.hidden = false; return; }
+    var msg = validateTitleForm(f);
+    if (msg) { err.textContent = msg; err.hidden = false; return; }
     var btn = $('gm-title-create');
     btn.disabled = true; btn.textContent = '创建中…';
     sb.rpc('gm_create_title', {
-      p_pwd: gmPwd, p_name: name, p_desc: desc, p_color: color,
-      p_style: style, p_cond_type: cond, p_value: cond === 'streak' ? days : null
+      p_pwd: gmPwd, p_name: f.name, p_desc: f.desc, p_color: f.color,
+      p_style: f.style, p_cond_type: f.cond, p_value: f.cond === 'streak' ? f.days : null
     })
       .then(function (r) {
         if (r.error) throw r.error;
         hideModal('gm-title-modal');
-        toast('已创建称号：' + name);
+        toast('已创建称号：' + f.name);
         openTitleTab();
       })
       .catch(function (e) { err.textContent = '创建失败：' + friendlyError(e); err.hidden = false; })
       .then(function () { btn.disabled = false; btn.textContent = '创建'; });
+  }
+
+  function gmUpdateTitle() {
+    var id = state.editingTitleId;
+    if (!id) return;
+    var f = readTitleForm();
+    var err = $('gm-title-error');
+    err.hidden = true;
+    var msg = validateTitleForm(f);
+    if (msg) { err.textContent = msg; err.hidden = false; return; }
+    var btn = $('gm-title-create');
+    btn.disabled = true; btn.textContent = '保存中…';
+    sb.rpc('gm_update_title', {
+      p_pwd: gmPwd, p_title_id: id, p_name: f.name, p_desc: f.desc, p_color: f.color,
+      p_style: f.style, p_cond_type: f.cond, p_value: f.cond === 'streak' ? f.days : null
+    })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        hideModal('gm-title-modal');
+        toast('已保存称号：' + f.name);
+        openTitleTab();
+        loadDisplayTitles().then(applySelfTitle).then(renderConversations);
+      })
+      .catch(function (e) { err.textContent = '保存失败：' + friendlyError(e); err.hidden = false; })
+      .then(function () { btn.disabled = false; btn.textContent = '保存'; });
+  }
+
+  function onTitleSubmit() {
+    if (state.editingTitleId) gmUpdateTitle();
+    else gmCreateTitle();
   }
 
   // 在用户详情里追加「称号」区块（查看/撤回）
@@ -2100,10 +2161,10 @@
   // 称号管理标签页与表单
   $('gm-tab-users').addEventListener('click', function () { gmSwitchTab('users'); });
   $('gm-tab-titles').addEventListener('click', function () { gmSwitchTab('titles'); });
-  $('gm-title-new-btn').addEventListener('click', openTitleForm);
+  $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
   $('gm-title-close').addEventListener('click', function () { hideModal('gm-title-modal'); });
   $('gm-title-cancel').addEventListener('click', function () { hideModal('gm-title-modal'); });
-  $('gm-title-create').addEventListener('click', gmCreateTitle);
+  $('gm-title-create').addEventListener('click', onTitleSubmit);
   $('gm-title-cond').addEventListener('change', function () {
     $('gm-title-days-wrap').hidden = (this.value !== 'streak');
   });
