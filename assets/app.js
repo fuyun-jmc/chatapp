@@ -993,9 +993,12 @@
       .then(loadGroups)
       .then(loadDisplayTitles)
       .then(applySelfTitle)
-      .then(subscribeRealtime)
-      .then(startPoll)
       .then(function () {
+        // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
+        // —— subscribeRealtime 没有 return，会返回 undefined，导致 .then(startPoll) 抛错、
+        //    startPoll 永远不执行（一个坑过多次的 thenable 陷阱）。这里顺序调用即可。
+        subscribeRealtime();
+        startPoll();
         // 账号找回后：资料加载完即强制打开设置改密码
         if (state.forceChangePwd) openSettings();
       })
@@ -3067,9 +3070,9 @@
   function startPoll() {
     if (state.pollTimer) return;
     state.pollTimer = setInterval(function () {
-      if (document.hidden || !state.uid || !state.active) return;
+      if (!state.uid || !state.active) return;
       fillNewMessages();
-    }, 6000);
+    }, 4000);
   }
   function stopPoll() {
     if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
