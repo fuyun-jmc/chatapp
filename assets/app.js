@@ -968,7 +968,7 @@
     setupKickChannel();
     setupPresenceChannel();
     // 连续登录计数 + 自动授予「连续登录 N 天」称号（失败不影响主流程）
-    sb.rpc('touch_login_streak').catch(function () {});
+    sb.rpc('touch_login_streak').then(function () {}).catch(function () {});
 
     // 在线状态：登录后拉一次；Realtime 广播负责秒级点亮，10s 轮询作兜底校正
     refreshOnline();
