@@ -51,7 +51,8 @@
     lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
     onlineTimer: null,  // 在线状态轮询定时器
     presenceChannel: null, // 在线状态 Realtime 广播频道
-    titlesMap: {}       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
+    titlesMap: {},       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
+    gmAdminUid: null     // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -970,6 +971,8 @@
     setupPresenceChannel();
     // 连续登录计数 + 自动授予「连续登录 N 天」称号（失败不影响主流程）
     sb.rpc('touch_login_streak').then(function () {}).catch(function () {});
+    // 拉取“绝对管理员”uid，用于决定 GM 入口是否可见
+    refreshGmAdmin();
 
     // 在线状态：登录后拉一次；Realtime 广播负责秒级点亮，10s 轮询作兜底校正
     refreshOnline();
@@ -1397,6 +1400,13 @@
 
   function openSettings() {
     if (!state.profile) return;
+    // GM 入口仅对管理员账号可见（放在最前，避免后续渲染异常把显隐逻辑连坐跳过）。
+    // 其余用户、以及强制改密码期间一律隐藏。
+    var showGm = (!state.forceChangePwd && isGmAdmin());
+    var gl0 = $('gm-layer');
+    var ge0 = $('gm-entry');
+    if (gl0) gl0.hidden = !showGm;
+    if (ge0) ge0.style.display = showGm ? '' : 'none';
     pendingAvatar = null;
     $('settings-name').value = state.profile.nickname || '';
     setAvatar($('settings-avatar'), {
@@ -1412,11 +1422,6 @@
     // 强制改密码期间不允许注销账号（先完成安全流程）
     var dab = $('delete-account-btn');
     if (dab) dab.hidden = !!state.forceChangePwd;
-    // GM 入口仅对管理员账号可见；其他用户一律不显示（强制改密码期间也隐藏）
-    var gl = $('gm-layer');
-    var ge = $('gm-entry');
-    if (gl) gl.hidden = (state.forceChangePwd || state.uid !== GM_ADMIN_UID);
-    if (ge) ge.style.display = (state.forceChangePwd || state.uid !== GM_ADMIN_UID) ? 'none' : '';
     showModal('settings-modal');
   }
 
@@ -1548,6 +1553,27 @@
   // 管理员账号 uid（须与数据库 gm_admin_uid() 一致）。仅用于控制 GM 入口的可见性，
   // 真正的权限仍由后端 gm_check 校验 auth.uid() === gm_admin_uid() 且口令正确，前端拿不到权限。
   var GM_ADMIN_UID = '66f0744b-007b-4d5f-a9bc-2c5e4462baf9';
+
+  // 从后端取“绝对管理员”uid（权威来源，避免前端硬编码漂移）。
+  // 取不到（如尚未执行 gm_panel SQL）时回退到上面的常量，保证本机管理员依旧可见入口。
+  function refreshGmAdmin() {
+    try {
+      sb.rpc('gm_admin_uid')
+        .then(function (r) {
+          if (r && !r.error && r.data) state.gmAdminUid = r.data;
+          else state.gmAdminUid = GM_ADMIN_UID;
+        })
+        .catch(function () { state.gmAdminUid = GM_ADMIN_UID; });
+    } catch (e) {
+      state.gmAdminUid = GM_ADMIN_UID;
+    }
+  }
+
+  function isGmAdmin() {
+    var a = state.gmAdminUid || GM_ADMIN_UID;
+    return !!state.uid && state.uid === a;
+  }
+
 
   function openGmEntry() {
     $('gm-pwd-input').value = '';
