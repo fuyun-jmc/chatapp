@@ -439,9 +439,23 @@
     state.friends.forEach(function (f) { ids.push(f.id); });
     if (state.active && state.active.type === 'friend') ids.push(state.active.id);
     if (!ids.length) return Promise.resolve();
+    // 保留上一次由 refreshAdminStatus 兜底写入的自身强制称号，
+    // 以防后端 get_profiles_titles 还是旧签名（无 admin_/dev_ 列）时被清空
+    var selfPrev = (state.titlesMap && state.titlesMap[state.uid]) || null;
     return sb.rpc('get_profiles_titles', { p_ids: ids })
       .then(function (r) {
         if (r.error) throw r.error;
+        var first = (r.data || [])[0];
+        var hasAdminCol = !!first && Object.prototype.hasOwnProperty.call(first, 'admin_title_id');
+        var hasDevCol   = !!first && Object.prototype.hasOwnProperty.call(first, 'dev_title_id');
+        if (first && (!hasAdminCol || !hasDevCol)) {
+          // 提示开发者：数据库函数还是旧版，他人的强制称号无法显示
+          try {
+            console.warn('[titles] get_profiles_titles 缺少 ' +
+              (!hasAdminCol ? 'admin_title_* ' : '') + (!hasDevCol ? 'dev_title_* ' : '') +
+              '列，请在 Supabase 执行 20260802_dev_title.sql');
+          } catch (e) {}
+        }
         state.titlesMap = {};
         (r.data || []).forEach(function (t) {
           var primary = t.title_id ? {
@@ -464,10 +478,19 @@
           } : null;
           state.titlesMap[t.user_id] = { primary: primary, admin: admin, dev: dev };
         });
+        // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
+        if (selfPrev && state.titlesMap[state.uid]) {
+          if (!hasAdminCol && selfPrev.admin) state.titlesMap[state.uid].admin = selfPrev.admin;
+          if (!hasDevCol   && selfPrev.dev)   state.titlesMap[state.uid].dev   = selfPrev.dev;
+        }
         // 重新渲染好友列表，让头像框生效
         if (typeof renderConversations === 'function') renderConversations();
       })
-      .catch(function () { state.titlesMap = state.titlesMap || {}; });
+      .catch(function () {
+        // RPC 失败（如函数不存在）时保留已有兜底，不要清空
+        state.titlesMap = state.titlesMap || {};
+        if (selfPrev) state.titlesMap[state.uid] = selfPrev;
+      });
   }
 
   // 强制佩戴的特殊称号名称（前端按名称精确匹配，不可自行取消佩戴）
@@ -515,8 +538,11 @@
   // 在名字容器后追加称号小徽标（开发者/管理员强制佩戴 + 自选，去重）
   function addTitleBadge(container, uid) {
     if (!container) return;
+    // 老 WebView 不支持 ChildNode.remove()，统一用 removeChild
     var olds = container.querySelectorAll('.title-badge');
-    for (var i = 0; i < olds.length; i++) olds[i].remove();
+    for (var i = olds.length - 1; i >= 0; i--) {
+      if (olds[i].parentNode) olds[i].parentNode.removeChild(olds[i]);
+    }
     titleSlots(uid).forEach(function (t) {
       var isDev = t.frameStyle === 'dev';
       var b = el('span', 'title-badge' + (isDev ? ' badge-dev' : ''), t.titleName);
@@ -2060,17 +2086,46 @@
   //  「管理员」称号体系：会话内「违禁接收卡片」 + 无口令管理面板
   // ============================================================
   function refreshAdminStatus() {
-    if (!state.uid) return;
-    sb.from('user_titles')
-      .select('title_id, titles(name)')
+    if (!state.uid) return Promise.resolve();
+    // 这里直接查 user_titles（不依赖 get_profiles_titles 的新增列），
+    // 因此即便 admin_dual_title / dev_title 两个迁移还没执行，
+    // 「自己」的开发者/管理员徽标也能正常显示（他人的仍需新 SQL）。
+    return sb.from('user_titles')
+      .select('title_id, titles(id,name,frame_color,frame_style)')
       .eq('user_id', state.uid)
       .then(function (r) {
         if (r.error) return;
-        var names = (r.data || []).map(function (x) { return x.titles && x.titles.name; }).filter(Boolean);
+        var rows = (r.data || []).map(function (x) { return x.titles; }).filter(Boolean);
+        var names = rows.map(function (t) { return t.name; }).filter(Boolean);
         state.ownedTitles = names;
         state.isAdmin = names.indexOf('管理员') >= 0;
         state.isDev = names.indexOf('开发者') >= 0;
         updateAdminCard();
+
+        // 兜底回填自己的强制称号槽位，保证右上角一定能看到徽标
+        function pick(n) {
+          var hit = null;
+          rows.forEach(function (t) { if (!hit && t.name === n) hit = t; });
+          return hit;
+        }
+        var adminRow = pick('管理员');
+        var devRow   = pick('开发者');
+        state.titlesMap = state.titlesMap || {};
+        var slot = state.titlesMap[state.uid] || { primary: null, admin: null, dev: null };
+        slot.admin = adminRow ? {
+          titleId: adminRow.id,
+          titleName: adminRow.name,
+          frameColor: adminRow.frame_color || '#f5511e',
+          frameStyle: adminRow.frame_style || 'solid'
+        } : null;
+        slot.dev = devRow ? {
+          titleId: devRow.id,
+          titleName: devRow.name,
+          frameColor: devRow.frame_color || '#7c4dff',
+          frameStyle: 'dev'
+        } : null;
+        state.titlesMap[state.uid] = slot;
+        applySelfTitle();
       })
       .catch(function () {});
   }
@@ -2262,7 +2317,8 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已授予「' + t.name + '」');
-        loadDisplayTitles().then(applySelfTitle).then(renderConversations); // 同步前端头像框
+        // 同步前端头像框；refreshAdminStatus 兜底刷新自身强制称号
+        loadDisplayTitles().then(refreshAdminStatus).then(applySelfTitle).then(renderConversations);
         openTitleTab();
       })
       .catch(function (e) { toast('授予失败：' + friendlyError(e)); });
@@ -2434,7 +2490,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已撤回称号：' + name);
-        loadDisplayTitles().then(applySelfTitle).then(renderConversations);
+        loadDisplayTitles().then(refreshAdminStatus).then(applySelfTitle).then(renderConversations);
         renderGmUserTitles(uid);
       })
       .catch(function (e) { toast('撤回失败：' + friendlyError(e)); });
