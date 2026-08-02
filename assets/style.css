@@ -709,14 +709,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 /* ---------- 绝对管理员入口（小而隐蔽） ---------- */
 .gm-entry {
-  position: absolute; right: 10px; bottom: 7px;
-  width: 16px; height: 16px; line-height: 16px;
-  font-size: 14px; color: var(--text-3);
-  background: none; border: none; padding: 0; margin: 0;
-  opacity: .12; cursor: pointer; z-index: 5;
-  transition: opacity .15s;
+  position: absolute; right: 8px; bottom: 8px;
+  width: 22px; height: 22px; line-height: 20px; text-align: center;
+  font-size: 16px; color: var(--text-2);
+  background: rgba(127,119,221,.14); border: 1px solid var(--line);
+  border-radius: 50%; padding: 0; margin: 0;
+  opacity: .4; cursor: pointer; z-index: 5;
+  transition: opacity .15s, background .15s;
 }
-.gm-entry:hover, .gm-entry:active, .gm-entry:focus { opacity: .78; outline: none; }
+.gm-entry:hover, .gm-entry:active, .gm-entry:focus { opacity: 1; background: rgba(127,119,221,.26); outline: none; }
 
 /* ---------- GM 后台覆盖层（页面内，非新网页） ---------- */
 .gm-panel.open { padding: 0; align-items: stretch; justify-content: flex-start; }
