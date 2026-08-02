@@ -2141,13 +2141,20 @@
   // 在用户详情里追加「称号」区块（查看/撤回）
   function renderGmUserTitles(uid) {
     var box = $('gm-detail');
-    var wrap = box.querySelector('.gm-titles-sub');
-    if (!wrap) {
-      box.appendChild(el('div', 'gm-subtitle', '称号'));
-      wrap = el('div', 'gm-titles-sub');
-      box.appendChild(wrap);
+    // 先清理已有的「称号」区块，保证幂等——无论被调用几次都只保留一个
+    var olds = box.querySelectorAll('.gm-titles-sub');
+    for (var i = 0; i < olds.length; i++) {
+      var prev = olds[i].previousElementSibling;
+      if (prev && prev.classList && prev.classList.contains('gm-subtitle') && prev.textContent === '称号') prev.parentNode.removeChild(prev);
+      olds[i].parentNode.removeChild(olds[i]);
     }
-    wrap.innerHTML = '';
+    // 始终插在「禁言管理」之前（若无则追加到末尾）
+    var muteSec = box.querySelector('.gm-mute-sec');
+    var sub = el('div', 'gm-subtitle', '称号');
+    var wrap = el('div', 'gm-titles-sub');
+    box.insertBefore(sub, muteSec);
+    box.insertBefore(wrap, muteSec);
+
     wrap.appendChild(el('div', 'gm-loading', '加载中…'));
     sb.rpc('gm_list_user_titles', { p_pwd: gmPwd, p_user_id: uid })
       .then(function (r) {
@@ -2180,7 +2187,7 @@
         if (r.error) throw r.error;
         toast('已撤回称号：' + name);
         loadDisplayTitles().then(applySelfTitle).then(renderConversations);
-        if (gmCurrent) renderGmUserTitles(gmCurrent.uid);
+        renderGmUserTitles(uid);
       })
       .catch(function (e) { toast('撤回失败：' + friendlyError(e)); });
   }
