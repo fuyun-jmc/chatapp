@@ -218,7 +218,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .side-phone { font-size: 12.5px; color: var(--text-3); }
 
 .avatar {
-  position: relative;
+  position: relative; overflow: hidden;
   width: 38px; height: 38px; flex: 0 0 38px;
   border-radius: 11px; background: var(--brand); color: #fff;
   display: flex; align-items: center; justify-content: center;
@@ -227,7 +227,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 /* 好友在线状态点：定位在头像右下角，在线绿点 / 离线灰点 */
 .online-dot {
-  position: absolute; right: -2px; bottom: -2px;
+  position: absolute; right: 1px; bottom: 1px;
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid var(--bg);
   box-sizing: content-box;
@@ -236,7 +236,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .online-dot.offline { background: #c4c9d2; }
 .avatar.sm { width: 32px; height: 32px; flex-basis: 32px; border-radius: 9px; font-size: 13px; }
 .avatar.lg { width: 76px; height: 76px; flex-basis: 76px; border-radius: 20px; font-size: 28px; }
-.avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
 
 .icon-btn {
   border: 0; background: transparent; color: var(--text-3);
@@ -267,7 +267,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .search-result .row { display: flex; align-items: center; gap: 9px; padding: 5px 4px; border-radius: 8px; }
 .search-result .row.clickable { cursor: pointer; }
 .search-result .row.clickable:hover { background: var(--line); }
-.search-result .info { flex: 1; min-width: 0; }
+.search-result .info { flex: 1; min-width: 0; padding-left: 7px; }
 .search-result .nm { font-weight: 500; }
 .search-result .ph { font-size: 12.5px; color: var(--text-3); }
 .search-result .note { color: var(--text-2); font-size: 13px; }
@@ -319,7 +319,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   display: flex; align-items: center; gap: 9px;
   padding: 9px 14px;
 }
-.request-list .info { flex: 1; min-width: 0; }
+.request-list .info { flex: 1; min-width: 0; padding-left: 7px; }
 .request-list .nm { font-size: 14px; font-weight: 500; }
 .request-list .ph { font-size: 12px; color: var(--text-3); }
 .mini-ok, .mini-no {
@@ -345,7 +345,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   color: var(--text-3); background: transparent;
 }
 .friend-list li.list-section:hover { background: transparent; }
-.friend-list .info { flex: 1; min-width: 0; }
+.friend-list .info { flex: 1; min-width: 0; padding-left: 7px; }
 .friend-list .nm { font-size: 14.5px; font-weight: 500; }
 .friend-list .ph {
   font-size: 12.5px; color: var(--text-3);
@@ -376,7 +376,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .group-list li:hover { background: var(--bg); }
 .group-list li.is-active { background: #eef3fe; border-left-color: var(--brand); }
-.group-list .info { flex: 1; min-width: 0; }
+.group-list .info { flex: 1; min-width: 0; padding-left: 7px; }
 .group-list .nm { font-size: 14.5px; font-weight: 500; }
 .group-list .ph { font-size: 12.5px; color: var(--text-3); }
 
@@ -384,13 +384,13 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .picker-item { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 9px; cursor: pointer; }
 .picker-item:hover { background: var(--bg); }
 .picker-item input { flex: 0 0 auto; width: 16px; height: 16px; }
-.picker-item .info { flex: 1; min-width: 0; }
+.picker-item .info { flex: 1; min-width: 0; padding-left: 7px; }
 .picker-item .nm { font-size: 14px; font-weight: 500; }
 .picker-item .ph { font-size: 12px; color: var(--text-3); }
 
 .member-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .member-item { display: flex; align-items: center; gap: 9px; padding: 7px 4px; }
-.member-item .info { flex: 1; min-width: 0; }
+.member-item .info { flex: 1; min-width: 0; padding-left: 7px; }
 .member-item .nm { font-size: 14px; font-weight: 500; }
 .member-item .mini-ok, .member-item .mini-no { flex: 0 0 auto; }
 
