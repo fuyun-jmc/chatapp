@@ -587,6 +587,29 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .account-section { margin-top: 2px; }
 .account-section .btn-ghost { margin-top: 10px; }
 
+/* 个人设置：我的称号 */
+.title-section { margin-top: 2px; }
+.title-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.title-loading { font-size: 13px; color: var(--text-3); padding: 4px 0; }
+.title-empty { font-size: 13px; color: var(--text-3); margin-top: 8px; }
+.title-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(127,119,221,.08); border: 1px solid transparent;
+}
+.title-card.worn { border-color: var(--brand); background: rgba(79,124,247,.12); }
+.title-prev {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+  display: inline-block;
+}
+.title-info { flex: 1; min-width: 0; }
+.title-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.title-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-outline {
+  background: transparent; border: 1px solid var(--brand); color: var(--brand);
+}
+.btn-outline:hover { background: rgba(79,124,247,.10); }
+
 /* 危险操作区：注销账号 */
 .danger-zone { margin-top: 2px; }
 .danger-zone .danger-title { color: var(--danger); }
