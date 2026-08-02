@@ -48,7 +48,8 @@
     recPhone: '',
     recCode: '',
     lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
-    onlineTimer: null   // 在线状态轮询定时器
+    onlineTimer: null,  // 在线状态轮询定时器
+    titlesMap: {}       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -423,6 +424,66 @@
     if (ph) ph.textContent = state.active.phone + (isOnline(state.active.id) ? ' · 在线' : '');
   }
 
+  // 批量获取好友/自己/当前会话对象的展示称号（头像框渲染用）
+  function loadDisplayTitles() {
+    var ids = [state.uid];
+    state.friends.forEach(function (f) { ids.push(f.id); });
+    if (state.active && state.active.type === 'friend') ids.push(state.active.id);
+    if (!ids.length) return Promise.resolve();
+    return sb.rpc('get_profiles_titles', { p_ids: ids })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.titlesMap = {};
+        (r.data || []).forEach(function (t) {
+          if (t.title_id) {
+            state.titlesMap[t.user_id] = {
+              titleId: t.title_id,
+              titleName: t.title_name,
+              frameColor: t.frame_color || '#ffd700',
+              frameStyle: t.frame_style || 'ring'
+            };
+          }
+        });
+        // 重新渲染好友列表，让头像框生效
+        if (typeof renderConversations === 'function') renderConversations();
+      })
+      .catch(function () { state.titlesMap = state.titlesMap || {}; });
+  }
+
+  // 给头像元素套上称号边框（环 / 发光 / 加粗环）
+  function applyTitleFrame(av, uid) {
+    if (!av) return;
+    av.style.boxShadow = '';
+    av.style.border = '';
+    var t = state.titlesMap && state.titlesMap[uid];
+    if (!t || !t.titleId) return;
+    var c = t.frameColor || '#ffd700';
+    if (t.frameStyle === 'solid')      av.style.boxShadow = '0 0 0 4px ' + c;
+    else if (t.frameStyle === 'glow')  av.style.boxShadow = '0 0 10px 3px ' + c;
+    else                               av.style.boxShadow = '0 0 0 3px ' + c; // ring
+    av.title = (av.title ? av.title + ' · ' : '') + t.titleName;
+  }
+
+  // 在名字容器后追加一个称号小徽标
+  function addTitleBadge(container, uid) {
+    if (!container) return;
+    var old = container.querySelector('.title-badge');
+    if (old) old.remove();
+    var t = state.titlesMap && state.titlesMap[uid];
+    if (!t || !t.titleId) return;
+    var b = el('span', 'title-badge', t.titleName);
+    b.style.background = t.frameColor || '#ffd700';
+    container.appendChild(b);
+  }
+
+  // 给侧边栏“我”的头像与名字加上展示称号
+  function applySelfTitle() {
+    var av = $('me-avatar');
+    if (av) applyTitleFrame(av, state.uid);
+    var nm = $('me-name');
+    if (nm) addTitleBadge(nm, state.uid);
+  }
+
   function loadDeviceSessions() {
     var box = $('device-list');
     if (!box) return;
@@ -786,6 +847,8 @@
     registerDeviceSession();
     startHeartbeat();
     setupKickChannel();
+    // 连续登录计数 + 自动授予「连续登录 N 天」称号（失败不影响主流程）
+    sb.rpc('touch_login_streak').catch(function () {});
 
     // 在线状态：登录后拉一次，之后每 30s 轮询（好友登入/登出即可反映）
     refreshOnline();
@@ -795,6 +858,8 @@
     loadProfile()
       .then(loadRelations)
       .then(loadGroups)
+      .then(loadDisplayTitles)
+      .then(applySelfTitle)
       .then(subscribeRealtime)
       .then(function () {
         // 账号找回后：资料加载完即强制打开设置改密码
@@ -1011,10 +1076,13 @@
     var av = el('div', 'avatar sm');
     setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', displayName(f)));
+    var nm = el('div', 'nm', displayName(f));
+    info.appendChild(nm);
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
     row.appendChild(av); row.appendChild(info);
     addOnlineDot(av, f.id);
+    applyTitleFrame(av, f.id);
+    addTitleBadge(nm, f.id);
 
     var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
     pin.type = 'button';
@@ -1038,10 +1106,13 @@
     var av = el('div', 'avatar sm');
     setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', displayName(f)));
+    var nm = el('div', 'nm', displayName(f));
+    info.appendChild(nm);
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
     li.appendChild(av); li.appendChild(info);
     addOnlineDot(av, f.id);
+    applyTitleFrame(av, f.id);
+    addTitleBadge(nm, f.id);
 
     var pin = el('button', 'pin-btn', f.pinned ? '已置顶' : '置顶');
     pin.type = 'button';
@@ -1486,6 +1557,8 @@
       row.appendChild(b);
       box.appendChild(row);
     });
+
+    renderGmUserTitles(uid);
   }
 
   function gmForceDeleteGroup(uid, gid, gname) {
@@ -1521,6 +1594,218 @@
         gmSearch();
       })
       .catch(function (e) { toast('注销失败：' + friendlyError(e)); });
+  }
+
+  // ---------- 称号管理（GM 后台） ----------
+  function gmSwitchTab(tab) {
+    var users = tab === 'users';
+    $('gm-tab-users').classList.toggle('active', users);
+    $('gm-tab-titles').classList.toggle('active', !users);
+    $('gm-users').hidden = !users;
+    $('gm-titles').hidden = users;
+    if (!users) openTitleTab();
+  }
+
+  function openTitleTab() {
+    var box = $('gm-title-list');
+    box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    sb.rpc('gm_list_titles', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        renderGmTitles(r.data || []);
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        box.innerHTML = /GM_AUTH_FAIL/.test(m)
+          ? '<div class="gm-empty">口令已失效，请重新进入</div>'
+          : '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function condText(t) {
+    if (t.cond_type === 'streak') return '连续登录 ' + (t.cond_value || '?') + ' 天自动获得';
+    return '仅 GM 手动授予';
+  }
+
+  function renderGmTitles(rows) {
+    var box = $('gm-title-list');
+    box.innerHTML = '';
+    if (!rows.length) { box.appendChild(el('div', 'gm-empty', '暂无称号，点击右上角「+ 新建称号」')); return; }
+    rows.forEach(function (t) {
+      var card = el('div', 'gm-title-card');
+      var head = el('div', 'gm-title-head');
+      var nameEl = el('span', 'gm-title-name', t.name);
+      nameEl.style.borderColor = t.frame_color;
+      nameEl.style.color = t.frame_color;
+      head.appendChild(nameEl);
+      head.appendChild(el('span', 'gm-title-cond', condText(t)));
+      card.appendChild(head);
+      if (t.description) card.appendChild(el('div', 'gm-title-desc', t.description));
+      card.appendChild(el('div', 'gm-title-usage', '已有 ' + (t.usage_count || 0) + ' 人获得'));
+
+      var actions = el('div', 'gm-title-actions');
+      var grantBtn = el('button', 'btn-mini', '授予');
+      grantBtn.type = 'button';
+      grantBtn.onclick = function () { toggleGrantBox(card, t); };
+      var delBtn = el('button', 'btn-mini gm-danger', '删除');
+      delBtn.type = 'button';
+      delBtn.onclick = function () { gmDeleteTitle(t.id, t.name); };
+      actions.appendChild(grantBtn); actions.appendChild(delBtn);
+      card.appendChild(actions);
+
+      // 授予子面板（输入手机号查用户）
+      var gbox = el('div', 'gm-grant-box');
+      gbox.hidden = true;
+      var inp = el('input');
+      inp.type = 'tel'; inp.placeholder = '输入手机号查询用户'; inp.autocomplete = 'off';
+      gbox.appendChild(inp);
+      var look = el('button', 'btn-mini', '查询');
+      look.type = 'button';
+      look.onclick = function () { gmGrantLookup(t, inp.value.trim(), gres); };
+      var cancel = el('button', 'btn-mini', '取消');
+      cancel.type = 'button';
+      cancel.onclick = function () { gbox.hidden = true; };
+      gbox.appendChild(look); gbox.appendChild(cancel);
+      var gres = el('div', 'gm-grant-result');
+      gbox.appendChild(gres);
+      card.appendChild(gbox);
+
+      box.appendChild(card);
+    });
+  }
+
+  function toggleGrantBox(card, t) {
+    var gbox = card.querySelector('.gm-grant-box');
+    if (gbox) gbox.hidden = !gbox.hidden;
+  }
+
+  function gmGrantLookup(t, phone, resBox) {
+    resBox.innerHTML = '查询中…';
+    if (!phone) { resBox.innerHTML = '请输入手机号'; return; }
+    sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: phone })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = (r.data || []).filter(function (u) {
+          return (u.phone || '').indexOf(phone) >= 0;
+        });
+        if (!rows.length) { resBox.innerHTML = '未找到该手机号用户'; return; }
+        var u = rows[0];
+        resBox.innerHTML = '';
+        resBox.appendChild(el('div', 'gm-grant-user',
+          (u.nickname || '(无昵称)') + ' · ' + (u.phone || '')));
+        var ok = el('button', 'btn-mini gm-confirm', '确认授予「' + t.name + '」');
+        ok.type = 'button';
+        ok.onclick = function () { gmGrantTitle(u.id, t); };
+        resBox.appendChild(ok);
+      })
+      .catch(function (e) {
+        resBox.innerHTML = '查询失败：' + friendlyError(e);
+      });
+  }
+
+  function gmGrantTitle(uid, t) {
+    sb.rpc('gm_grant_title', { p_pwd: gmPwd, p_user_id: uid, p_title_id: t.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已授予「' + t.name + '」');
+        loadDisplayTitles().then(applySelfTitle).then(renderConversations); // 同步前端头像框
+        openTitleTab();
+      })
+      .catch(function (e) { toast('授予失败：' + friendlyError(e)); });
+  }
+
+  function gmDeleteTitle(id, name) {
+    if (!window.confirm('确认删除称号「' + name + '」？已获得该称号的用户也会一并失去。')) return;
+    sb.rpc('gm_delete_title', { p_pwd: gmPwd, p_title_id: id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已删除称号：' + name);
+        openTitleTab();
+      })
+      .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
+  }
+
+  // 新建称号表单
+  function openTitleForm() {
+    $('gm-title-name').value = '';
+    $('gm-title-desc').value = '';
+    $('gm-title-color').value = '#ffd700';
+    $('gm-title-style').value = 'ring';
+    $('gm-title-cond').value = 'manual';
+    $('gm-title-days-wrap').hidden = true;
+    $('gm-title-days').value = '7';
+    $('gm-title-error').hidden = true;
+    showModal('gm-title-modal');
+  }
+
+  function gmCreateTitle() {
+    var name = $('gm-title-name').value.trim();
+    var desc = $('gm-title-desc').value.trim();
+    var color = $('gm-title-color').value;
+    var style = $('gm-title-style').value;
+    var cond = $('gm-title-cond').value;
+    var days = parseInt($('gm-title-days').value, 10);
+    var err = $('gm-title-error');
+    err.hidden = true;
+    if (!name) { err.textContent = '请填写称号名称'; err.hidden = false; return; }
+    if (cond === 'streak' && (!days || days < 1)) { err.textContent = '请填写有效的连续天数'; err.hidden = false; return; }
+    var btn = $('gm-title-create');
+    btn.disabled = true; btn.textContent = '创建中…';
+    sb.rpc('gm_create_title', {
+      p_pwd: gmPwd, p_name: name, p_desc: desc, p_color: color,
+      p_style: style, p_cond_type: cond, p_value: cond === 'streak' ? days : null
+    })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        hideModal('gm-title-modal');
+        toast('已创建称号：' + name);
+        openTitleTab();
+      })
+      .catch(function (e) { err.textContent = '创建失败：' + friendlyError(e); err.hidden = false; })
+      .then(function () { btn.disabled = false; btn.textContent = '创建'; });
+  }
+
+  // 在用户详情里追加「称号」区块（查看/撤回）
+  function renderGmUserTitles(uid) {
+    var box = $('gm-detail');
+    box.appendChild(el('div', 'gm-subtitle', '称号'));
+    var wrap = el('div', 'gm-titles-sub');
+    box.appendChild(wrap);
+    wrap.appendChild(el('div', 'gm-loading', '加载中…'));
+    sb.rpc('gm_list_user_titles', { p_pwd: gmPwd, p_user_id: uid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        wrap.innerHTML = '';
+        if (!rows.length) { wrap.appendChild(el('div', 'gm-empty', '该用户暂无称号')); return; }
+        rows.forEach(function (t) {
+          var row = el('div', 'gm-row');
+          var txt = el('div', 'gm-row-text');
+          txt.appendChild(el('div', 'gm-row-name', t.name));
+          txt.appendChild(el('div', 'gm-row-sub', (t.source === 'auto' ? '自动获得' : 'GM 授予')));
+          row.appendChild(txt);
+          var b = el('button', 'btn-mini gm-danger', '撤回');
+          b.type = 'button';
+          b.onclick = function () { gmRevokeTitle(uid, t.title_id, t.name); };
+          row.appendChild(b);
+          wrap.appendChild(row);
+        });
+      })
+      .catch(function (e) {
+        wrap.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function gmRevokeTitle(uid, titleId, name) {
+    if (!window.confirm('确认撤回称号「' + name + '」？')) return;
+    sb.rpc('gm_revoke_title', { p_pwd: gmPwd, p_user_id: uid, p_title_id: titleId })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已撤回称号：' + name);
+        if (gmCurrent) renderGmUserTitles(gmCurrent.uid);
+        loadDisplayTitles().then(applySelfTitle).then(renderConversations);
+      })
+      .catch(function (e) { toast('撤回失败：' + friendlyError(e)); });
   }
 
   function changePassword() {
@@ -1588,6 +1873,17 @@
   $('gm-panel').addEventListener('click', function (e) { if (e.target === this) closeGm(); });
   $('gm-search-btn').addEventListener('click', gmSearch);
   $('gm-search-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') gmSearch(); });
+
+  // 称号管理标签页与表单
+  $('gm-tab-users').addEventListener('click', function () { gmSwitchTab('users'); });
+  $('gm-tab-titles').addEventListener('click', function () { gmSwitchTab('titles'); });
+  $('gm-title-new-btn').addEventListener('click', openTitleForm);
+  $('gm-title-close').addEventListener('click', function () { hideModal('gm-title-modal'); });
+  $('gm-title-cancel').addEventListener('click', function () { hideModal('gm-title-modal'); });
+  $('gm-title-create').addEventListener('click', gmCreateTitle);
+  $('gm-title-cond').addEventListener('change', function () {
+    $('gm-title-days-wrap').hidden = (this.value !== 'streak');
+  });
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
@@ -2014,6 +2310,8 @@
     } else {
       setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
       addOnlineDot(av, peer.id);
+      applyTitleFrame(av, peer.id);
+      addTitleBadge($('peer-name'), peer.id);
     }
 
     var rb = $('peer-remark-btn');
