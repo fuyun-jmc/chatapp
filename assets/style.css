@@ -266,13 +266,23 @@ input, textarea { font-family: inherit; font-size: 15px; }
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
   font-size: 14px;
 }
-.search-result .row { display: flex; align-items: center; gap: 9px; padding: 5px 4px; border-radius: 8px; }
+/* 注意：目标 WebView 不支持 flex gap，这里改用 margin 拉开间距 */
+.search-result .row { display: flex; align-items: center; padding: 5px 4px; border-radius: 8px; }
+.search-result .row > .avatar { margin-right: 9px; }
 .search-result .row.clickable { cursor: pointer; }
 .search-result .row.clickable:hover { background: var(--line); }
 .search-result .info { flex: 1; min-width: 0; padding-left: 7px; }
 .search-result .nm { font-weight: 500; }
 .search-result .ph { font-size: 12.5px; color: var(--text-3); }
 .search-result .note { color: var(--text-2); font-size: 13px; }
+/* 搜索结果里的分组标题（群聊 / 置顶 / 好友） */
+.search-result .list-section {
+  padding: 8px 4px 3px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  color: var(--text-3);
+}
+.search-result .list-section:first-child { padding-top: 2px; }
+.search-result .pin-btn { margin-left: 8px; }
 
 .side-scroll { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 14px; }
 .side-section { padding: 4px 0 10px; }
