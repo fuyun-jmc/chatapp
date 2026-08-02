@@ -53,7 +53,9 @@
     presenceChannel: null, // 在线状态 Realtime 广播频道
     titlesMap: {},       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
     gmAdminUid: null,    // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
-    forbiddenWords: []   // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
+    forbiddenWords: [],  // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
+    isAdmin: false,      // 是否持有「管理员」称号（会话内显示违禁接收卡片的开关）
+    ownedTitles: []      // 当前用户已拥有的全部称号名称
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -536,6 +538,7 @@
           card.appendChild(btn);
           box.appendChild(card);
         });
+        refreshAdminStatus();
       })
       .catch(function () { box.innerHTML = '<div class="title-loading">称号加载失败</div>'; });
   }
@@ -994,6 +997,7 @@
       .then(loadGroups)
       .then(loadDisplayTitles)
       .then(applySelfTitle)
+      .then(refreshAdminStatus)
       .then(loadForbiddenWords)
       .then(function () {
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
@@ -1886,6 +1890,86 @@
     else if (tab === 'reports') openReportsTab();
   }
 
+  // 渲染单条违规上报卡片（GM 后台与「管理员」面板共用）
+  // mode: 'gm' | 'admin' —— admin 模式额外带「禁言（最高 20 天）」操作
+  function renderReportCard(rep, mode) {
+    var card = el('div', 'gm-report');
+    var head = el('div', 'gm-report-head');
+    var name = el('div', 'gm-report-name', (rep.nickname || '(无昵称)') + '  ·  ' + (rep.phone || ''));
+    if (mode === 'gm') {
+      name.style.cursor = 'pointer';
+      name.title = '点击查看该用户';
+      name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone); };
+    }
+    var badge = el('div', 'gm-report-badge' + (rep.handled ? ' done' : ''), rep.handled ? '已处理' : '待处理');
+    head.appendChild(name); head.appendChild(badge);
+    card.appendChild(head);
+    card.appendChild(el('div', 'gm-report-sub',
+      '本周（' + rep.week_start + ' 起）触发违禁词 ' + rep.warn_count + ' 次 · 上报 ' + fmtTime(rep.reported_at)));
+
+    // —— 明细：发送的信息 / 接收方 / 接收方近期是否触发违禁词 ——
+    var content = rep.last_content || '（无内容记录）';
+    card.appendChild(el('div', 'gm-report-line', '发送的信息：' + content));
+
+    var peerTxt;
+    if (!rep.last_peer_id) peerTxt = '（未知接收方）';
+    else if (rep.last_peer_type === 'group') peerTxt = (rep.last_peer_name || '群聊') + '（群）';
+    else peerTxt = (rep.last_peer_name || '用户') + (rep.last_peer_phone ? '（' + rep.last_peer_phone + '）' : '（用户）');
+    card.appendChild(el('div', 'gm-report-line', '接收方：' + peerTxt));
+
+    var recentTxt;
+    if (rep.last_peer_type === 'group') recentTxt = '（群消息，不适用）';
+    else if (rep.peer_recent_warn === true) recentTxt = '是（近 7 天 ' + (rep.peer_warn_count || 0) + ' 次）';
+    else if (rep.peer_recent_warn === false) recentTxt = '否';
+    else recentTxt = '未知';
+    card.appendChild(el('div', 'gm-report-line', '接收方近期是否触发违禁词：' + recentTxt));
+
+    // —— 管理员模式：禁言（最高 20 天）+ 解除禁言 ——
+    if (mode === 'admin') {
+      var muteRow = el('div', 'gm-mute-row');
+      var inp = el('input', 'gm-mute-input');
+      inp.type = 'number'; inp.min = '1'; inp.max = '20'; inp.value = '1'; inp.placeholder = '天数(1-20)';
+      var muteBtn = el('button', 'btn-mini', '禁言');
+      muteBtn.type = 'button';
+      muteBtn.onclick = function () {
+        var days = parseInt(inp.value, 10);
+        if (isNaN(days) || days < 1) { toast('请输入 1–20 之间的天数'); return; }
+        if (days > 20) { days = 20; inp.value = '20'; }
+        sb.rpc('admin_mute_user', { p_user_id: rep.user_id, p_hours: days * 24 })
+          .then(function (r) {
+            if (r.error) throw r.error;
+            toast('已对该用户禁言 ' + days + ' 天（管理员上限 20 天）');
+          })
+          .catch(function (e) {
+            var m = (e && (e.message || '')) || '';
+            if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('禁言失败：' + friendlyError(e)); }
+          });
+      };
+      var unmuteBtn = el('button', 'btn-mini gm-danger', '解除禁言');
+      unmuteBtn.type = 'button';
+      unmuteBtn.onclick = function () {
+        sb.rpc('admin_unmute_user', { p_user_id: rep.user_id })
+          .then(function (r) { if (r.error) throw r.error; toast('已解除禁言'); })
+          .catch(function (e) {
+            var m = (e && (e.message || '')) || '';
+            if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
+          });
+      };
+      muteRow.appendChild(inp); muteRow.appendChild(muteBtn); muteRow.appendChild(unmuteBtn);
+      card.appendChild(muteRow);
+    }
+
+    // —— 标记 / 撤销处理 ——
+    var btn = el('button', 'btn-mini' + (rep.handled ? ' gm-danger' : ''), rep.handled ? '撤销处理' : '标记处理');
+    btn.type = 'button';
+    btn.onclick = function () {
+      if (mode === 'gm') gmResolveReport(rep.id, !rep.handled);
+      else adminResolveReport(rep.id, !rep.handled);
+    };
+    card.appendChild(btn);
+    return card;
+  }
+
   // GM 后台「违规上报」列表
   function openReportsTab() {
     var box = $('gm-report-list');
@@ -1896,24 +1980,7 @@
         var rows = r.data || [];
         if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
         box.innerHTML = '';
-        rows.forEach(function (rep) {
-          var card = el('div', 'gm-report');
-          var head = el('div', 'gm-report-head');
-          var name = el('div', 'gm-report-name', (rep.nickname || '(无昵称)') + '  ·  ' + (rep.phone || ''));
-          name.style.cursor = 'pointer';
-          name.title = '点击查看该用户';
-          name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone); };
-          var badge = el('div', 'gm-report-badge' + (rep.handled ? ' done' : ''), rep.handled ? '已处理' : '待处理');
-          head.appendChild(name); head.appendChild(badge);
-          card.appendChild(head);
-          card.appendChild(el('div', 'gm-report-sub',
-            '本周（' + rep.week_start + ' 起）触发违禁词 ' + rep.warn_count + ' 次 · 上报 ' + fmtTime(rep.reported_at)));
-          var btn = el('button', 'btn-mini' + (rep.handled ? ' gm-danger' : ''), rep.handled ? '撤销处理' : '标记处理');
-          btn.type = 'button';
-          btn.onclick = function () { gmResolveReport(rep.id, !rep.handled); };
-          card.appendChild(btn);
-          box.appendChild(card);
-        });
+        rows.forEach(function (rep) { box.appendChild(renderReportCard(rep, 'gm')); });
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
@@ -1930,6 +1997,82 @@
         openReportsTab();
       })
       .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  // ============================================================
+  //  「管理员」称号体系：会话内「违禁接收卡片」 + 无口令管理面板
+  // ============================================================
+  function refreshAdminStatus() {
+    if (!state.uid) return;
+    sb.from('user_titles')
+      .select('title_id, titles(name)')
+      .eq('user_id', state.uid)
+      .then(function (r) {
+        if (r.error) return;
+        var names = (r.data || []).map(function (x) { return x.titles && x.titles.name; }).filter(Boolean);
+        state.ownedTitles = names;
+        state.isAdmin = names.indexOf('管理员') >= 0;
+        updateAdminCard();
+      })
+      .catch(function () {});
+  }
+
+  function updateAdminCard() {
+    var card = $('admin-violation-card');
+    if (card) card.hidden = !state.isAdmin;
+  }
+
+  // 权限被撤销（GM 撤回「管理员」称号）时：隐藏卡片并提示
+  function onAdminRevoked() {
+    state.isAdmin = false;
+    updateAdminCard();
+    hideModal('admin-panel');
+    toast('您的管理员权限已被撤销');
+  }
+
+  function openAdminPanel() {
+    // 进入前再校验一次权限（GM 可能已撤回称号）
+    sb.rpc('is_admin_user')
+      .then(function (r) {
+        var ok = r && !r.error && r.data === true;
+        if (!ok) { onAdminRevoked(); return; }
+        state.isAdmin = true;
+        updateAdminCard();
+        $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
+        showModal('admin-panel');
+        openAdminReports();
+      })
+      .catch(function () { toast('权限校验失败，请重试'); });
+  }
+
+  function openAdminReports() {
+    var box = $('admin-report-list');
+    if (box.innerHTML === '') box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    sb.rpc('admin_list_reports')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (rep) { box.appendChild(renderReportCard(rep, 'admin')); });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function adminResolveReport(id, markHandled) {
+    sb.rpc('admin_resolve_report', { p_report_id: id, p_handled: !!markHandled })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        openAdminReports();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
+      });
   }
 
   function openTitleTab() {
@@ -2318,6 +2461,15 @@
     $('gm-title-days-wrap').hidden = !isAuto;
     setDaysLabel(this.value);
   });
+
+  // 管理员（称号）后台：会话内「违禁接收」卡片 + 免密面板
+  $('admin-violation-open').addEventListener('click', function () {
+    var card = $('admin-violation-card');
+    if (card) card.hidden = false;
+  });
+  $('admin-violation-enter').addEventListener('click', openAdminPanel);
+  $('admin-close').addEventListener('click', function () { hideModal('admin-panel'); });
+  $('admin-panel').addEventListener('click', function (e) { if (e.target === this) hideModal('admin-panel'); });
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
@@ -3135,7 +3287,7 @@
     // 违禁词检测：命中则拦截发送 + 记录一次警告（清零连续清净天数）
     var badWord = matchForbidden(text);
     if (badWord) {
-      sb.rpc('record_word_warning', { p_word: badWord })
+      sb.rpc('record_word_warning', { p_word: badWord, p_content: text, p_peer_id: peerId })
         .then(function (r) {
           var cnt = r && r.data != null ? r.data : null;
           if (cnt != null && cnt > 10) {
