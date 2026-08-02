@@ -431,7 +431,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 .messages {
   flex: 1; overflow-y: auto; padding: 18px 18px 8px;
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 18px;
   overscroll-behavior: contain;
 }
 
