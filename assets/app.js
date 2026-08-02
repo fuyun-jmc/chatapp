@@ -57,7 +57,9 @@
     forbiddenWords: [],  // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
     isAdmin: false,      // 是否持有「管理员」称号（会话内显示违禁接收卡片的开关）
     isDev: false,        // 是否持有「开发者」称号（专属头像框）
-    ownedTitles: []      // 当前用户已拥有的全部称号名称
+    ownedTitles: [],     // 当前用户已拥有的全部称号名称
+    adminTitleId: null,  // 「管理员」称号在 titles 表里的真实 id（按 id 判断强制佩戴，最可靠）
+    devTitleId: null     // 「开发者」称号在 titles 表里的真实 id
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -495,7 +497,18 @@
 
   // 强制佩戴的特殊称号名称（前端按名称精确匹配，不可自行取消佩戴）
   var FORCED_TITLES = ['开发者', '管理员'];
-  function isForcedTitle(name) { return FORCED_TITLES.indexOf((name || '').trim()) >= 0; }
+  // 归一化称号名：去掉半角/全角空格、零宽字符、BOM，避免 DB 里名称带隐藏字符导致匹配失败
+  function normTitleName(name) {
+    return String(name == null ? '' : name)
+      .replace(/[\s\u3000\u200b\u200c\u200d\ufeff]/g, '');
+  }
+  function isForcedTitle(name) { return FORCED_TITLES.indexOf(normTitleName(name)) >= 0; }
+  // 同时用「称号 id」兜底判断（id 来自 refreshAdminStatus 实际查到的行，最可靠）
+  function isForcedTitleRow(t) {
+    if (!t) return false;
+    if (t.id && (t.id === state.adminTitleId || t.id === state.devTitleId)) return true;
+    return isForcedTitle(t.name);
+  }
 
   // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选（按 titleId 去重）
   function titleSlots(uid) {
@@ -577,6 +590,12 @@
           .map(function (u) { return { t: u.titles, granted_at: u.granted_at, source: u.source }; })
           .filter(function (x) { return x.t; });
         var wornId = state.titlesMap && state.titlesMap[state.uid] && state.titlesMap[state.uid].primary && state.titlesMap[state.uid].primary.titleId;
+        // 先从本次结果里定位强制称号的真实 id（不依赖 refreshAdminStatus 是否已跑完）
+        rows.forEach(function (x) {
+          var nn = normTitleName(x.t && x.t.name);
+          if (nn === '管理员') state.adminTitleId = x.t.id;
+          if (nn === '开发者') state.devTitleId  = x.t.id;
+        });
         box.innerHTML = '';
         if (!rows.length) {
           if (empty) empty.hidden = false;
@@ -584,9 +603,9 @@
         }
         rows.forEach(function (x) {
           var t = x.t;
-          var n = (t.name || '').trim();
-          var isDevTitle = n === '开发者';          // 开发者称号强制佩戴 + 专属头像框
-          var forced = isForcedTitle(n);            // 开发者 / 管理员：强制佩戴，不可取消
+          var n = normTitleName(t.name);
+          var isDevTitle = (n === '开发者') || (t.id && t.id === state.devTitleId); // 开发者：专属头像框
+          var forced = isForcedTitleRow(t);         // 开发者 / 管理员：强制佩戴，不可取消
           var worn = forced ? true : (t.id === wornId);
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
           // 边框预览
@@ -628,7 +647,7 @@
   // 佩戴 / 取消佩戴称号，成功后立即刷新头像框
   function wearTitle(titleId, name, color, style) {
     // 强制称号不可手动佩戴/取消；若 UI 因名称空格等意外出现按钮，也在这里拦截
-    if (titleId && isForcedTitle(name)) {
+    if (titleId && (isForcedTitle(name) || titleId === state.adminTitleId || titleId === state.devTitleId)) {
       toast('「' + name + '」为强制称号，已自动展示，无需手动佩戴');
       return;
     }
@@ -2136,6 +2155,9 @@
           frameStyle: 'dev'
         } : null;
         state.titlesMap[state.uid] = slot;
+        // 记录强制称号的真实 id，后续 loadMyTitles 用 id 匹配更稳（避免名称隐藏字符问题）
+        state.adminTitleId = adminRow ? adminRow.id : null;
+        state.devTitleId   = devRow   ? devRow.id   : null;
         applySelfTitle();
       })
       .catch(function () {});
