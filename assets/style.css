@@ -225,13 +225,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 15px; font-weight: 500; user-select: none;
 }
 
-/* 好友在线绿点：定位在头像右下角 */
+/* 好友在线状态点：定位在头像右下角，在线绿点 / 离线灰点 */
 .online-dot {
   position: absolute; right: -2px; bottom: -2px;
   width: 10px; height: 10px; border-radius: 50%;
-  background: var(--ok); border: 2px solid var(--bg);
+  border: 2px solid var(--bg);
   box-sizing: content-box;
 }
+.online-dot.online { background: var(--ok); }
+.online-dot.offline { background: #c4c9d2; }
 .avatar.sm { width: 32px; height: 32px; flex-basis: 32px; border-radius: 9px; font-size: 13px; }
 .avatar.lg { width: 76px; height: 76px; flex-basis: 76px; border-radius: 20px; font-size: 28px; }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
