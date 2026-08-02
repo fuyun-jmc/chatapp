@@ -1360,6 +1360,33 @@
     return row;
   }
 
+  // 搜索结果用的群聊行（带置顶按钮与未读徽标），点击触发 clickFn
+  function makeGroupRow(g, clickFn) {
+    var row = el('div', 'row clickable');
+    var av = el('div', 'avatar sm');
+    av.textContent = g.name ? g.name.charAt(0) : '群';
+    av.style.background = '#7f77dd';
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'nm', g.name || '未命名群聊'));
+    info.appendChild(el('div', 'ph', (g.memberCount || 0) + ' 位成员' + (g.iAmOwner ? ' · 我是群主' : '')));
+    row.appendChild(av); row.appendChild(info);
+
+    var pin = el('button', 'pin-btn', g.pinned ? '已置顶' : '置顶');
+    pin.type = 'button';
+    if (g.pinned) pin.classList.add('pinned');
+    pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); toggleGroupPin(g); };
+    row.appendChild(pin);
+
+    var cnt = parseInt(state.unread[g.id] || 0, 10) || 0;
+    if (cnt > 0) {
+      var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
+      badge.setAttribute('aria-label', '未读消息 ' + cnt + ' 条');
+      row.appendChild(badge);
+    }
+    row.onclick = function () { clickFn(groupById(g.id) || g); };
+    return row;
+  }
+
   function makeFriendItem(f) {
     var li = el('li');
     if (state.active && state.active.id === f.id) li.classList.add('is-active');
@@ -1437,18 +1464,36 @@
       return hay.indexOf(q) !== -1;
     });
 
-    renderGroupedFriends(panel, local, function (f) {
+    // 已加入的群聊：按群名匹配（置顶群优先，其余按最近会话时间）
+    var localG = (state.groups || []).filter(function (g) {
+      return String(g.name || '').toLowerCase().indexOf(q) !== -1;
+    });
+
+    function pickConv(x) {
       $('search-box').value = '';
       onUnifiedSearch();
-      openChat(f);
-    });
+      openChat(x);
+    }
+
+    if (localG.length) {
+      var gPin = localG.filter(function (g) { return g.pinned; });
+      var gNor = localG.filter(function (g) { return !g.pinned; });
+      sortByRecent(gPin);
+      sortByRecent(gNor);
+      panel.appendChild(el('div', 'list-section', '群聊'));
+      gPin.concat(gNor).forEach(function (g) {
+        panel.appendChild(makeGroupRow(g, pickConv));
+      });
+    }
+
+    renderGroupedFriends(panel, local, pickConv);
 
     if (PHONE_RE.test(kw)) {
       sb.from('profiles').select('id,phone,nickname,avatar_path').eq('phone', kw).maybeSingle()
         .then(function (r) {
           if (r.error) { toast(friendlyError(r.error)); return; }
           if (!r.data) {
-            if (local.length === 0) panel.appendChild(el('div', 'note', '没有找到该手机号的用户，可能还没注册。'));
+            if (local.length === 0 && localG.length === 0) panel.appendChild(el('div', 'note', '没有找到该手机号的用户，可能还没注册。'));
             return;
           }
           if (r.data.id === state.uid) return;
@@ -1460,8 +1505,8 @@
           row.appendChild(add);
           panel.appendChild(row);
         });
-    } else if (local.length === 0) {
-      panel.appendChild(el('div', 'note', '没有找到相关好友'));
+    } else if (local.length === 0 && localG.length === 0) {
+      panel.appendChild(el('div', 'note', '没有找到相关好友或群聊'));
     }
   }
 
