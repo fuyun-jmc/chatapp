@@ -1409,7 +1409,9 @@
     var dab = $('delete-account-btn');
     if (dab) dab.hidden = !!state.forceChangePwd;
     // GM 入口仅对管理员账号可见；其他用户一律不显示（强制改密码期间也隐藏）
+    var gl = $('gm-layer');
     var ge = $('gm-entry');
+    if (gl) gl.hidden = (state.forceChangePwd || state.uid !== GM_ADMIN_UID);
     if (ge) ge.style.display = (state.forceChangePwd || state.uid !== GM_ADMIN_UID) ? 'none' : '';
     showModal('settings-modal');
   }
@@ -1420,6 +1422,8 @@
       return;
     }
     hideModal('settings-modal');
+    var gl = $('gm-layer');
+    if (gl) gl.hidden = true;
     pendingAvatar = null;
   }
 
@@ -1588,6 +1592,8 @@
     $('gm-results').innerHTML = '';
     $('gm-detail').hidden = true;
     $('gm-detail').innerHTML = '';
+    var gl = $('gm-layer');
+    if (gl) gl.hidden = true;
     showModal('gm-panel');
     try { $('gm-search-input').focus(); } catch (e) {}
   }
