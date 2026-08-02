@@ -388,13 +388,13 @@
     return (Date.now() - ms) < ONLINE_WINDOW_MS;
   }
 
-  // 在头像右上角追加在线绿点（离线则不显示）
+  // 在头像右下角追加在线状态点：在线绿点，离线灰点（始终显示）
   function addOnlineDot(av, uid) {
     if (!av) return;
     var old = av.querySelector('.online-dot');
     if (old) old.remove();
-    if (!isOnline(uid)) return;
     var dot = el('span', 'online-dot');
+    dot.classList.add(isOnline(uid) ? 'online' : 'offline');
     av.appendChild(dot);
   }
 
