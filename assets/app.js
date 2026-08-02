@@ -1008,7 +1008,7 @@
   }
 
   function loadProfile() {
-    return sb.from('profiles').select('id,phone,nickname,avatar_path').eq('id', state.uid).maybeSingle()
+    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until').eq('id', state.uid).maybeSingle()
       .then(function (r) {
         if (r.error) throw r.error;
         if (!r.data) {
@@ -1029,6 +1029,7 @@
       })
       .then(function (p) {
         state.profile = p;
+        state.mutedUntil = p.muted_until || null;
         $('me-name').textContent = p.nickname;
         $('me-phone').textContent = p.phone;
         setAvatar($('me-avatar'), { nickname: p.nickname, phone: p.phone, avatarPath: p.avatar_path });
@@ -1785,6 +1786,58 @@
     });
 
     renderGmUserTitles(uid);
+    renderGmMuteSection(uid);
+  }
+
+  // GM 用户详情里的「禁言管理」区块
+  function renderGmMuteSection(uid) {
+    var box = $('gm-detail');
+    var sec = el('div', 'gm-mute-sec');
+    sec.appendChild(el('div', 'gm-subtitle', '禁言管理'));
+    var status = el('div', 'gm-mute-status', '加载中…');
+    sec.appendChild(status);
+    var row = el('div', 'gm-mute-row');
+    var inp = el('input');
+    inp.type = 'number'; inp.min = '1'; inp.max = '8760'; inp.value = '24';
+    inp.placeholder = '小时';
+    var muteBtn = el('button', 'btn-mini', '禁言'); muteBtn.type = 'button';
+    var unmuteBtn = el('button', 'btn-mini gm-danger', '立即解除'); unmuteBtn.type = 'button';
+    row.appendChild(inp); row.appendChild(muteBtn); row.appendChild(unmuteBtn);
+    sec.appendChild(row);
+    box.appendChild(sec);
+
+    function refresh() {
+      sb.rpc('gm_get_user_mute', { p_pwd: gmPwd, p_user_id: uid })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          var u = r.data || null;
+          status.textContent = u
+            ? ('禁言中，将于 ' + formatMuteUntil(u) + ' 自动解除')
+            : '未禁言';
+        })
+        .catch(function () { status.textContent = '状态获取失败'; });
+    }
+    muteBtn.onclick = function () {
+      var h = parseInt(inp.value, 10);
+      if (!h || h < 1) { toast('请填写有效的禁言时长（小时）'); return; }
+      sb.rpc('gm_mute_user', { p_pwd: gmPwd, p_user_id: uid, p_hours: h })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          toast('已禁言 ' + h + ' 小时');
+          refresh();
+        })
+        .catch(function (e) { toast('禁言失败：' + friendlyError(e)); });
+    };
+    unmuteBtn.onclick = function () {
+      sb.rpc('gm_unmute_user', { p_pwd: gmPwd, p_user_id: uid })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          toast('已解除禁言');
+          refresh();
+        })
+        .catch(function (e) { toast('解除失败：' + friendlyError(e)); });
+    };
+    refresh();
   }
 
   function gmForceDeleteGroup(uid, gid, gname) {
@@ -2967,6 +3020,33 @@
     });
   }
 
+  /* ---------- 禁言相关 ---------- */
+  // 将 ISO 时间格式化为「2026年08月02日11时46分」
+  function formatMuteUntil(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日' +
+           p(d.getHours()) + '时' + p(d.getMinutes()) + '分';
+  }
+  function mutePrompt(iso) {
+    return '您已被禁言，' + formatMuteUntil(iso) + '将自动解除。';
+  }
+  // 发送前调用：拉取最新禁言状态；若被禁言则弹提示并返回 false
+  async function ensureNotMuted() {
+    var until = null;
+    try {
+      var r = await sb.rpc('get_my_mute');
+      if (!r.error) until = r.data || null;
+    } catch (e) { /* 查询失败不阻断发送 */ }
+    state.mutedUntil = until;
+    if (until && new Date(until).getTime() > Date.now()) {
+      toast(mutePrompt(until));
+      return false;
+    }
+    return true;
+  }
+
   /* ---------- 发送文字 ---------- */
   var input = $('msg-input');
 
@@ -2982,10 +3062,12 @@
     }
   });
 
-  $('composer').addEventListener('submit', function (e) {
+  $('composer').addEventListener('submit', async function (e) {
     e.preventDefault();
     var text = input.value.trim();
     if (!text || !state.active) return;
+    // 禁言检查（不清空输入，方便解除后重发）
+    if (!(await ensureNotMuted())) return;
     input.value = '';
     input.style.height = 'auto';
 
@@ -3012,7 +3094,6 @@
       .then(function (r) {
         if (r.error) throw r.error;
         appendMessage(r.data);
-        // 发送消息也会把该会话前置（仅收/发才前置，点击查看不前置）
         state.convTs[peerId] = Date.now();
         if (isGroup) renderGroups(); else renderFriends();
       })
@@ -3031,10 +3112,12 @@
   $('file-video').onchange = function () { handleFile(this, 'video'); };
   $('file-any').onchange = function () { handleFile(this, 'file'); };
 
-  function handleFile(inputEl, kind) {
+  async function handleFile(inputEl, kind) {
     var file = inputEl.files && inputEl.files[0];
     inputEl.value = '';
     if (!file || !state.active) return;
+    // 禁言检查
+    if (!(await ensureNotMuted())) return;
 
     var maxMb = kind === 'image' ? (CFG.MAX_IMAGE_MB || 5)
               : kind === 'video' ? (CFG.MAX_VIDEO_MB || 50)
