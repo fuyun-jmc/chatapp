@@ -601,29 +601,32 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 /* 个人设置：我的称号 */
 .title-section { margin-top: 2px; }
-.title-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+/* 注意：目标环境（手机内置浏览器/WebView）不支持 flex gap，一律用 margin 兜底 */
+.title-list { display: flex; flex-direction: column; margin-top: 8px; }
 .title-loading { font-size: 13px; color: var(--text-3); padding: 4px 0; }
 .title-empty { font-size: 13px; color: var(--text-3); margin-top: 8px; }
 .title-card {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 10px;
+  display: flex; align-items: center;
+  padding: 10px 12px; border-radius: 10px; margin-bottom: 8px;
   background: rgba(127,119,221,.08); border: 1px solid transparent;
 }
 .title-card.worn { border-color: var(--brand); background: rgba(79,124,247,.12); }
 .title-prev {
   flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
-  display: inline-block;
+  display: inline-block; margin-right: 12px;
 }
+/* 开发者专属预览框比普通环更粗，左右各留出光晕空间 */
+.title-prev.dev-frame { margin-left: 5px; margin-right: 17px; }
 .title-info { flex: 1; min-width: 0; }
 .title-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .title-desc { font-size: 12px; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.title-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text-3); }
-.title-meta .title-src { color: var(--brand); }
+.title-meta { display: flex; align-items: center; margin-top: 4px; font-size: 11px; color: var(--text-3); }
+.title-meta .title-src { color: var(--brand); margin-left: 8px; }
 .btn-outline {
   background: transparent; border: 1px solid var(--brand); color: var(--brand);
 }
 .btn-outline:hover { background: rgba(79,124,247,.10); }
-/* 管理员称号：强制佩戴标签（不可取消） */
+/* 开发者 / 管理员称号：强制佩戴标签（不可取消） */
 .title-forced {
   display: inline-block; padding: 3px 10px; border-radius: 999px;
   font-size: 12px; font-weight: 600; color: #fff;
@@ -853,6 +856,17 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 11px; font-weight: 600; color: #1a1a1a; line-height: 1.5;
   white-space: nowrap;
 }
+/* 开发者专属徽标：渐变底 + 白字（普通称号只能用纯色） */
+.title-badge.badge-dev {
+  color: #ffffff;
+  background: #7c4dff;
+  background: -webkit-linear-gradient(left, #7c4dff, #22d3ee);
+  background: linear-gradient(90deg, #7c4dff, #22d3ee);
+  box-shadow: 0 1px 4px rgba(124, 77, 255, .45);
+}
+/* 开发者专属头像框标记类（具体阴影由 JS 内联设置，含称号颜色） */
+.dev-frame { border-radius: 50%; }
+
 /* friend-list 里的 nm 行需要给徽标留空间 */
 .friend-list .nm, .info .nm { display: flex; align-items: center; flex-wrap: wrap; }
 
