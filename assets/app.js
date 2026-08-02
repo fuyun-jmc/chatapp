@@ -49,6 +49,7 @@
     recCode: '',
     lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
     onlineTimer: null,  // 在线状态轮询定时器
+    presenceChannel: null, // 在线状态 Realtime 广播频道
     titlesMap: {}       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
   };
 
@@ -345,7 +346,7 @@
     touchLastActive();
   }
 
-  // 每 30s 保活 + 检测本机行是否被注销（被踢则自动登出）
+  // 每 15s 保活 + 检测本机行是否被注销（被踢则自动登出），并广播在线状态
   function startHeartbeat() {
     if (state.heartbeat) clearInterval(state.heartbeat);
     state.heartbeat = setInterval(function () {
@@ -353,6 +354,7 @@
       var token = state.deviceToken;
       // 保活自己的在线状态
       touchLastActive();
+      broadcastPresence();
       sb.from('device_sessions').update({ last_seen: new Date().toISOString() })
         .eq('token', token)
         .then(function (r) {
@@ -368,7 +370,7 @@
           }
         })
         .catch(function () {});
-    }, 30000);
+    }, 15000);
   }
 
   // 上报自己的活跃时间（写入 profiles.last_active，仅自己的行受策略允许）
@@ -671,6 +673,51 @@
     } catch (e) {}
   }
 
+  // ---------- 在线状态实时广播（好友上线/心跳即点亮，正常退出即变灰） ----------
+  function setupPresenceChannel() {
+    if (!state.uid) return;
+    try {
+      if (state.presenceChannel) { sb.removeChannel(state.presenceChannel); state.presenceChannel = null; }
+      state.presenceChannel = sb.channel('online-presence', {
+        config: { broadcast: { self: false } }
+      })
+      .on('broadcast', { event: 'tick' }, function (payload) {
+        var p = payload && payload.payload;
+        if (!p || !p.uid || p.uid === state.uid) return;
+        // 只处理好友的在线变化
+        var isFriend = state.friends.some(function (f) { return f.id === p.uid; });
+        if (!isFriend) return;
+        if (p.offline) {
+          delete state.lastActive[p.uid];
+        } else {
+          state.lastActive[p.uid] = p.ts ? new Date(p.ts).toISOString() : new Date().toISOString();
+        }
+        renderConversations();
+        if (state.active && state.active.type === 'friend' && state.active.id === p.uid) updatePeerOnline();
+      })
+      .subscribe(function (status) {
+        if (status === 'SUBSCRIBED') broadcastPresence(); // 上线即广播一次，让好友秒级看到我
+      });
+    } catch (e) {
+      // Realtime 不可用时静默降级，仍靠轮询兜底
+      state.presenceChannel = null;
+    }
+  }
+
+  function broadcastPresence() {
+    if (!state.presenceChannel || !state.uid) return;
+    try {
+      state.presenceChannel.send({ type: 'broadcast', event: 'tick', payload: { uid: state.uid, ts: Date.now() } });
+    } catch (e) {}
+  }
+
+  function broadcastOffline() {
+    if (!state.presenceChannel || !state.uid) return;
+    try {
+      state.presenceChannel.send({ type: 'broadcast', event: 'tick', payload: { uid: state.uid, offline: true } });
+    } catch (e) {}
+  }
+
   // 被远端注销后的统一本地下线：清本机会话 + 清该账号登录痕迹，不影响其他设备
   function forceLogoutByRemote(reason) {
     if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
@@ -897,6 +944,11 @@
     if (state.onlineTimer) { clearInterval(state.onlineTimer); state.onlineTimer = null; }
     if (state.channel) { sb.removeChannel(state.channel); state.channel = null; }
     if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
+    if (state.presenceChannel) {
+      try { broadcastOffline(); } catch (e) {}
+      try { sb.removeChannel(state.presenceChannel); } catch (e) {}
+      state.presenceChannel = null;
+    }
     state.uid = null; state.profile = null; state.friends = [];
     state.incoming = []; state.active = null; state.unread = {}; state.urlCache = {};
     $('app-view').hidden = true;
@@ -914,13 +966,14 @@
     registerDeviceSession();
     startHeartbeat();
     setupKickChannel();
+    setupPresenceChannel();
     // 连续登录计数 + 自动授予「连续登录 N 天」称号（失败不影响主流程）
     sb.rpc('touch_login_streak').catch(function () {});
 
-    // 在线状态：登录后拉一次，之后每 30s 轮询（好友登入/登出即可反映）
+    // 在线状态：登录后拉一次；Realtime 广播负责秒级点亮，10s 轮询作兜底校正
     refreshOnline();
     if (state.onlineTimer) clearInterval(state.onlineTimer);
-    state.onlineTimer = setInterval(refreshOnline, 30000);
+    state.onlineTimer = setInterval(refreshOnline, 10000);
 
     loadProfile()
       .then(loadRelations)
