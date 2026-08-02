@@ -391,10 +391,11 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .picker-item .ph { font-size: 12px; color: var(--text-3); }
 
 .member-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-.member-item { display: flex; align-items: center; gap: 9px; padding: 7px 4px; }
-.member-item .info { flex: 1; min-width: 0; padding-left: 7px; }
+.member-item { display: flex; align-items: center; padding: 7px 4px; }
+.member-item .avatar { margin-right: 9px; }
+.member-item .info { flex: 1; min-width: 0; padding-left: 0; }
 .member-item .nm { font-size: 14px; font-weight: 500; }
-.member-item .mini-ok, .member-item .mini-no { flex: 0 0 auto; }
+.member-item .mini-ok, .member-item .mini-no { flex: 0 0 auto; margin-left: 6px; }
 
 /* 群聊中他人消息显示发送者昵称 */
 .msg.group-in { flex-wrap: wrap; }
