@@ -2141,9 +2141,13 @@
   // 在用户详情里追加「称号」区块（查看/撤回）
   function renderGmUserTitles(uid) {
     var box = $('gm-detail');
-    box.appendChild(el('div', 'gm-subtitle', '称号'));
-    var wrap = el('div', 'gm-titles-sub');
-    box.appendChild(wrap);
+    var wrap = box.querySelector('.gm-titles-sub');
+    if (!wrap) {
+      box.appendChild(el('div', 'gm-subtitle', '称号'));
+      wrap = el('div', 'gm-titles-sub');
+      box.appendChild(wrap);
+    }
+    wrap.innerHTML = '';
     wrap.appendChild(el('div', 'gm-loading', '加载中…'));
     sb.rpc('gm_list_user_titles', { p_pwd: gmPwd, p_user_id: uid })
       .then(function (r) {
@@ -2175,8 +2179,8 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已撤回称号：' + name);
-        if (gmCurrent) renderGmUserTitles(gmCurrent.uid);
         loadDisplayTitles().then(applySelfTitle).then(renderConversations);
+        if (gmCurrent) renderGmUserTitles(gmCurrent.uid);
       })
       .catch(function (e) { toast('撤回失败：' + friendlyError(e)); });
   }
