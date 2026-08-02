@@ -2566,10 +2566,11 @@
         var rows = (r.data || []).slice().reverse();
         var lastDay = null;
         rows.forEach(function (m) {
+          var node = renderMessage(m);
+          if (!node) return; // 本端已删除的消息不渲染，也不生成日期分隔
           var k = dayKey(m.created_at);
           if (k !== lastDay) { box.appendChild(el('div', 'day-sep', dayLabel(m.created_at))); lastDay = k; }
-          var node = renderMessage(m);
-          if (node) box.appendChild(node);
+          box.appendChild(node);
         });
         // 若全部消息都已本端删除（如刚清空），给出空态提示，避免一片空白像出错
         if (!box.querySelector('.msg')) {
