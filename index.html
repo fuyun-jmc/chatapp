@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=49">
+<link rel="stylesheet" href="assets/style.css?v=50">
 </head>
 <body>
 
@@ -434,16 +434,71 @@
   <div class="gm-inner">
     <header class="gm-head">
       <span class="gm-title">GM 后台 · 绝对管理员</span>
+      <div class="gm-tabs">
+        <button class="gm-tab active" id="gm-tab-users" type="button">用户管理</button>
+        <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
+      </div>
       <button class="icon-btn" id="gm-close" type="button" aria-label="关闭">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </header>
-    <div class="gm-search">
-      <input id="gm-search-input" placeholder="搜索手机号 / 昵称" autocomplete="off">
-      <button class="btn-primary" id="gm-search-btn" type="button">搜索</button>
+
+    <!-- 用户管理模式 -->
+    <div class="gm-users" id="gm-users">
+      <div class="gm-search">
+        <input id="gm-search-input" placeholder="搜索手机号 / 昵称" autocomplete="off">
+        <button class="btn-primary" id="gm-search-btn" type="button">搜索</button>
+      </div>
+      <div class="gm-results" id="gm-results"></div>
+      <div class="gm-detail" id="gm-detail" hidden></div>
     </div>
-    <div class="gm-results" id="gm-results"></div>
-    <div class="gm-detail" id="gm-detail" hidden></div>
+
+    <!-- 称号管理模式 -->
+    <div class="gm-titles" id="gm-titles" hidden>
+      <div class="gm-titles-bar">
+        <button class="btn-mini" id="gm-title-new-btn" type="button">+ 新建称号</button>
+      </div>
+      <div class="gm-title-list" id="gm-title-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 新建称号表单（弹层） -->
+    <div class="modal gm-title-modal" id="gm-title-modal" hidden>
+      <div class="gm-title-card">
+        <header class="modal-head">
+          <h3>新建称号</h3>
+          <button class="icon-btn" id="gm-title-close" type="button" aria-label="关闭">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+        <div class="settings-body">
+          <label class="field"><span>称号名称</span>
+            <input id="gm-title-name" maxlength="20" placeholder="例如：持之以恒" autocomplete="off"></label>
+          <label class="field"><span>描述</span>
+            <input id="gm-title-desc" maxlength="60" placeholder="例如：连续登录 7 天获得" autocomplete="off"></label>
+          <label class="field"><span>边框颜色</span>
+            <input type="color" id="gm-title-color" value="#ffd700"></label>
+          <label class="field"><span>边框样式</span>
+            <select id="gm-title-style">
+              <option value="ring">描边环</option>
+              <option value="glow">发光</option>
+              <option value="solid">加粗环</option>
+            </select></label>
+          <label class="field"><span>获取方式</span>
+            <select id="gm-title-cond">
+              <option value="manual">仅 GM 手动授予</option>
+              <option value="streak">连续登录 N 天自动获得</option>
+            </select></label>
+          <label class="field" id="gm-title-days-wrap" hidden><span>连续天数</span>
+            <input type="number" id="gm-title-days" min="1" max="365" value="7"></label>
+          <p class="form-error" id="gm-title-error" hidden></p>
+          <footer class="modal-foot">
+            <button class="btn-ghost" id="gm-title-cancel" type="button">取消</button>
+            <button class="btn-primary" id="gm-title-create" type="button">创建</button>
+          </footer>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -494,7 +549,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=49"></script>
-<script src="assets/app.js?v=49"></script>
+<script src="assets/config.js?v=50"></script>
+<script src="assets/app.js?v=50"></script>
 </body>
 </html>
