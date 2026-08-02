@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=84">
+<link rel="stylesheet" href="assets/style.css?v=85">
 </head>
 <body>
 
@@ -520,8 +520,10 @@
             <select id="gm-title-cond">
               <option value="manual">仅 GM 手动授予</option>
               <option value="streak">连续登录 N 天自动获得</option>
+              <option value="total_login">累计登录 N 天自动获得</option>
+              <option value="clean_streak">连续 N 天未触发违禁词警告自动获得</option>
             </select></label>
-          <label class="field" id="gm-title-days-wrap" hidden><span>连续天数</span>
+          <label class="field" id="gm-title-days-wrap" hidden><span id="gm-title-days-label">连续天数</span>
             <input type="number" id="gm-title-days" min="1" max="365" value="7"></label>
           <p class="form-error" id="gm-title-error" hidden></p>
           <footer class="modal-foot">
@@ -603,7 +605,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=84"></script>
-<script src="assets/app.js?v=84"></script>
+<script src="assets/config.js?v=85"></script>
+<script src="assets/app.js?v=85"></script>
 </body>
 </html>
