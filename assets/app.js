@@ -1408,14 +1408,6 @@
 
   function openSettings() {
     if (!state.profile) return;
-    // GM 入口对登录用户都可见（小圆点）；点击后仍需正确口令才进得去后台，
-    // 真正的权限闸门在后端 gm_auth，因此前端可见性不依赖账号 UID，避免把自己挡在门外。
-    // 强制改密码期间隐藏，避免安全流程被打断。
-    var showGm = !state.forceChangePwd;
-    var gl0 = $('gm-layer');
-    var ge0 = $('gm-entry');
-    if (gl0) gl0.hidden = !showGm;
-    if (ge0) ge0.style.display = showGm ? '' : 'none';
     pendingAvatar = null;
     $('settings-name').value = state.profile.nickname || '';
     setAvatar($('settings-avatar'), {
@@ -1428,9 +1420,11 @@
     loadMyTitles();
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
-    // 强制改密码期间不允许注销账号（先完成安全流程）
+    // 强制改密码期间不允许注销账号 / 进入 GM 后台（先完成安全流程）
     var dab = $('delete-account-btn');
     if (dab) dab.hidden = !!state.forceChangePwd;
+    var gob = $('gm-open-btn');
+    if (gob) gob.hidden = !!state.forceChangePwd;
     showModal('settings-modal');
   }
 
@@ -1440,8 +1434,6 @@
       return;
     }
     hideModal('settings-modal');
-    var gl = $('gm-layer');
-    if (gl) gl.hidden = true;
     pendingAvatar = null;
   }
 
@@ -1631,8 +1623,6 @@
     $('gm-results').innerHTML = '';
     $('gm-detail').hidden = true;
     $('gm-detail').innerHTML = '';
-    var gl = $('gm-layer');
-    if (gl) gl.hidden = true;
     showModal('gm-panel');
     try { $('gm-search-input').focus(); } catch (e) {}
   }
@@ -2045,7 +2035,7 @@
   });
 
   // 绝对管理员（GM）后台：入口与各步骤
-  $('gm-entry').addEventListener('click', openGmEntry);
+  $('gm-open-btn').addEventListener('click', openGmEntry);
   $('gm-pwd-close').addEventListener('click', function () { hideModal('gm-pwd-modal'); });
   $('gm-pwd-cancel').addEventListener('click', function () { hideModal('gm-pwd-modal'); });
   $('gm-pwd-confirm').addEventListener('click', gmTryAuth);
