@@ -1401,6 +1401,42 @@
   $('del-friend-cancel').addEventListener('click', closeDelFriend);
   $('del-friend-confirm').addEventListener('click', confirmDelFriend);
 
+  // 一键清空与某好友的全部聊天记录（仅本端删除，对方无感、不可恢复）
+  var pendingClearPeer = null;
+  function openClearModal(peer) {
+    pendingClearPeer = peer;
+    $('clear-msgs-text').textContent =
+      '确定清空与「' + displayName(peer) + '」的全部聊天记录吗？\n仅自己不可见，对方仍保留记录，且不可恢复。';
+    showModal('clear-msgs-modal');
+  }
+  function closeClearModal() {
+    hideModal('clear-msgs-modal');
+    pendingClearPeer = null;
+  }
+  function confirmClearMessages() {
+    var peer = pendingClearPeer;
+    if (!peer) return;
+    hideModal('clear-msgs-modal');
+    pendingClearPeer = null;
+    var btn = $('clear-msgs-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = '清空中…'; }
+    sb.rpc('clear_messages_for_me', { p_peer_id: peer.id })
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        toast('已清空聊天记录（仅自己可见）');
+        // 重新加载当前会话：被本端删除的消息将不再渲染，聊天框变空
+        if (state.active && state.active.id === peer.id) openChat(state.active);
+      })
+      .catch(function (e) { toast(friendlyError(e)); })
+      .then(function () {
+        if (btn) { btn.disabled = false; btn.textContent = '清空'; }
+      });
+  }
+
+  $('clear-msgs-close').addEventListener('click', closeClearModal);
+  $('clear-msgs-cancel').addEventListener('click', closeClearModal);
+  $('clear-msgs-confirm').addEventListener('click', confirmClearMessages);
+
   /* ============================================================
    *  个人设置（头像 + 名称）
    * ============================================================ */
@@ -2491,6 +2527,8 @@
     if (rb) { rb.hidden = isGroup; if (!isGroup) rb.onclick = function () { editRemark(peer); }; }
     var db = $('peer-del-btn');
     if (db) { db.hidden = isGroup; if (!isGroup) db.onclick = function () { deleteFriend(peer); }; }
+    var cb = $('peer-clear-btn');
+    if (cb) { cb.hidden = isGroup; if (!isGroup) cb.onclick = function () { openClearModal(peer); }; }
     $('group-info-btn').hidden = !isGroup;
 
     var box = $('messages');
@@ -2518,7 +2556,8 @@
         rows.forEach(function (m) {
           var k = dayKey(m.created_at);
           if (k !== lastDay) { box.appendChild(el('div', 'day-sep', dayLabel(m.created_at))); lastDay = k; }
-          box.appendChild(renderMessage(m));
+          var node = renderMessage(m);
+          if (node) box.appendChild(node);
         });
         scrollBottom();
         if (state.recallTimer) clearInterval(state.recallTimer);
@@ -2592,7 +2631,9 @@
     var sep = box.querySelector('.day-sep');
     if (sep && sep.textContent === '还没有消息，打个招呼吧') sep.remove();
     var near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
-    box.appendChild(renderMessage(m));
+    var node = renderMessage(m);
+    if (!node) return;
+    box.appendChild(node);
     if (near) scrollBottom();
   }
 
@@ -2639,12 +2680,8 @@
     wrap.dataset.id = m.id;
     if (out && m.created_at) wrap.dataset.ts = new Date(m.created_at).getTime();
 
-    // 本端已删除：仅自己可见，显示占位（对方无感）
-    if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) {
-      wrap.className = 'msg recalled';
-      wrap.appendChild(el('div', 'recalled-note', '你已删除此消息'));
-      return wrap;
-    }
+    // 本端已删除（含一键清空）：仅自己可见，直接不渲染（对方无感）
+    if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return null;
 
     if (m.recalled) {
       wrap.className = 'msg recalled';
@@ -2772,7 +2809,7 @@
     sb.rpc('delete_message_for_me', { msg_id: id })
       .then(function (r) {
         if (r.error) throw r.error;
-        if (old) old.replaceWith(renderMessage({ id: id, sender_id: state.uid, deleted_by: [state.uid] }));
+        if (old) old.remove();
         toast('已删除（仅自己可见）');
       })
       .catch(function (e) { toast(friendlyError(e)); });
@@ -2918,13 +2955,17 @@
 
         // 自己发出的消息：本地已处理，这里只同步「更新」（撤回 / 本端删除）的回显，避免重复追加
         if (m.sender_id === state.uid) {
-          if (existing) existing.replaceWith(renderMessage(m));
+          if (existing) {
+            var n1 = renderMessage(m);
+            if (n1) existing.replaceWith(n1); else existing.remove();
+          }
           return;
         }
 
         // 他人消息：若已显示则原地更新（对方撤回、或我本端删除的回显）；否则作为新消息处理
         if (existing) {
-          existing.replaceWith(renderMessage(m));
+          var n2 = renderMessage(m);
+          if (n2) existing.replaceWith(n2); else existing.remove();
           return;
         }
 
