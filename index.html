@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=92">
+<link rel="stylesheet" href="assets/style.css?v=93">
 </head>
 <body>
 
@@ -469,6 +469,7 @@
       <span class="gm-title">GM 后台 · 绝对管理员</span>
       <div class="gm-tabs">
         <button class="gm-tab active" id="gm-tab-users" type="button">用户管理</button>
+        <button class="gm-tab" id="gm-tab-reports" type="button">违规上报</button>
         <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
       </div>
       <button class="icon-btn" id="gm-close" type="button" aria-label="关闭">
@@ -492,6 +493,11 @@
         <button class="btn-mini" id="gm-title-new-btn" type="button">+ 新建称号</button>
       </div>
       <div class="gm-title-list" id="gm-title-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 违规上报模式 -->
+    <div class="gm-reports" id="gm-reports" hidden>
+      <div class="gm-report-list" id="gm-report-list"><div class="gm-empty">加载中…</div></div>
     </div>
 
   </div>
@@ -608,7 +614,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=92"></script>
-<script src="assets/app.js?v=92"></script>
+<script src="assets/config.js?v=93"></script>
+<script src="assets/app.js?v=93"></script>
 </body>
 </html>
