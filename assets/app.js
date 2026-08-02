@@ -1877,12 +1877,59 @@
 
   // ---------- 称号管理（GM 后台） ----------
   function gmSwitchTab(tab) {
-    var users = tab === 'users';
-    $('gm-tab-users').classList.toggle('active', users);
-    $('gm-tab-titles').classList.toggle('active', !users);
-    $('gm-users').hidden = !users;
-    $('gm-titles').hidden = users;
-    if (!users) openTitleTab();
+    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles' };
+    ['users', 'reports', 'titles'].forEach(function (k) {
+      var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
+      var p = $(map[k]); if (p) p.hidden = (k !== tab);
+    });
+    if (tab === 'titles') openTitleTab();
+    else if (tab === 'reports') openReportsTab();
+  }
+
+  // GM 后台「违规上报」列表
+  function openReportsTab() {
+    var box = $('gm-report-list');
+    box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    sb.rpc('gm_list_reports', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (rep) {
+          var card = el('div', 'gm-report');
+          var head = el('div', 'gm-report-head');
+          var name = el('div', 'gm-report-name', (rep.nickname || '(无昵称)') + '  ·  ' + (rep.phone || ''));
+          name.style.cursor = 'pointer';
+          name.title = '点击查看该用户';
+          name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone); };
+          var badge = el('div', 'gm-report-badge' + (rep.handled ? ' done' : ''), rep.handled ? '已处理' : '待处理');
+          head.appendChild(name); head.appendChild(badge);
+          card.appendChild(head);
+          card.appendChild(el('div', 'gm-report-sub',
+            '本周（' + rep.week_start + ' 起）触发违禁词 ' + rep.warn_count + ' 次 · 上报 ' + fmtTime(rep.reported_at)));
+          var btn = el('button', 'btn-mini' + (rep.handled ? ' gm-danger' : ''), rep.handled ? '撤销处理' : '标记处理');
+          btn.type = 'button';
+          btn.onclick = function () { gmResolveReport(rep.id, !rep.handled); };
+          card.appendChild(btn);
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        box.innerHTML = /GM_AUTH_FAIL/.test(m)
+          ? '<div class="gm-empty">口令已失效，请重新进入</div>'
+          : '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function gmResolveReport(id, markHandled) {
+    sb.rpc('gm_resolve_report', { p_pwd: gmPwd, p_report_id: id, p_handled: !!markHandled })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        openReportsTab();
+      })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
   }
 
   function openTitleTab() {
@@ -2260,6 +2307,7 @@
 
   // 称号管理标签页与表单
   $('gm-tab-users').addEventListener('click', function () { gmSwitchTab('users'); });
+  $('gm-tab-reports').addEventListener('click', function () { gmSwitchTab('reports'); });
   $('gm-tab-titles').addEventListener('click', function () { gmSwitchTab('titles'); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
   $('gm-title-close').addEventListener('click', function () { hideModal('gm-title-modal'); });
@@ -3088,7 +3136,13 @@
     var badWord = matchForbidden(text);
     if (badWord) {
       sb.rpc('record_word_warning', { p_word: badWord })
-        .then(function () {}).catch(function () {});
+        .then(function (r) {
+          var cnt = r && r.data != null ? r.data : null;
+          if (cnt != null && cnt > 10) {
+            toast('违禁保护系统生效，禁止发送。该账号已累计多次触发违禁词，已自动上报 GM。');
+          }
+        })
+        .catch(function () {});
       toast('违禁保护系统生效，禁止发送。');
       return;   // 拦截：不发送、不清空输入，便于修改后重发
     }
