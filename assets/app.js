@@ -1544,6 +1544,8 @@
   function openGmEntry() {
     $('gm-pwd-input').value = '';
     $('gm-pwd-error').hidden = true;
+    var btn = $('gm-pwd-confirm');
+    if (btn) { btn.disabled = false; btn.textContent = '进入'; }
     showModal('gm-pwd-modal');
     try { $('gm-pwd-input').focus(); } catch (e) {}
   }
@@ -1551,24 +1553,34 @@
   function gmTryAuth() {
     var pwd = $('gm-pwd-input').value;
     var err = $('gm-pwd-error');
+    var btn = $('gm-pwd-confirm');
+    function resetBtn() { if (btn) { btn.disabled = false; btn.textContent = '进入'; } }
     err.hidden = true;
     if (!pwd) { err.textContent = '请输入口令'; err.hidden = false; return; }
-    var btn = $('gm-pwd-confirm');
     btn.disabled = true; btn.textContent = '验证中…';
-    sb.rpc('gm_auth', { p_pwd: pwd })
-      .then(function (r) {
-        if (r.error) throw r.error;
-        if (!r.data) throw new Error('GM_AUTH_FAIL');
-        gmPwd = pwd;
-        hideModal('gm-pwd-modal');
-        closeSettings();
-        openGmPanel();
-      })
-      .catch(function (e) {
-        err.textContent = '口令错误，无法进入';
-        err.hidden = false;
-        btn.disabled = false; btn.textContent = '进入';
-      });
+    try {
+      sb.rpc('gm_auth', { p_pwd: pwd })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          if (!r.data) throw new Error('GM_AUTH_FAIL');
+          gmPwd = pwd;
+          hideModal('gm-pwd-modal');
+          closeSettings();
+          openGmPanel();
+        })
+        .catch(function (e) {
+          var m = (e && (e.message || '')) || '';
+          err.textContent = /GM_AUTH_FAIL|GM_FORBIDDEN/.test(m)
+            ? '口令错误或非管理员账号，无法进入'
+            : '请求失败：' + friendlyError(e);
+          err.hidden = false;
+        })
+        .then(resetBtn, resetBtn);
+    } catch (e) {
+      err.textContent = '请求异常，请重试';
+      err.hidden = false;
+      resetBtn();
+    }
   }
 
   function openGmPanel() {
