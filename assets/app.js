@@ -1213,6 +1213,9 @@
     loadDeviceSessions();
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
+    // 强制改密码期间不允许注销账号（先完成安全流程）
+    var dab = $('delete-account-btn');
+    if (dab) dab.hidden = !!state.forceChangePwd;
     showModal('settings-modal');
   }
 
@@ -1250,6 +1253,84 @@
     $('settings-newpwd').value = '';
     $('settings-confirm-pwd').value = '';
     $('change-pwd-error').hidden = true;
+  }
+
+  /* ============================================================
+   *  注销账号（多步确认：确认 → 输入手机号+密码验证 → 再次确认 → 注销）
+   * ============================================================ */
+
+  // 步骤1：打开「确认要注销吗」
+  function openDeleteAccount() {
+    showModal('del-account-modal');
+  }
+
+  // 步骤2：进入输入手机号 + 密码验证
+  function deleteAccountToVerify() {
+    hideModal('del-account-modal');
+    var ph = $('del-account-phone');
+    ph.value = (state.profile && state.profile.phone) || '';
+    $('del-account-pwd').value = '';
+    $('del-account-verify-error').hidden = true;
+    showModal('del-account-verify');
+    try { ph.focus(); } catch (e) {}
+  }
+
+  // 步骤2 → 校验手机号与密码，通过后进入步骤3「再次确认」
+  function deleteAccountVerify() {
+    var phone = $('del-account-phone').value.trim();
+    var pwd = $('del-account-pwd').value;
+    var err = $('del-account-verify-error');
+    err.hidden = true;
+
+    if (!PHONE_RE.test(phone)) { err.textContent = '请输入正确的 11 位手机号'; err.hidden = false; return; }
+    if (pwd.length < 6) { err.textContent = '密码至少 6 位'; err.hidden = false; return; }
+    if (state.profile && phone !== state.profile.phone) {
+      err.textContent = '输入的手机号与当前登录账号不一致';
+      err.hidden = false; return;
+    }
+
+    var btn = $('del-account-verify-btn');
+    btn.disabled = true; btn.textContent = '验证中…';
+    // 用手机号+密码重新登录以验证身份（验证失败即密码错误）
+    sb.auth.signInWithPassword({ email: emailFor(phone), password: pwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        hideModal('del-account-verify');
+        $('del-account-final-phone').textContent = phone;
+        showModal('del-account-final');
+      })
+      .catch(function (e) {
+        err.textContent = friendlyError(e);
+        err.hidden = false;
+        btn.disabled = false; btn.textContent = '确认';
+      });
+  }
+
+  // 步骤3：最终确认 → 调用 RPC 删除账号
+  function deleteAccountCommit() {
+    var btn = $('del-account-final-btn');
+    btn.disabled = true; btn.textContent = '注销中…';
+    sb.rpc('delete_my_account')
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        hideModal('del-account-final');
+        toast('账号已注销');
+        // 清除本机该账号痕迹（移除记住的账号、登录标记、设备令牌）
+        try { clearCurrentAccountLocal(); } catch (e) {}
+        // 作废会话并回到登录页（RPC 已删除用户，signOut 兜底）
+        sb.auth.signOut({ scope: 'local' })
+          .then(function () { teardown(); initLoginRemembered(); })
+          .catch(function () { teardown(); initLoginRemembered(); });
+      })
+      .catch(function (e) {
+        var msg = (e && (e.message || e.error_description)) || '';
+        if (/delete_my_account|could not find|function .* does not exist|schema .* does not exist/i.test(msg)) {
+          toast('注销失败：请先在 Supabase 执行 20260802_delete_account.sql 迁移');
+        } else {
+          toast('注销失败：' + friendlyError(e));
+        }
+        btn.disabled = false; btn.textContent = '确认注销';
+      });
   }
 
   function changePassword() {
@@ -1291,6 +1372,18 @@
   $('settings-close').addEventListener('click', closeSettings);
   $('switch-account-settings').addEventListener('click', switchAccountFromSettings);
   $('settings-cancel').addEventListener('click', closeSettings);
+
+  // 注销账号：入口与各步骤按钮
+  $('delete-account-btn').addEventListener('click', openDeleteAccount);
+  $('del-account-close').addEventListener('click', function () { hideModal('del-account-modal'); });
+  $('del-account-cancel').addEventListener('click', function () { hideModal('del-account-modal'); });
+  $('del-account-confirm').addEventListener('click', deleteAccountToVerify);
+  $('del-account-verify-close').addEventListener('click', function () { hideModal('del-account-verify'); });
+  $('del-account-verify-cancel').addEventListener('click', function () { hideModal('del-account-verify'); });
+  $('del-account-verify-btn').addEventListener('click', deleteAccountVerify);
+  $('del-account-final-close').addEventListener('click', function () { hideModal('del-account-final'); });
+  $('del-account-final-cancel').addEventListener('click', function () { hideModal('del-account-final'); });
+  $('del-account-final-btn').addEventListener('click', deleteAccountCommit);
   $('settings-modal').addEventListener('click', function (e) {
     if (e.target === this) closeSettings();
   });
