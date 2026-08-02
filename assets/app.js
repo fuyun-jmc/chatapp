@@ -52,7 +52,8 @@
     onlineTimer: null,  // 在线状态轮询定时器
     presenceChannel: null, // 在线状态 Realtime 广播频道
     titlesMap: {},       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
-    gmAdminUid: null     // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
+    gmAdminUid: null,    // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
+    forbiddenWords: []   // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -993,6 +994,7 @@
       .then(loadGroups)
       .then(loadDisplayTitles)
       .then(applySelfTitle)
+      .then(loadForbiddenWords)
       .then(function () {
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
         // —— subscribeRealtime 没有 return，会返回 undefined，导致 .then(startPoll) 抛错、
@@ -1846,8 +1848,32 @@
       });
   }
 
+  // 拉取违禁词词库（登录后调用一次，缓存到 state.forbiddenWords）
+  function loadForbiddenWords() {
+    return sb.from('forbidden_words').select('word')
+      .then(function (r) {
+        if (r.error) return;
+        state.forbiddenWords = (r.data || [])
+          .map(function (w) { return (w.word || '').toLowerCase(); })
+          .filter(function (w) { return !!w; });
+      })
+      .catch(function () {});
+  }
+
+  // 检测文本是否命中违禁词，命中返回该词（小写），否则 null
+  function matchForbidden(text) {
+    var low = (text || '').toLowerCase();
+    var list = state.forbiddenWords || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && low.indexOf(list[i]) >= 0) return list[i];
+    }
+    return null;
+  }
+
   function condText(t) {
     if (t.cond_type === 'streak') return '连续登录 ' + (t.cond_value || '?') + ' 天自动获得';
+    if (t.cond_type === 'total_login') return '累计登录 ' + (t.cond_value || '?') + ' 天自动获得';
+    if (t.cond_type === 'clean_streak') return '连续 ' + (t.cond_value || '?') + ' 天未触发违禁词警告自动获得';
     return '仅 GM 手动授予';
   }
 
@@ -1953,6 +1979,12 @@
   }
 
   // 新建 / 编辑称号表单
+  function autoCondTypes() { return ['streak', 'total_login', 'clean_streak']; }
+  function setDaysLabel(cond) {
+    var lbl = $('gm-title-days-label');
+    if (lbl) lbl.textContent = (cond === 'total_login') ? '累计天数' : '连续天数';
+  }
+
   function openTitleForm(editTitle) {
     if (editTitle) {
       state.editingTitleId = editTitle.id;
@@ -1962,7 +1994,9 @@
       $('gm-title-style').value = editTitle.frame_style || 'ring';
       $('gm-title-cond').value = editTitle.cond_type || 'manual';
       $('gm-title-days').value = editTitle.cond_value || 7;
-      $('gm-title-days-wrap').hidden = (editTitle.cond_type !== 'streak');
+      var isAuto = autoCondTypes().indexOf(editTitle.cond_type) >= 0;
+      $('gm-title-days-wrap').hidden = !isAuto;
+      setDaysLabel(editTitle.cond_type);
       $('gm-title-modal-title').textContent = '编辑称号';
       $('gm-title-create').textContent = '保存';
     } else {
@@ -1974,6 +2008,7 @@
       $('gm-title-cond').value = 'manual';
       $('gm-title-days-wrap').hidden = true;
       $('gm-title-days').value = '7';
+      setDaysLabel('manual');
       $('gm-title-modal-title').textContent = '新建称号';
       $('gm-title-create').textContent = '创建';
     }
@@ -1994,7 +2029,7 @@
 
   function validateTitleForm(f) {
     if (!f.name) return '请填写称号名称';
-    if (f.cond === 'streak' && (!f.days || f.days < 1)) return '请填写有效的连续天数';
+    if (autoCondTypes().indexOf(f.cond) >= 0 && (!f.days || f.days < 1)) return '请填写有效的天数';
     return null;
   }
 
@@ -2008,7 +2043,7 @@
     btn.disabled = true; btn.textContent = '创建中…';
     sb.rpc('gm_create_title', {
       p_pwd: gmPwd, p_name: f.name, p_desc: f.desc, p_color: f.color,
-      p_style: f.style, p_cond_type: f.cond, p_value: f.cond === 'streak' ? f.days : null
+      p_style: f.style, p_cond_type: f.cond, p_value: autoCondTypes().indexOf(f.cond) >= 0 ? f.days : null
     })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2032,7 +2067,7 @@
     btn.disabled = true; btn.textContent = '保存中…';
     sb.rpc('gm_update_title', {
       p_pwd: gmPwd, p_title_id: id, p_name: f.name, p_desc: f.desc, p_color: f.color,
-      p_style: f.style, p_cond_type: f.cond, p_value: f.cond === 'streak' ? f.days : null
+      p_style: f.style, p_cond_type: f.cond, p_value: autoCondTypes().indexOf(f.cond) >= 0 ? f.days : null
     })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2167,7 +2202,9 @@
   $('gm-title-cancel').addEventListener('click', function () { hideModal('gm-title-modal'); });
   $('gm-title-create').addEventListener('click', onTitleSubmit);
   $('gm-title-cond').addEventListener('change', function () {
-    $('gm-title-days-wrap').hidden = (this.value !== 'streak');
+    var isAuto = autoCondTypes().indexOf(this.value) >= 0;
+    $('gm-title-days-wrap').hidden = !isAuto;
+    setDaysLabel(this.value);
   });
 
   $('settings-avatar-btn').addEventListener('click', function () {
@@ -2954,6 +2991,14 @@
 
     var peerId = state.active.id;
     var isGroup = state.active.type === 'group';
+
+    // 违禁词检测：命中则记录一次警告（清零连续清净天数），仍照常发送
+    var badWord = matchForbidden(text);
+    if (badWord) {
+      sb.rpc('record_word_warning', { p_word: badWord })
+        .then(function () {}).catch(function () {});
+      toast('⚠️ 消息包含违禁词「' + badWord + '」，已记录提醒');
+    }
 
     var payload = {
       sender_id: state.uid,
