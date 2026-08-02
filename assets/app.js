@@ -3089,7 +3089,7 @@
     if (badWord) {
       sb.rpc('record_word_warning', { p_word: badWord })
         .then(function () {}).catch(function () {});
-      toast('⚠️ 消息包含违禁内容，已被拦截，未能发送。请文明发言。');
+      toast('违禁保护系统生效，禁止发送。');
       return;   // 拦截：不发送、不清空输入，便于修改后重发
     }
 
