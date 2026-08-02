@@ -764,6 +764,17 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-danger { color: var(--danger); border-color: var(--danger); }
 .gm-danger:hover { background: rgba(217,75,75,.08); }
 
+/* 禁言管理区 */
+.gm-mute-sec { margin-top: 14px; }
+.gm-mute-status { color: var(--text-2); font-size: 14px; margin-bottom: 8px; }
+.gm-mute-row { display: flex; flex-wrap: wrap; align-items: center; }
+.gm-mute-row input {
+  width: 96px; padding: 6px 8px; margin-right: 8px;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg-2); color: var(--text);
+}
+.gm-mute-row .btn-mini { margin-right: 8px; }
+
 /* GM 称号管理 */
 .gm-tabs { display: flex; gap: 6px; margin: 0 8px; }
 .gm-tab { font-size: 12px; color: var(--text-3); background: none; border: none; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
