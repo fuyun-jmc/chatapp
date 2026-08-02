@@ -1165,8 +1165,8 @@
     return li;
   }
 
-  // 按“会话浮顶时间戳 convTs”降序排序：有 ts 的（收到过新消息或被查看过）排到最前，
-  // 且彼此按时间先后——新消息/查看越晚越靠前；没有 ts 的历史会话保持原相对顺序。
+  // 按“会话浮顶时间戳 convTs”降序排序：有 ts 的（收到过新消息 / 向对方发过消息）排到最前，
+  // 且彼此按时间先后——越晚的会话越靠前；没有 ts 的历史会话保持原相对顺序。
   function sortByRecent(arr) {
     arr.forEach(function (x, i) { x.__order = i; });   // 记录原始位置，保证无 ts 时顺序稳定
     arr.sort(function (a, b) {
@@ -2438,7 +2438,8 @@
     state.active = peer;
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
-    state.convTs[peer.id] = Date.now();
+    // 注意：仅“收到消息”或“发送消息”才把会话前置（见下方发送处与实时接收处），
+    // 点击打开查看不再触发前置，避免一进对话框就打乱列表顺序。
     if (isGroup) renderGroups(); else renderFriends();
 
     $('chat-empty').hidden = true;
@@ -2504,6 +2505,53 @@
   $('back-btn').addEventListener('click', function () {
     document.querySelector('.app-view').classList.remove('show-chat');
   });
+
+  // 聊天页点击好友头像 → 打开个人主页（群聊不触发）
+  $('peer-avatar').addEventListener('click', function () {
+    if (state.active && state.active.type !== 'group') openProfile(state.active);
+  });
+  $('profile-close').addEventListener('click', function () { hideModal('profile-modal'); });
+
+  // 个人主页：显示昵称、手机号、拥有称号
+  function openProfile(peer) {
+    var av = $('profile-avatar');
+    setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
+    applyTitleFrame(av, peer.id);
+    $('profile-name').textContent = displayName(peer);
+    $('profile-phone').textContent = peer.phone || '未绑定手机号';
+
+    showModal('profile-modal');
+
+    var box = $('profile-titles');
+    box.innerHTML = '<div class="title-loading">加载中…</div>';
+    sb.rpc('get_user_titles', { p_user_id: peer.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) {
+          box.innerHTML = '';
+          box.appendChild(el('div', 'profile-empty', '暂无称号'));
+          return;
+        }
+        box.innerHTML = '';
+        rows.forEach(function (t) {
+          var row = el('div', 'profile-title');
+          var dot = el('span', 'dot');
+          dot.style.background = t.frame_color || '#ffd700';
+          row.appendChild(dot);
+          var main = el('div', 'pt-main');
+          main.appendChild(el('div', 'tn', t.name));
+          if (t.description) main.appendChild(el('div', 'td', t.description));
+          row.appendChild(main);
+          row.appendChild(el('span', 'src', t.source === 'auto' ? '自动获得' : '授予'));
+          box.appendChild(row);
+        });
+      })
+      .catch(function () {
+        box.innerHTML = '';
+        box.appendChild(el('div', 'profile-empty', '称号加载失败'));
+      });
+  }
 
   function scrollBottom() {
     var box = $('messages');
@@ -2739,18 +2787,24 @@
     input.value = '';
     input.style.height = 'auto';
 
+    var peerId = state.active.id;
+    var isGroup = state.active.type === 'group';
+
     var payload = {
       sender_id: state.uid,
       kind: 'text',
       content: text
     };
-    if (state.active.type === 'group') payload.group_id = state.active.id;
-    else payload.receiver_id = state.active.id;
+    if (isGroup) payload.group_id = peerId;
+    else payload.receiver_id = peerId;
 
     sb.from('messages').insert(payload).select().single()
       .then(function (r) {
         if (r.error) throw r.error;
         appendMessage(r.data);
+        // 发送消息也会把该会话前置（仅收/发才前置，点击查看不前置）
+        state.convTs[peerId] = Date.now();
+        if (isGroup) renderGroups(); else renderFriends();
       })
       .catch(function (err) {
         toast(friendlyError(err));
@@ -2808,6 +2862,9 @@
         if (r.error) throw r.error;
         if (state.active && state.active.id === target.id) appendMessage(r.data);
         else toast('已发送');
+        // 发送文件也会把该会话前置（仅收/发才前置，点击查看不前置）
+        state.convTs[target.id] = Date.now();
+        if (target.type === 'group') renderGroups(); else renderFriends();
       })
       .catch(function (e) { toast(friendlyError(e)); })
       .then(function () { bar.hidden = true; });
