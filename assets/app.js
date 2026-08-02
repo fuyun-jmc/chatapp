@@ -1420,14 +1420,25 @@
     pendingClearPeer = null;
     var btn = $('clear-msgs-confirm');
     if (btn) { btn.disabled = true; btn.textContent = '清空中…'; }
+    // 乐观清空：先立即移除本地所有消息（含旧的单条删除占位），避免 RPC 失败时旧内容残留
+    var box = $('messages');
+    if (box) { box.innerHTML = ''; box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧')); }
     sb.rpc('clear_messages_for_me', { p_peer_id: peer.id })
       .then(function (r) {
         if (r && r.error) throw r.error;
         toast('已清空聊天记录（仅自己可见）');
-        // 重新加载当前会话：被本端删除的消息将不再渲染，聊天框变空
+        // 后端成功：从 DB 重拉当前会话，被本端删除的消息因 renderMessage 返回 null 而不会渲染
         if (state.active && state.active.id === peer.id) openChat(state.active);
       })
-      .catch(function (e) { toast(friendlyError(e)); })
+      .catch(function (e) {
+        var msg = friendlyError(e);
+        // 后端函数不存在（多半是没执行迁移 SQL）：已在本地隐藏，明确提示根因
+        if (/does not exist|could not find|undefined function|42883/i.test(msg)) {
+          toast('后端未生效：请先在 Supabase 执行 20260804_clear_messages.sql（本机已临时隐藏）');
+        } else {
+          toast('清空失败：' + msg);
+        }
+      })
       .then(function () {
         if (btn) { btn.disabled = false; btn.textContent = '清空'; }
       });
