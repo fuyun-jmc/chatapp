@@ -2372,6 +2372,15 @@
         rm.onclick = function () { removeMember(g, uid); };
         li.appendChild(rm);
       }
+      // 群内加好友：非自己、且还不是好友的成员，显示「加好友」
+      if (uid !== state.uid && !friendById(uid)) {
+        var af = el('button', 'mini-ok', '加好友'); af.type = 'button';
+        af.onclick = function (ev) {
+          ev.stopPropagation();
+          sendRequest({ id: uid }, af);
+        };
+        li.appendChild(af);
+      }
       list.appendChild(li);
     });
   }
