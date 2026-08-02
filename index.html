@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=54">
+<link rel="stylesheet" href="assets/style.css?v=55">
 </head>
 <body>
 
@@ -317,15 +317,16 @@
         <p class="form-hint">注销账号将永久删除你的资料、好友关系、聊天记录、群组等全部数据，且无法恢复。</p>
         <button class="btn-danger" id="delete-account-btn" type="button">注销账号</button>
       </div>
-
-      <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令 -->
-      <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
     </div>
 
     <footer class="modal-foot">
       <button class="btn-ghost" id="settings-cancel" type="button">取消</button>
       <button class="btn-primary" id="settings-save" type="button">保存</button>
     </footer>
+
+    <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
+         放在 .modal 直接子级（非 modal-card 内），钉在屏幕右下角，避免窗口缩小 / 卡片滚动时丢失 -->
+    <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
   </div>
 </div>
 
@@ -558,7 +559,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=54"></script>
-<script src="assets/app.js?v=54"></script>
+<script src="assets/config.js?v=55"></script>
+<script src="assets/app.js?v=55"></script>
 </body>
 </html>
