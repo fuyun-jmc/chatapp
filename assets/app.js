@@ -1049,11 +1049,6 @@
     pin.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); togglePin(f); };
     li.appendChild(pin);
 
-    var rem = el('button', 'remark-btn', '备注');
-    rem.type = 'button';
-    rem.onclick = function (ev) { ev.stopPropagation(); ev.preventDefault(); editRemark(f); };
-    li.appendChild(rem);
-
     var cnt = parseInt(state.unread[f.id] || 0, 10) || 0;
     if (cnt > 0) {
       var badge = el('div', 'badge', cnt > 99 ? '99+' : String(cnt));
