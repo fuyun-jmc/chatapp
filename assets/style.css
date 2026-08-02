@@ -41,7 +41,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* ---------- 配置提示 ---------- */
 .config-warning {
   position: absolute;
-  inset: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   margin: auto;
   width: min(520px, 88vw);
   height: fit-content;
@@ -238,7 +238,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .online-dot.offline { background: #c4c9d2; }
 .avatar.sm { width: 32px; height: 32px; flex-basis: 32px; border-radius: 9px; font-size: 13px; }
 .avatar.lg { width: 76px; height: 76px; flex-basis: 76px; border-radius: 20px; font-size: 28px; }
-.avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.avatar-img { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
 
 .icon-btn {
   border: 0; background: transparent; color: var(--text-3);
@@ -587,7 +587,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 /* ---------- 图片预览 ---------- */
 .lightbox {
-  position: absolute; inset: 0; background: rgba(0,0,0,.85);
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.85);
   display: flex; align-items: center; justify-content: center; z-index: 90; padding: 24px;
 }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
@@ -656,7 +656,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .app-view { position: relative; }
   .sidebar { width: 100%; flex: 1 1 auto; border-right: 0; }
   .chat {
-    position: absolute; inset: 0; background: var(--bg);
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
     transform: translateX(100%); transition: transform .22s ease;
   }
   .app-view.show-chat .chat { transform: translateX(0); }
