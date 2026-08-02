@@ -623,6 +623,12 @@ input, textarea { font-family: inherit; font-size: 15px; }
   background: transparent; border: 1px solid var(--brand); color: var(--brand);
 }
 .btn-outline:hover { background: rgba(79,124,247,.10); }
+/* 管理员称号：强制佩戴标签（不可取消） */
+.title-forced {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: #fff;
+  background: var(--brand); white-space: nowrap;
+}
 
 /* 危险操作区：注销账号 */
 .danger-zone { margin-top: 2px; }
