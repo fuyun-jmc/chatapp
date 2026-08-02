@@ -495,7 +495,7 @@
 
   // 强制佩戴的特殊称号名称（前端按名称精确匹配，不可自行取消佩戴）
   var FORCED_TITLES = ['开发者', '管理员'];
-  function isForcedTitle(name) { return FORCED_TITLES.indexOf(name) >= 0; }
+  function isForcedTitle(name) { return FORCED_TITLES.indexOf((name || '').trim()) >= 0; }
 
   // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选（按 titleId 去重）
   function titleSlots(uid) {
@@ -584,8 +584,9 @@
         }
         rows.forEach(function (x) {
           var t = x.t;
-          var isDevTitle = t.name === '开发者';     // 开发者称号强制佩戴 + 专属头像框
-          var forced = isForcedTitle(t.name);       // 开发者 / 管理员：强制佩戴，不可取消
+          var n = (t.name || '').trim();
+          var isDevTitle = n === '开发者';          // 开发者称号强制佩戴 + 专属头像框
+          var forced = isForcedTitle(n);            // 开发者 / 管理员：强制佩戴，不可取消
           var worn = forced ? true : (t.id === wornId);
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
           // 边框预览
@@ -626,6 +627,16 @@
 
   // 佩戴 / 取消佩戴称号，成功后立即刷新头像框
   function wearTitle(titleId, name, color, style) {
+    // 强制称号不可手动佩戴/取消；若 UI 因名称空格等意外出现按钮，也在这里拦截
+    if (titleId && isForcedTitle(name)) {
+      toast('「' + name + '」为强制称号，已自动展示，无需手动佩戴');
+      return;
+    }
+    var prev = (state.titlesMap && state.titlesMap[state.uid]) || { primary: null, admin: null, dev: null };
+    if (!titleId && prev.primary && isForcedTitle(prev.primary.titleName)) {
+      toast('「' + prev.primary.titleName + '」为强制称号，不可取消');
+      return;
+    }
     sb.rpc('set_my_title', { p_title_id: titleId })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2096,7 +2107,7 @@
       .then(function (r) {
         if (r.error) return;
         var rows = (r.data || []).map(function (x) { return x.titles; }).filter(Boolean);
-        var names = rows.map(function (t) { return t.name; }).filter(Boolean);
+        var names = rows.map(function (t) { return (t.name || '').trim(); }).filter(Boolean);
         state.ownedTitles = names;
         state.isAdmin = names.indexOf('管理员') >= 0;
         state.isDev = names.indexOf('开发者') >= 0;
@@ -2105,7 +2116,7 @@
         // 兜底回填自己的强制称号槽位，保证右上角一定能看到徽标
         function pick(n) {
           var hit = null;
-          rows.forEach(function (t) { if (!hit && t.name === n) hit = t; });
+          rows.forEach(function (t) { if (!hit && (t.name || '').trim() === n) hit = t; });
           return hit;
         }
         var adminRow = pick('管理员');
