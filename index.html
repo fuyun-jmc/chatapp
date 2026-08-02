@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=65">
+<link rel="stylesheet" href="assets/style.css?v=66">
 </head>
 <body>
 
@@ -324,6 +324,12 @@
       <button class="btn-primary" id="settings-save" type="button">保存</button>
     </footer>
 
+    <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
+         放在 modal-card 内并相对于卡片绝对定位，确保随卡片一起出现在视口内。 -->
+    <div class="gm-layer" id="gm-layer" hidden>
+      <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
+    </div>
+
   </div>
 </div>
 
@@ -555,12 +561,6 @@
   </div>
 </div>
 
-<!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
-     放在 body 下直接相对视口定位，避免被 settings-modal 等容器裁剪或随内容滚动。 -->
-<div class="gm-layer" id="gm-layer" hidden>
-  <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
-</div>
-
 <!-- 个人主页（在聊天页点击好友头像打开） -->
 <div class="modal" id="profile-modal">
   <div class="modal-card">
@@ -586,7 +586,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=65"></script>
-<script src="assets/app.js?v=65"></script>
+<script src="assets/config.js?v=66"></script>
+<script src="assets/app.js?v=66"></script>
 </body>
 </html>
