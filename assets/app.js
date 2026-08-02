@@ -51,7 +51,7 @@
     lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
     onlineTimer: null,  // 在线状态轮询定时器
     presenceChannel: null, // 在线状态 Realtime 广播频道
-    titlesMap: {},       // uid -> { titleId, titleName, frameColor, frameStyle }（展示称号，用于头像框）
+    titlesMap: {},       // uid -> { primary:{titleId,titleName,frameColor,frameStyle}|null, admin:{...}|null }（展示称号，用于头像框；admin 为强制佩戴的管理员称号）
     gmAdminUid: null,    // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
     forbiddenWords: [],  // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
     isAdmin: false,      // 是否持有「管理员」称号（会话内显示违禁接收卡片的开关）
@@ -442,14 +442,19 @@
         if (r.error) throw r.error;
         state.titlesMap = {};
         (r.data || []).forEach(function (t) {
-          if (t.title_id) {
-            state.titlesMap[t.user_id] = {
-              titleId: t.title_id,
-              titleName: t.title_name,
-              frameColor: t.frame_color || '#ffd700',
-              frameStyle: t.frame_style || 'ring'
-            };
-          }
+          var primary = t.title_id ? {
+            titleId: t.title_id,
+            titleName: t.title_name,
+            frameColor: t.frame_color || '#ffd700',
+            frameStyle: t.frame_style || 'ring'
+          } : null;
+          var admin = t.admin_title_id ? {
+            titleId: t.admin_title_id,
+            titleName: t.admin_title_name,
+            frameColor: t.admin_title_color || '#ffd700',
+            frameStyle: t.admin_title_frame || 'ring'
+          } : null;
+          state.titlesMap[t.user_id] = { primary: primary, admin: admin };
         });
         // 重新渲染好友列表，让头像框生效
         if (typeof renderConversations === 'function') renderConversations();
@@ -458,29 +463,41 @@
   }
 
   // 给头像元素套上称号边框（环 / 发光 / 加粗环）
+  // 管理员称号强制佩戴：持有『管理员』时优先用其边框（最醒目），否则用自选边框
   function applyTitleFrame(av, uid) {
     if (!av) return;
     av.style.boxShadow = '';
     av.style.border = '';
-    var t = state.titlesMap && state.titlesMap[uid];
+    var m = state.titlesMap && state.titlesMap[uid];
+    if (!m) return;
+    var t = m.admin || m.primary;
     if (!t || !t.titleId) return;
     var c = t.frameColor || '#ffd700';
     if (t.frameStyle === 'solid')      av.style.boxShadow = '0 0 0 4px ' + c;
     else if (t.frameStyle === 'glow')  av.style.boxShadow = '0 0 10px 3px ' + c;
     else                               av.style.boxShadow = '0 0 0 3px ' + c; // ring
-    av.title = (av.title ? av.title + ' · ' : '') + t.titleName;
+    // tooltip 合并两个称号名（管理员强制显示）
+    var names = [];
+    if (m.primary) names.push(m.primary.titleName);
+    if (m.admin && (!m.primary || m.admin.titleId !== m.primary.titleId)) names.push(m.admin.titleName);
+    if (names.length) av.title = names.join(' · ');
   }
 
-  // 在名字容器后追加一个称号小徽标
+  // 在名字容器后追加称号小徽标（管理员强制佩戴 + 可选自选，去重）
   function addTitleBadge(container, uid) {
     if (!container) return;
-    var old = container.querySelector('.title-badge');
-    if (old) old.remove();
-    var t = state.titlesMap && state.titlesMap[uid];
-    if (!t || !t.titleId) return;
-    var b = el('span', 'title-badge', t.titleName);
-    b.style.background = t.frameColor || '#ffd700';
-    container.appendChild(b);
+    var olds = container.querySelectorAll('.title-badge');
+    for (var i = 0; i < olds.length; i++) olds[i].remove();
+    var m = state.titlesMap && state.titlesMap[uid];
+    if (!m) return;
+    var list = [];
+    if (m.primary) list.push(m.primary);
+    if (m.admin && (!m.primary || m.admin.titleId !== m.primary.titleId)) list.push(m.admin);
+    list.forEach(function (t) {
+      var b = el('span', 'title-badge', t.titleName);
+      b.style.background = t.frameColor || '#ffd700';
+      container.appendChild(b);
+    });
   }
 
   // 给侧边栏“我”的头像与名字加上展示称号
@@ -507,7 +524,7 @@
         var rows = (r.data || [])
           .map(function (u) { return { t: u.titles, granted_at: u.granted_at, source: u.source }; })
           .filter(function (x) { return x.t; });
-        var wornId = state.titlesMap && state.titlesMap[state.uid] && state.titlesMap[state.uid].titleId;
+        var wornId = state.titlesMap && state.titlesMap[state.uid] && state.titlesMap[state.uid].primary && state.titlesMap[state.uid].primary.titleId;
         box.innerHTML = '';
         if (!rows.length) {
           if (empty) empty.hidden = false;
@@ -515,7 +532,8 @@
         }
         rows.forEach(function (x) {
           var t = x.t;
-          var worn = t.id === wornId;
+          var isAdminTitle = t.name === '管理员';   // 管理员称号强制佩戴，不可取消
+          var worn = isAdminTitle ? true : (t.id === wornId);
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
           // 边框预览
           var prev = el('div', 'title-prev');
@@ -532,10 +550,15 @@
           meta.appendChild(el('span', 'title-src', x.source === 'auto' ? '自动获得' : '手动授予'));
           info.appendChild(meta);
           card.appendChild(info);
-          var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : ''), worn ? '取消佩戴' : '佩戴');
-          btn.type = 'button';
-          btn.onclick = function () { wearTitle(worn ? null : t.id, t.name, t.frame_color, t.frame_style); };
-          card.appendChild(btn);
+          if (isAdminTitle) {
+            // 强制佩戴：显示标签，不可取消
+            card.appendChild(el('span', 'title-forced', '强制佩戴'));
+          } else {
+            var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : ''), worn ? '取消佩戴' : '佩戴');
+            btn.type = 'button';
+            btn.onclick = function () { wearTitle(worn ? null : t.id, t.name, t.frame_color, t.frame_style); };
+            card.appendChild(btn);
+          }
           box.appendChild(card);
         });
         refreshAdminStatus();
@@ -548,15 +571,17 @@
     sb.rpc('set_my_title', { p_title_id: titleId })
       .then(function (r) {
         if (r.error) throw r.error;
-        // 更新本地展示称号并立刻重绘头像框
+        // 更新本地展示称号（仅改自选 primary，保留强制佩戴的 admin 称号）并立刻重绘头像框
+        var prev = (state.titlesMap && state.titlesMap[state.uid]) || { primary: null, admin: null };
+        state.titlesMap = state.titlesMap || {};
         if (titleId) {
-          state.titlesMap = state.titlesMap || {};
-          state.titlesMap[state.uid] = { titleId: titleId, titleName: name, frameColor: color || '#ffd700', frameStyle: style || 'ring' };
+          prev.primary = { titleId: titleId, titleName: name, frameColor: color || '#ffd700', frameStyle: style || 'ring' };
           toast('已佩戴称号：' + name);
         } else {
-          if (state.titlesMap) delete state.titlesMap[state.uid];
+          prev.primary = null;
           toast('已取消佩戴称号');
         }
+        state.titlesMap[state.uid] = prev;
         applySelfTitle();
         if (typeof renderConversations === 'function') renderConversations();
         loadMyTitles();
