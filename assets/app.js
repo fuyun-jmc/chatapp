@@ -39,6 +39,7 @@
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
+    convTs: {},          // { convId: number }  会话“浮顶”时间戳；收到新消息或查看后设为 Date.now()，用于排序让它停留前置
     recallTimer: null,  // 定时刷新“撤回/删除”按钮的定时器
     urlCache: {},       // file_path -> signed url
     channel: null,
@@ -1118,8 +1119,8 @@
     var all = state.groups.concat(state.friends);
     var pinned = all.filter(function (x) { return x.pinned; });
     var normal = all.filter(function (x) { return !x.pinned; });
-    sortUnreadFirst(pinned);
-    sortUnreadFirst(normal);
+    sortByRecent(pinned);
+    sortByRecent(normal);
 
     var emptyTip = $('chat-empty-tip');
     if (emptyTip) emptyTip.hidden = all.length > 0;
@@ -1164,12 +1165,15 @@
     return li;
   }
 
-  // 把“有新消息”的好友排到数组最前（稳定排序，保持其余相对顺序）
-  function sortUnreadFirst(arr) {
+  // 按“会话浮顶时间戳 convTs”降序排序：有 ts 的（收到过新消息或被查看过）排到最前，
+  // 且彼此按时间先后——新消息/查看越晚越靠前；没有 ts 的历史会话保持原相对顺序。
+  function sortByRecent(arr) {
+    arr.forEach(function (x, i) { x.__order = i; });   // 记录原始位置，保证无 ts 时顺序稳定
     arr.sort(function (a, b) {
-      var ua = parseInt(state.unread[a.id] || 0, 10) || 0;
-      var ub = parseInt(state.unread[b.id] || 0, 10) || 0;
-      return (ub > 0 ? 1 : 0) - (ua > 0 ? 1 : 0);
+      var ta = state.convTs[a.id] || 0;
+      var tb = state.convTs[b.id] || 0;
+      if (tb !== ta) return tb - ta;                    // 有 ts 的按时间倒序前置
+      return (a.__order || 0) - (b.__order || 0);       // 无 ts 保持原始顺序
     });
   }
 
@@ -1177,8 +1181,8 @@
   function renderGroupedFriends(container, friends, clickFn) {
     var pinned = friends.filter(function (f) { return f.pinned; });
     var normal  = friends.filter(function (f) { return !f.pinned; });
-    sortUnreadFirst(pinned);
-    sortUnreadFirst(normal);
+    sortByRecent(pinned);
+    sortByRecent(normal);
 
     if (pinned.length) {
       container.appendChild(el('div', 'list-section', '置顶'));
@@ -2434,6 +2438,7 @@
     state.active = peer;
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
+    state.convTs[peer.id] = Date.now();
     if (isGroup) renderGroups(); else renderFriends();
 
     $('chat-empty').hidden = true;
@@ -2842,6 +2847,7 @@
             appendMessage(m);
           } else {
             state.unread[m.group_id] = (state.unread[m.group_id] || 0) + 1;
+            state.convTs[m.group_id] = Date.now();
             renderGroups();
             var g = groupById(m.group_id);
             if (g) toast(g.name + ' 发来一条消息');
@@ -2851,6 +2857,7 @@
             appendMessage(m);
           } else {
             state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
+            state.convTs[m.sender_id] = Date.now();
             renderFriends();
             var from = friendById(m.sender_id);
             if (from) toast(from.nickname + ' 发来一条消息');
