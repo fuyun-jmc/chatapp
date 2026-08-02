@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f7cf7">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=59">
+<link rel="stylesheet" href="assets/style.css?v=60">
 </head>
 <body>
 
@@ -324,11 +324,6 @@
       <button class="btn-primary" id="settings-save" type="button">保存</button>
     </footer>
 
-    <!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
-         用 .gm-layer 非 flex 铺满层作为定位参照，避免 .modal 的 flex 布局影响 absolute 子元素位置 -->
-    <div class="gm-layer">
-      <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
-    </div>
   </div>
 </div>
 
@@ -560,8 +555,14 @@
   </div>
 </div>
 
+<!-- 绝对管理员入口：刻意做得很小很隐蔽，点击后需输入管理员口令。
+     放在 body 下直接相对视口定位，避免被 settings-modal 等容器裁剪或随内容滚动。 -->
+<div class="gm-layer" id="gm-layer" hidden>
+  <button class="gm-entry" id="gm-entry" type="button" aria-label="GM" title="GM">·</button>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=59"></script>
-<script src="assets/app.js?v=59"></script>
+<script src="assets/config.js?v=60"></script>
+<script src="assets/app.js?v=60"></script>
 </body>
 </html>
