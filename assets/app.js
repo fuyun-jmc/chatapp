@@ -484,6 +484,73 @@
     if (nm) addTitleBadge(nm, state.uid);
   }
 
+  // 个人设置：列出当前用户已拥有的称号，并支持切换佩戴
+  function loadMyTitles() {
+    var box = $('my-titles-list');
+    var empty = $('my-titles-empty');
+    if (!box) return;
+    box.innerHTML = '<div class="title-loading">加载中…</div>';
+    if (empty) empty.hidden = true;
+    sb.from('user_titles')
+      .select('title_id, source, granted_at, titles(id,name,description,frame_color,frame_style)')
+      .eq('user_id', state.uid)
+      .order('granted_at', { ascending: false })
+      .then(function (r) {
+        if (r.error) { box.innerHTML = '<div class="title-loading">称号加载失败</div>'; return; }
+        var rows = (r.data || []).map(function (u) { return u.titles; }).filter(Boolean);
+        var wornId = state.titlesMap && state.titlesMap[state.uid] && state.titlesMap[state.uid].titleId;
+        box.innerHTML = '';
+        if (!rows.length) {
+          if (empty) empty.hidden = false;
+          return;
+        }
+        rows.forEach(function (t) {
+          var worn = t.id === wornId;
+          var card = el('div', 'title-card' + (worn ? ' worn' : ''));
+          // 边框预览
+          var prev = el('div', 'title-prev');
+          prev.style.background = '#fff';
+          prev.style.boxShadow = (t.frame_style === 'solid' ? '0 0 0 4px ' :
+                                  t.frame_style === 'glow' ? '0 0 10px 3px ' : '0 0 0 3px ') + (t.frame_color || '#ffd700');
+          card.appendChild(prev);
+          var info = el('div', 'title-info');
+          info.appendChild(el('div', 'title-name', t.name));
+          if (t.description) info.appendChild(el('div', 'title-desc', t.description));
+          card.appendChild(info);
+          var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : ''), worn ? '取消佩戴' : '佩戴');
+          btn.type = 'button';
+          btn.onclick = function () { wearTitle(worn ? null : t.id, t.name, t.frame_color, t.frame_style); };
+          card.appendChild(btn);
+          box.appendChild(card);
+        });
+      })
+      .catch(function () { box.innerHTML = '<div class="title-loading">称号加载失败</div>'; });
+  }
+
+  // 佩戴 / 取消佩戴称号，成功后立即刷新头像框
+  function wearTitle(titleId, name, color, style) {
+    sb.rpc('set_my_title', { p_title_id: titleId })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        // 更新本地展示称号并立刻重绘头像框
+        if (titleId) {
+          state.titlesMap = state.titlesMap || {};
+          state.titlesMap[state.uid] = { titleId: titleId, titleName: name, frameColor: color || '#ffd700', frameStyle: style || 'ring' };
+          toast('已佩戴称号：' + name);
+        } else {
+          if (state.titlesMap) delete state.titlesMap[state.uid];
+          toast('已取消佩戴称号');
+        }
+        applySelfTitle();
+        if (typeof renderConversations === 'function') renderConversations();
+        loadMyTitles();
+      })
+      .catch(function (e) {
+        var msg = (e && e.message === 'NOT_OWNED') ? '你尚未拥有该称号' : friendlyError(e);
+        toast('操作失败：' + msg);
+      });
+  }
+
   function loadDeviceSessions() {
     var box = $('device-list');
     if (!box) return;
@@ -1282,6 +1349,7 @@
     });
     resetPwdFields();
     loadDeviceSessions();
+    loadMyTitles();
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
     // 强制改密码期间不允许注销账号（先完成安全流程）
