@@ -610,6 +610,10 @@
       seen[t.titleId] = 1;
       list.push(t);
     });
+    // 最终兜底：开发者本人隐藏称号时，任何情况下都不展示开发者框/徽标
+    if (uid === state.uid && state.hideDevTitle) {
+      list = list.filter(function (t) { return t.frameStyle !== 'dev'; });
+    }
     return list;
   }
 
