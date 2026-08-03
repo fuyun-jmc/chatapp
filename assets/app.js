@@ -102,7 +102,7 @@
     node.textContent = '';
     node.style.background = colorOf(seed);
     var old = node.querySelector('img');
-    if (old) old.remove();
+    domRemove(old);
     if (opts.avatarPath) {
       signedUrl(opts.avatarPath).then(function (url) {
         if (!url) { node.textContent = initialOf(name); return; }
@@ -175,6 +175,20 @@
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
+  }
+
+  // 聊天区「空会话」占位文案（清空聊天记录后也用它），统一常量避免各处硬编码写歪
+  var EMPTY_TIP = '还没有消息，打个招呼吧';
+
+  // 老 WebView（微信/QQ 内置浏览器）不支持 ChildNode.remove() / replaceWith()，
+  // 直接调用会抛 TypeError 并中断整个回调，统一走 parentNode 兼容写法。
+  function domRemove(node) {
+    if (node && node.parentNode) node.parentNode.removeChild(node);
+  }
+  function domReplace(oldNode, newNode) {
+    if (!oldNode || !oldNode.parentNode) return;
+    if (newNode) oldNode.parentNode.replaceChild(newNode, oldNode);
+    else oldNode.parentNode.removeChild(oldNode);
   }
 
   function fmtDateTime(iso) {
@@ -406,7 +420,7 @@
   function addOnlineDot(av, uid) {
     if (!av) return;
     var old = av.querySelector('.online-dot');
-    if (old) old.remove();
+    domRemove(old);
     var dot = el('span', 'online-dot');
     dot.classList.add(isOnline(uid) ? 'online' : 'offline');
     av.appendChild(dot);
@@ -751,7 +765,7 @@
     toast('已注销该设备');
     // 实时广播：让目标设备秒级下线（心跳作为兜底）
     broadcastKick({ token: token });
-    if (li) li.remove();
+    domRemove(li);
   }
 
   function logoutOtherDevices() {
@@ -1609,7 +1623,9 @@
     if (btn) { btn.disabled = true; btn.textContent = '清空中…'; }
     // 乐观清空：先立即移除本地所有消息（含旧的单条删除占位），避免 RPC 失败时旧内容残留
     var box = $('messages');
-    if (box) { box.innerHTML = ''; box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧')); }
+    if (box) { box.innerHTML = ''; box.appendChild(el('div', 'day-sep', EMPTY_TIP)); }
+    // 清空的同时抹掉该会话未读，避免列表上残留一个点不掉的红点
+    if (state.unread[peer.id]) { delete state.unread[peer.id]; renderFriends(); }
     sb.rpc('clear_messages_for_me', { p_peer_id: peer.id })
       .then(function (r) {
         if (r && r.error) throw r.error;
@@ -2768,7 +2784,7 @@
         av.textContent = '';
         av.style.background = 'transparent';
         var old = av.querySelector('img');
-        if (old) old.remove();
+        domRemove(old);
         var im = new Image();
         im.className = 'avatar-img';
         im.src = url;
@@ -3175,7 +3191,7 @@
     if (isGroup) {
       av.textContent = peer.name ? peer.name.charAt(0) : '群';
       av.style.background = '#7f77dd';
-      var oldImg = av.querySelector('img'); if (oldImg) oldImg.remove();
+      var oldImg = av.querySelector('img'); domRemove(oldImg);
     } else {
       setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
       addOnlineDot(av, peer.id);
@@ -3221,7 +3237,7 @@
         });
         // 若全部消息都已本端删除（如刚清空），给出空态提示，避免一片空白像出错
         if (!box.querySelector('.msg')) {
-          box.appendChild(el('div', 'day-sep', '还没有消息，打个招呼吧'));
+          box.appendChild(el('div', 'day-sep', EMPTY_TIP));
         }
         scrollBottom();
         // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
@@ -3299,11 +3315,20 @@
     var box = $('messages');
     // 幂等：同一消息只渲染一次，避免实时推送与兜底轮询重复追加
     if (m && m.id && box.querySelector('[data-id="' + m.id + '"]')) return;
-    var sep = box.querySelector('.day-sep');
-    if (sep && sep.textContent === '还没有消息，打个招呼吧') sep.remove();
-    var near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    // 必须先渲染再动 DOM：本端已删除的消息返回 null，
+    // 若先把空态提示删掉再 return，聊天区会变成彻底空白（一键清空后最易触发）
     var node = renderMessage(m);
     if (!node) return;
+    var near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    // 移除「还没有消息」空态：它未必是第一个 .day-sep，需遍历全部
+    var seps = box.querySelectorAll('.day-sep');
+    for (var i = seps.length - 1; i >= 0; i--) {
+      if (seps[i].textContent === EMPTY_TIP) domRemove(seps[i]);
+    }
+    // 清空后追加的第一条消息缺少日期分隔，这里按需补上
+    if (m && m.created_at && !box.querySelector('.msg')) {
+      box.appendChild(el('div', 'day-sep', dayLabel(m.created_at)));
+    }
     box.appendChild(node);
     if (near) scrollBottom();
   }
@@ -3453,7 +3478,7 @@
           del.type = 'button';
           del.title = '仅自己删除，对方仍可看到';
           del.onclick = function () { deleteMessageForMe(id); };
-          rb.replaceWith(del);
+          domReplace(rb, del);
         }
       }
     });
@@ -3467,7 +3492,7 @@
       .eq('id', id)
       .then(function (r) {
         if (r.error) throw r.error;
-        if (old) old.replaceWith(renderMessage({ id: id, sender_id: state.uid, recalled: true }));
+        domReplace(old, renderMessage({ id: id, sender_id: state.uid, recalled: true }));
       })
       .catch(function (e) { toast(friendlyError(e)); });
   }
@@ -3480,7 +3505,13 @@
     sb.rpc('delete_message_for_me', { msg_id: id })
       .then(function (r) {
         if (r.error) throw r.error;
-        if (old) old.remove();
+        domRemove(old);
+        // 删到一条不剩时补回空态，避免聊天区一片空白像出错
+        var mbox = $('messages');
+        if (mbox && !mbox.querySelector('.msg')) {
+          mbox.innerHTML = '';
+          mbox.appendChild(el('div', 'day-sep', EMPTY_TIP));
+        }
         toast('已删除（仅自己可见）');
       })
       .catch(function (e) { toast(friendlyError(e)); });
@@ -3680,21 +3711,29 @@
         var box = $('messages');
         var existing = box.querySelector('[data-id="' + m.id + '"]');
 
+        // 只有 INSERT 才是「真·新消息」。UPDATE 代表历史消息的状态变更
+        // （对方撤回、本端删除、一键清空写 deleted_by）——一键清空会对 N 条消息
+        // 逐条 UPDATE，若当成新消息处理就会弹 N 次“发来一条消息”并把未读刷爆。
+        var isNew = payload.eventType === 'INSERT';
+
         // 自己发出的消息：本地已处理，这里只同步「更新」（撤回 / 本端删除）的回显，避免重复追加
         if (m.sender_id === state.uid) {
-          if (existing) {
-            var n1 = renderMessage(m);
-            if (n1) existing.replaceWith(n1); else existing.remove();
-          }
+          if (existing) domReplace(existing, renderMessage(m));
           return;
         }
 
-        // 他人消息：若已显示则原地更新（对方撤回、或我本端删除的回显）；否则作为新消息处理
+        // 他人消息：若已显示则原地更新（对方撤回、或我本端删除的回显）
         if (existing) {
-          var n2 = renderMessage(m);
-          if (n2) existing.replaceWith(n2); else existing.remove();
+          domReplace(existing, renderMessage(m));
           return;
         }
+
+        // 页面上没有该消息、且并非新插入 → 是历史消息的状态变更（典型：我刚一键清空）。
+        // 这类事件绝不能计未读、绝不能弹提示，直接忽略。
+        if (!isNew) return;
+
+        // 已被我本端删除的消息（清空后对方补发的同步事件等）同样不产生任何提示
+        if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return;
 
         if (m.group_id) {
           if (state.active && state.active.type === 'group' && state.active.id === m.group_id) {
