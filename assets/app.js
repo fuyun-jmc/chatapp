@@ -4292,7 +4292,7 @@
   function openReportModal() {
     if (!state.active) return;
     state.reportType = null;
-    state.reportTarget = null;
+    state.reportTargets = [];
     var chips = document.querySelectorAll('#report-types .report-chip');
     for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
     $('report-targets').innerHTML = '<div class="gm-empty">请先选择举报类型</div>';
@@ -4301,20 +4301,47 @@
     showModal('report-modal');
   }
 
-  // 根据当前选中的举报类型，列出可举报的聊天记录（信息/视频/图片），
-  // 或对于昵称直接以对方昵称作为唯一目标。
+  function reportHasMid(mid) {
+    for (var i = 0; i < state.reportTargets.length; i++) {
+      if (state.reportTargets[i].msgId === mid) return true;
+    }
+    return false;
+  }
+  function reportRemoveMid(mid) {
+    var arr = [];
+    for (var i = 0; i < state.reportTargets.length; i++) {
+      if (state.reportTargets[i].msgId !== mid) arr.push(state.reportTargets[i]);
+    }
+    state.reportTargets = arr;
+  }
+  function updateReportTip() {
+    var tip = $('report-target-tip');
+    if (!tip) return;
+    var n = state.reportTargets.length;
+    if (state.reportType === 'nickname') {
+      tip.textContent = '点击「举报」即可提交该昵称/群名举报';
+    } else if (n > 0) {
+      tip.textContent = '已选择 ' + n + ' 条' + (REPORT_LABEL[state.reportType] || '') + '，可继续勾选多条，点击「举报」一并提交';
+    } else {
+      tip.textContent = '选择举报类型后，点击下方对应的聊天记录（可多选）：';
+    }
+  }
+
+  // 根据当前选中的举报类型，列出可举报的聊天记录（信息/视频/图片，支持多选），
+  // 或对于昵称直接以对方昵称作为唯一目标（单选）。
   function renderReportTargets() {
     var box = $('report-targets');
     var type = state.reportType;
     box.innerHTML = '';
-    state.reportTarget = null;
+    state.reportTargets = [];
 
     if (type === 'nickname') {
       var name = displayName(state.active);
       var item = el('button', 'report-item sel', '「' + (name || '?') + '」的昵称/群名');
       item.type = 'button';
-      state.reportTarget = { ref: name || '', meta: '' };
+      state.reportTargets = [{ ref: name || '', meta: '', msgId: null }];
       box.appendChild(item);
+      updateReportTip();
       return;
     }
 
@@ -4327,6 +4354,7 @@
     });
     if (!msgs.length) {
       box.innerHTML = '<div class="gm-empty">当前聊天中没有可举报的' + (REPORT_LABEL[type] || '') + '</div>';
+      updateReportTip();
       return;
     }
     msgs.forEach(function (m) {
@@ -4337,14 +4365,20 @@
       item.type = 'button';
       var mt = el('span', 'rt-meta', meta);
       item.appendChild(mt);
+      if (reportHasMid(m.id)) item.classList.add('sel');
       item.onclick = function () {
-        var prev = box.querySelectorAll('.report-item.sel');
-        for (var k = 0; k < prev.length; k++) prev[k].classList.remove('sel');
-        item.classList.add('sel');
-        state.reportTarget = { ref: preview, meta: meta, msgId: m.id };
+        if (reportHasMid(m.id)) {
+          reportRemoveMid(m.id);
+          item.classList.remove('sel');
+        } else {
+          state.reportTargets.push({ ref: preview, meta: meta, msgId: m.id });
+          item.classList.add('sel');
+        }
+        updateReportTip();
       };
       box.appendChild(item);
     });
+    updateReportTip();
   }
 
   function submitReport() {
@@ -4353,24 +4387,36 @@
     if (REPORT_TYPES.indexOf(state.reportType) < 0) {
       err.hidden = false; err.textContent = '请选择举报类型'; return;
     }
-    if (!state.reportTarget) {
+    if (!state.reportTargets || state.reportTargets.length === 0) {
       err.hidden = false; err.textContent = '请选择要举报的' + (REPORT_LABEL[state.reportType] || '对象'); return;
     }
     var isGroup = state.active.type === 'group';
-    var payload = {
-      p_reported_id: state.active.id,
-      p_reported_kind: isGroup ? 'group' : 'user',
-      p_report_type: state.reportType,
-      p_target_ref: state.reportTarget.ref + (state.reportTarget.meta ? '  (' + state.reportTarget.meta + ')' : ''),
-      p_detail: ($('report-detail').value || '').trim()
-    };
-    sb.rpc('submit_user_report', payload)
-      .then(function (r) {
-        if (r.error) throw r.error;
+    var detail = ($('report-detail').value || '').trim();
+    var total = state.reportTargets.length;
+
+    // 逐条串行提交：规避 Supabase thenable 不能 Promise.all 的问题
+    function doOne(idx) {
+      if (idx >= total) {
         hideModal('report-modal');
-        toast('举报已提交，开发者和管理员将会处理');
-      })
-      .catch(function (e) { toast('举报失败：' + friendlyError(e)); });
+        toast('举报已提交（' + total + ' 项），开发者和管理员将会处理');
+        return;
+      }
+      var t = state.reportTargets[idx];
+      var payload = {
+        p_reported_id: state.active.id,
+        p_reported_kind: isGroup ? 'group' : 'user',
+        p_report_type: state.reportType,
+        p_target_ref: t.ref + (t.meta ? '  (' + t.meta + ')' : ''),
+        p_detail: detail
+      };
+      sb.rpc('submit_user_report', payload)
+        .then(function (r) {
+          if (r.error) throw r.error;
+          doOne(idx + 1);
+        })
+        .catch(function (e) { toast('举报失败：' + friendlyError(e)); });
+    }
+    doOne(0);
   }
 
   function appendMessage(m) {
