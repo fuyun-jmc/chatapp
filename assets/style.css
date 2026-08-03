@@ -854,6 +854,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-tabs { display: flex; gap: 6px; margin: 0 8px; }
 .gm-tab { font-size: 12px; color: var(--text-3); background: none; border: none; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
 .gm-tab.active { color: #fff; background: var(--brand); }
+/* 个人设置内的「禁言申诉 / 问题反馈」区块 */
+.appeal-section { margin: 6px 0 12px; }
+.appeal-section .btn-primary { margin-top: 6px; }
+/* 禁言提示弹窗正文 */
+.mute-notice-text { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word; margin: 0; }
+/* GM 后台：禁言申诉 / 问题反馈 列表容器（与 gm-reports 一致） */
+.gm-appeals, .gm-feedback { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
+.gm-appeals { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.gm-feedback { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .gm-titles { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-title-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; margin: 0 -14px; padding: 0 14px; }
 .gm-titles-bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
