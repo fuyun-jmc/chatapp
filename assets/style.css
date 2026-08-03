@@ -924,6 +924,19 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-appeals, .gm-feedback { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-appeals { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .gm-feedback { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 禁言申诉搜索框（不使用 gap，兼容老 WebView） */
+.gm-appeal-search { padding: 2px 0 10px; flex: 0 0 auto; }
+.gm-appeal-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 13px;
+}
+.gm-appeal-search input:focus { outline: none; border-color: var(--accent); }
 .gm-titles { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-title-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; margin: 0 -14px; padding: 0 14px; }
 .gm-titles-bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
