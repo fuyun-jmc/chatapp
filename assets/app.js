@@ -59,7 +59,9 @@
     isDev: false,        // 是否持有「开发者」称号（专属头像框）
     ownedTitles: [],     // 当前用户已拥有的全部称号名称
     adminTitleId: null,  // 「管理员」称号在 titles 表里的真实 id（按 id 判断强制佩戴，最可靠）
-    devTitleId: null     // 「开发者」称号在 titles 表里的真实 id
+    devTitleId: null,    // 「开发者」称号在 titles 表里的真实 id
+    hideDevTitle: false, // 是否隐藏「开发者」称号（仅影响展示，权限不变；管理员称号不可隐藏）
+    devTitleRow: null    // 最近一次查到的「开发者」称号行，用于隐藏开关即时切换展示
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -483,7 +485,7 @@
         // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
         if (selfPrev && state.titlesMap[state.uid]) {
           if (!hasAdminCol && selfPrev.admin) state.titlesMap[state.uid].admin = selfPrev.admin;
-          if (!hasDevCol   && selfPrev.dev)   state.titlesMap[state.uid].dev   = selfPrev.dev;
+          if (!hasDevCol   && selfPrev.dev && !state.hideDevTitle) state.titlesMap[state.uid].dev = selfPrev.dev;
         }
         // 重新渲染好友列表，让头像框生效
         if (typeof renderConversations === 'function') renderConversations();
@@ -630,9 +632,21 @@
           meta.appendChild(el('span', 'title-src', x.source === 'auto' ? '自动获得' : '手动授予'));
           info.appendChild(meta);
           card.appendChild(info);
-          if (forced) {
-            // 强制佩戴：显示标签，不可取消
-            card.appendChild(el('span', 'title-forced', '强制佩戴'));
+          if (forced && isDevTitle) {
+            // 开发者：可隐藏（仅影响展示，权限不变）
+            var hidden = !!state.hideDevTitle;
+            card.appendChild(el('span', 'title-forced' + (hidden ? ' title-hidden-tag' : ''),
+                                hidden ? '已隐藏' : '强制佩戴'));
+            var hb = el('button', 'btn-mini title-hidebtn' + (hidden ? '' : ' btn-outline'),
+                        hidden ? '取消隐藏' : '隐藏');
+            hb.type = 'button';
+            hb.onclick = function () { toggleHideDevTitle(!state.hideDevTitle); };
+            card.appendChild(hb);
+          } else if (forced) {
+            // 管理员：强制佩戴，不可取消、不可隐藏
+            var fsp = el('span', 'title-forced', '强制佩戴');
+            fsp.title = '管理员称号不可隐藏';
+            card.appendChild(fsp);
           } else {
             var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : ''), worn ? '取消佩戴' : '佩戴');
             btn.type = 'button';
@@ -2196,7 +2210,10 @@
           frameColor: adminRow.frame_color || '#f5511e',
           frameStyle: adminRow.frame_style || 'solid'
         } : null;
-        slot.dev = devRow ? {
+        state.devTitleRow = devRow;
+        // 隐藏开关只影响「展示」：隐藏时不填开发者槽位，
+        // 权限仍由 state.isDev / 后端 is_admin_user() 判定，完全不受影响。
+        slot.dev = (devRow && !state.hideDevTitle) ? {
           titleId: devRow.id,
           titleName: devRow.name,
           frameColor: devRow.frame_color || '#7c4dff',
@@ -2214,8 +2231,60 @@
         state.adminTitleId = adminRow ? adminRow.id : null;
         state.devTitleId   = devRow   ? devRow.id   : null;
         applySelfTitle();
+        loadHideDevPref();
       })
       .catch(function () {});
+  }
+
+  // 读取「隐藏开发者称号」开关（后端列不存在时静默按「未隐藏」处理）
+  function loadHideDevPref() {
+    if (!state.uid || !state.isDev) return;
+    sb.from('profiles')
+      .select('hide_dev_title')
+      .eq('id', state.uid)
+      .limit(1)
+      .then(function (r) {
+        if (r.error || !r.data || !r.data.length) return;
+        var v = !!r.data[0].hide_dev_title;
+        if (v === state.hideDevTitle) return;
+        state.hideDevTitle = v;
+        applyDevSlot();
+      })
+      .catch(function () {});
+  }
+
+  // 按当前隐藏开关重算自己的开发者展示槽位并即时重绘（不触碰任何权限字段）
+  function applyDevSlot() {
+    if (!state.uid) return;
+    state.titlesMap = state.titlesMap || {};
+    var slot = state.titlesMap[state.uid] || { primary: null, admin: null, dev: null };
+    var d = state.devTitleRow;
+    slot.dev = (d && !state.hideDevTitle) ? {
+      titleId: d.id,
+      titleName: d.name,
+      frameColor: d.frame_color || '#7c4dff',
+      frameStyle: 'dev'
+    } : null;
+    state.titlesMap[state.uid] = slot;
+    applySelfTitle();
+    if (typeof renderConversations === 'function') renderConversations();
+  }
+
+  // 开发者本人切换「隐藏称号」（管理员称号不提供此开关）
+  function toggleHideDevTitle(hide) {
+    sb.rpc('set_hide_dev_title', { p_hide: !!hide })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.hideDevTitle = !!hide;
+        applyDevSlot();
+        toast(hide ? '已隐藏「开发者」称号，其他人将看不到（权限不变）'
+                   : '已取消隐藏，「开发者」称号重新展示');
+        loadMyTitles();
+      })
+      .catch(function (e) {
+        var msg = (e && e.message === 'NOT_DEV') ? '你不是开发者' : friendlyError(e);
+        toast('操作失败：' + msg);
+      });
   }
 
   function updateAdminCard() {
