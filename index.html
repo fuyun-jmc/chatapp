@@ -488,6 +488,7 @@
       <span class="gm-title">GM 后台 · 绝对管理员</span>
       <div class="gm-tabs">
         <button class="gm-tab active" id="gm-tab-users" type="button">用户管理</button>
+        <button class="gm-tab" id="gm-tab-groups" type="button">群聊管理</button>
         <button class="gm-tab" id="gm-tab-reports" type="button">违规上报</button>
         <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
       </div>
@@ -504,6 +505,16 @@
       </div>
       <div class="gm-results" id="gm-results"></div>
       <div class="gm-detail" id="gm-detail" hidden></div>
+    </div>
+
+    <!-- 群聊管理模式 -->
+    <div class="gm-groups" id="gm-groups" hidden>
+      <div class="gm-search">
+        <input id="gm-group-search-input" placeholder="搜索群名称 / 群主昵称" autocomplete="off">
+        <button class="btn-primary" id="gm-group-search-btn" type="button">搜索</button>
+      </div>
+      <div class="gm-results" id="gm-group-results"></div>
+      <div class="gm-detail" id="gm-group-detail" hidden></div>
     </div>
 
     <!-- 称号管理模式 -->
@@ -648,7 +659,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=107"></script>
-<script src="assets/app.js?v=107"></script>
+<script src="assets/config.js?v=108"></script>
+<script src="assets/app.js?v=108"></script>
 </body>
 </html>
