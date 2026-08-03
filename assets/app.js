@@ -2368,7 +2368,7 @@
   }
 
   // 单条违禁词检测卡片（GM 后台与「管理员」面板共用）
-  function renderWordLogCard(w) {
+  function renderWordLogCard(w, mode) {
     var card = el('div', 'gm-report');
     var head = el('div', 'gm-report-head');
     head.appendChild(el('div', 'gm-report-name', (w.nickname || '(无昵称)') + ' · ' + (w.phone || '—')));
@@ -2382,6 +2382,15 @@
         ? ((w.peer_name || '') + ' · ' + (w.peer_phone || ''))
         : '（未知 / 未记录）';
     card.appendChild(el('div', 'gm-report-line', '接收方：' + peerTxt));
+
+    // 管理员模式：可对发送违禁词者禁言 / 标记不禁言（全网隐藏）/ 忽略（仅自己隐藏）
+    if (mode === 'admin' && w.user_id) {
+      card.appendChild(buildMuteRow('word_warning', w.id, w.user_id));
+      var acts = el('div', 'gm-report-acts');
+      acts.appendChild(noMuteBtn('word_warning', w.id));
+      acts.appendChild(ignoreBtn('word_warning', w.id));
+      card.appendChild(acts);
+    }
     return card;
   }
 
@@ -2560,46 +2569,13 @@
     else recentTxt = '未知';
     card.appendChild(el('div', 'gm-report-line', '接收方近期是否触发违禁词：' + recentTxt));
 
-    // —— 管理员模式：禁言（最高 20 天，可精确到天/时/分）+ 解除禁言 ——
+    // —— 管理员模式：禁言 / 不禁言（选择后全网隐藏）+ 忽略（仅自己隐藏）——
     if (mode === 'admin') {
-      var muteRow = el('div', 'gm-mute-row');
-      var durLabel = el('span', 'gm-mute-label', '禁言：');
-      var inpD = el('input', 'gm-dur-input'); inpD.type = 'number'; inpD.min = '0'; inpD.max = '20'; inpD.value = '1'; inpD.placeholder = '天';
-      var inpH = el('input', 'gm-dur-input'); inpH.type = 'number'; inpH.min = '0'; inpH.max = '23'; inpH.value = '0'; inpH.placeholder = '时';
-      var inpM = el('input', 'gm-dur-input'); inpM.type = 'number'; inpM.min = '0'; inpM.max = '59'; inpM.value = '0'; inpM.placeholder = '分';
-      var muteBtn = el('button', 'btn-mini', '禁言');
-      muteBtn.type = 'button';
-      muteBtn.onclick = function () {
-        var d = parseInt(inpD.value, 10) || 0;
-        var h = parseInt(inpH.value, 10) || 0;
-        var m = parseInt(inpM.value, 10) || 0;
-        var totalMin = d * 1440 + h * 60 + m;
-        if (totalMin < 1) { toast('请至少填写 1 分钟'); return; }
-        if (totalMin > 28800) { toast('管理员禁言上限为 20 天'); return; }
-        sb.rpc('admin_mute_user', { p_user_id: rep.user_id, p_days: d, p_hours: h, p_minutes: m })
-          .then(function (r) {
-            if (r.error) throw r.error;
-            toast('已对该用户禁言 ' + muteLenText(d, h, m) + '（管理员上限 20 天）');
-          })
-          .catch(function (e) {
-            var msg = (e && (e.message || '')) || '';
-            if (/ADMIN_FORBIDDEN/.test(msg)) { onAdminRevoked(); } else { toast('禁言失败：' + friendlyError(e)); }
-          });
-      };
-      var unmuteBtn = el('button', 'btn-mini gm-danger', '解除禁言');
-      unmuteBtn.type = 'button';
-      unmuteBtn.onclick = function () {
-        sb.rpc('admin_unmute_user', { p_user_id: rep.user_id })
-          .then(function (r) { if (r.error) throw r.error; toast('已解除禁言'); })
-          .catch(function (e) {
-            var m2 = (e && (e.message || '')) || '';
-            if (/ADMIN_FORBIDDEN/.test(m2)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
-          });
-      };
-      muteRow.appendChild(durLabel);
-      muteRow.appendChild(inpD); muteRow.appendChild(inpH); muteRow.appendChild(inpM);
-      muteRow.appendChild(muteBtn); muteRow.appendChild(unmuteBtn);
-      card.appendChild(muteRow);
+      card.appendChild(buildMuteRow('forbidden_report', rep.id, rep.user_id));
+      var acts = el('div', 'gm-report-acts');
+      acts.appendChild(noMuteBtn('forbidden_report', rep.id));
+      acts.appendChild(ignoreBtn('forbidden_report', rep.id));
+      card.appendChild(acts);
     }
 
     // —— 标记 / 撤销处理 ——
@@ -2797,6 +2773,97 @@
     toast('您的管理员权限已被撤销');
   }
 
+  var adminTabCurrent = 'reports';
+
+  // 收集某类内容的隐藏状态：global = 全网隐藏；my = 当前用户本人忽略
+  function loadHideSets(type) {
+    return sb.rpc('list_content_hides', { p_target_type: type })
+      .then(function (r) {
+        var rows = (r && r.data) || [];
+        var global = {}, my = {};
+        rows.forEach(function (h) {
+          if (h.hide_kind === 'global') global[h.target_id] = true;
+          else if (h.hide_kind === 'ignore' && h.admin_uid === state.uid) my[h.target_id] = true;
+        });
+        return { global: global, my: my };
+      })
+      .catch(function () { return { global: {}, my: {} }; });
+  }
+
+  function rerenderCurrentAdminTab() {
+    if (adminTabCurrent === 'reports') openAdminReports();
+    else if (adminTabCurrent === 'wordlog') openAdminWordLog();
+    else if (adminTabCurrent === 'userreports') openUserReports();
+  }
+
+  // 隐藏后的占位行：内容本身不显示，仅留恢复入口
+  function renderHiddenRow(type, id, kind) {
+    var row = el('div', 'gm-hidden-row');
+    row.appendChild(el('span', 'gm-hidden-text',
+      kind === 'global' ? '已处理隐藏（全员不可见）' : '已忽略（仅你自己不可见）'));
+    var undo = el('button', 'btn-mini', '撤销');
+    undo.type = 'button';
+    undo.onclick = function () {
+      sb.rpc('clear_content_hide', { p_target_type: type, p_target_id: id, p_kind: kind })
+        .then(function (r) { if (r.error) throw r.error; rerenderCurrentAdminTab(); })
+        .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+    };
+    row.appendChild(undo);
+    return row;
+  }
+
+  // 禁言操作行（天/时/分 + 禁言 + 解除禁言）；禁言后全网隐藏
+  function buildMuteRow(type, id, offenderUid) {
+    var muteRow = el('div', 'gm-mute-row');
+    var durLabel = el('span', 'gm-mute-label', '禁言：');
+    var inpD = el('input', 'gm-dur-input'); inpD.type = 'number'; inpD.min = '0'; inpD.max = '20'; inpD.value = '1'; inpD.placeholder = '天';
+    var inpH = el('input', 'gm-dur-input'); inpH.type = 'number'; inpH.min = '0'; inpH.max = '23'; inpH.value = '0'; inpH.placeholder = '时';
+    var inpM = el('input', 'gm-dur-input'); inpM.type = 'number'; inpM.min = '0'; inpM.max = '59'; inpM.value = '0'; inpM.placeholder = '分';
+    var muteBtn = el('button', 'btn-mini', '禁言');
+    muteBtn.type = 'button';
+    muteBtn.onclick = function () {
+      var d = parseInt(inpD.value, 10) || 0, h = parseInt(inpH.value, 10) || 0, m = parseInt(inpM.value, 10) || 0;
+      var total = d * 1440 + h * 60 + m;
+      if (total < 1) { toast('请至少填写 1 分钟'); return; }
+      if (total > 28800) { toast('管理员禁言上限为 20 天'); return; }
+      sb.rpc('admin_mute_user', { p_user_id: offenderUid, p_days: d, p_hours: h, p_minutes: m })
+        .then(function (r) { if (r.error) throw r.error; return sb.rpc('set_content_hide', { p_target_type: type, p_target_id: id, p_kind: 'global' }); })
+        .then(function () { toast('已对该用户禁言 ' + muteLenText(d, h, m) + '，并隐藏该内容'); rerenderCurrentAdminTab(); })
+        .catch(function (e) { var msg = (e && (e.message || '')) || ''; if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked(); else toast('禁言失败：' + friendlyError(e)); });
+    };
+    var unmuteBtn = el('button', 'btn-mini gm-danger', '解除禁言');
+    unmuteBtn.type = 'button';
+    unmuteBtn.onclick = function () {
+      sb.rpc('admin_unmute_user', { p_user_id: offenderUid })
+        .then(function (r) { if (r.error) throw r.error; toast('已解除禁言'); rerenderCurrentAdminTab(); })
+        .catch(function (e) { var m2 = (e && (e.message || '')) || ''; if (/ADMIN_FORBIDDEN/.test(m2)) onAdminRevoked(); else toast('操作失败：' + friendlyError(e)); });
+    };
+    muteRow.appendChild(durLabel); muteRow.appendChild(inpD); muteRow.appendChild(inpH); muteRow.appendChild(inpM); muteRow.appendChild(muteBtn); muteRow.appendChild(unmuteBtn);
+    return muteRow;
+  }
+
+  function ignoreBtn(type, id) {
+    var b = el('button', 'btn-mini', '忽略');
+    b.type = 'button';
+    b.onclick = function () {
+      sb.rpc('set_content_hide', { p_target_type: type, p_target_id: id, p_kind: 'ignore' })
+        .then(function (r) { if (r.error) throw r.error; toast('已忽略，仅你自己不再显示'); rerenderCurrentAdminTab(); })
+        .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+    };
+    return b;
+  }
+
+  function noMuteBtn(type, id) {
+    var b = el('button', 'btn-mini gm-danger', '不禁言');
+    b.type = 'button';
+    b.onclick = function () {
+      sb.rpc('set_content_hide', { p_target_type: type, p_target_id: id, p_kind: 'global' })
+        .then(function (r) { if (r.error) throw r.error; toast('已标记并不再显示'); rerenderCurrentAdminTab(); })
+        .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+    };
+    return b;
+  }
+
   function openAdminPanel() {
     // 进入前再校验一次权限（GM 可能已撤回称号）
     sb.rpc('is_admin_user')
@@ -2813,15 +2880,22 @@
   }
 
   function openAdminReports() {
+    adminTabCurrent = 'reports';
     var box = $('admin-report-list');
-    if (box.innerHTML === '') box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    box.innerHTML = '<div class="gm-empty">加载中…</div>';
     sb.rpc('admin_list_reports')
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
-        box.innerHTML = '';
-        rows.forEach(function (rep) { box.appendChild(renderReportCard(rep, 'admin')); });
+        return loadHideSets('forbidden_report').then(function (sets) {
+          box.innerHTML = '';
+          if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
+          rows.forEach(function (rep) {
+            var hidden = sets.global[rep.id] ? 'global' : (sets.my[rep.id] ? 'ignore' : null);
+            if (hidden) box.appendChild(renderHiddenRow('forbidden_report', rep.id, hidden));
+            else box.appendChild(renderReportCard(rep, 'admin'));
+          });
+        });
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
@@ -2844,16 +2918,23 @@
 
   // 用户手动举报（昵称/信息/视频/图片）→ 管理员 / 开发者管理页展示
   function openUserReports() {
+    adminTabCurrent = 'userreports';
     var box = $('admin-userreport-list');
     if (!box) return;
-    if (box.innerHTML === '') box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    box.innerHTML = '<div class="gm-empty">加载中…</div>';
     sb.rpc('list_user_reports')
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无用户举报</div>'; return; }
-        box.innerHTML = '';
-        rows.forEach(function (rep) { box.appendChild(renderUserReportCard(rep)); });
+        return loadHideSets('user_report').then(function (sets) {
+          box.innerHTML = '';
+          if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无用户举报</div>'; return; }
+          rows.forEach(function (rep) {
+            var hidden = sets.global[rep.id] ? 'global' : (sets.my[rep.id] ? 'ignore' : null);
+            if (hidden) box.appendChild(renderHiddenRow('user_report', rep.id, hidden));
+            else box.appendChild(renderUserReportCard(rep));
+          });
+        });
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
@@ -2892,11 +2973,19 @@
         });
     };
     card.appendChild(btn);
+
+    // —— 处置：禁言（全网隐藏）/ 不禁言（全网隐藏）/ 忽略（仅自己隐藏）——
+    card.appendChild(buildMuteRow('user_report', rep.id, rep.reported_id));
+    var acts = el('div', 'gm-report-acts');
+    acts.appendChild(noMuteBtn('user_report', rep.id));
+    acts.appendChild(ignoreBtn('user_report', rep.id));
+    card.appendChild(acts);
     return card;
   }
 
   // 管理员面板：违禁词记录（任意检测，不限于好友）
   function openAdminWordLog() {
+    adminTabCurrent = 'wordlog';
     var box = $('admin-word-log-list');
     if (!box) return;
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
@@ -2904,9 +2993,15 @@
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
-        box.innerHTML = '';
-        rows.forEach(function (w) { box.appendChild(renderWordLogCard(w)); });
+        return loadHideSets('word_warning').then(function (sets) {
+          box.innerHTML = '';
+          if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
+          rows.forEach(function (w) {
+            var hidden = sets.global[w.id] ? 'global' : (sets.my[w.id] ? 'ignore' : null);
+            if (hidden) box.appendChild(renderHiddenRow('word_warning', w.id, hidden));
+            else box.appendChild(renderWordLogCard(w, 'admin'));
+          });
+        });
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
