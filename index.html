@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=112">
+<link rel="stylesheet" href="assets/style.css?v=113">
 </head>
 <body>
 
@@ -680,7 +680,10 @@
     <div class="gm-word-log" id="gm-word-log" hidden>
       <div class="gm-subbar">
         <span class="gm-subbar-tip">系统检测到的全部违禁词（含发给陌生人 / 群聊），按时间倒序</span>
-        <button class="btn-mini" id="gm-word-log-refresh" type="button">刷新</button>
+        <div class="gm-subbar-acts">
+          <button class="btn-mini btn-danger-mini" id="gm-word-log-clear" type="button">清空</button>
+          <button class="btn-mini" id="gm-word-log-refresh" type="button">刷新</button>
+        </div>
       </div>
       <div class="gm-report-list" id="gm-word-log-list"><div class="gm-empty">加载中…</div></div>
     </div>
@@ -712,7 +715,10 @@
     <div class="gm-word-log" id="admin-word-log" hidden>
       <div class="gm-subbar">
         <span class="gm-subbar-tip">系统检测到的全部违禁词（含发给陌生人 / 群聊），按时间倒序</span>
-        <button class="btn-mini" id="admin-word-log-refresh" type="button">刷新</button>
+        <div class="gm-subbar-acts">
+          <button class="btn-mini btn-danger-mini" id="admin-word-log-clear" type="button">清空</button>
+          <button class="btn-mini" id="admin-word-log-refresh" type="button">刷新</button>
+        </div>
       </div>
       <div class="gm-report-list" id="admin-word-log-list"><div class="gm-empty">加载中…</div></div>
     </div>
@@ -834,6 +840,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.js?v=123"></script>
+<script src="assets/app.js?v=124"></script>
 </body>
 </html>
