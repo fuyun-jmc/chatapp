@@ -867,7 +867,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* 违禁词记录面板的子栏 */
 .gm-subbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 8px; }
 .gm-subbar-tip { font-size: 12px; color: var(--text-3); margin-right: 8px; }
-.gm-word-log { display: flex; flex-direction: column; }
+.gm-word-log { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 /* 个人设置内的「禁言申诉 / 问题反馈」区块 */
 .appeal-section { margin: 6px 0 12px; }
 .appeal-section .btn-primary { margin-top: 6px; }
