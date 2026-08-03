@@ -573,6 +573,7 @@
         <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
         <button class="gm-tab" id="gm-tab-appeals" type="button">禁言申诉</button>
         <button class="gm-tab" id="gm-tab-feedback" type="button">问题反馈</button>
+        <button class="gm-tab" id="gm-tab-wordlog" type="button">违禁词记录</button>
       </div>
       <button class="icon-btn" id="gm-close" type="button" aria-label="关闭">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -622,6 +623,15 @@
       <div class="gm-empty">加载中…</div>
     </div>
 
+    <!-- 违禁词记录模式（任意检测，不限于好友） -->
+    <div class="gm-word-log" id="gm-word-log" hidden>
+      <div class="gm-subbar">
+        <span class="gm-subbar-tip">系统检测到的全部违禁词（含发给陌生人 / 群聊），按时间倒序</span>
+        <button class="btn-mini" id="gm-word-log-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-report-list" id="gm-word-log-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
   </div>
 </div>
 
@@ -634,8 +644,19 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </header>
+    <div class="gm-report-tabs">
+      <button class="gm-tab active" id="admin-tab-reports" type="button">周报</button>
+      <button class="gm-tab" id="admin-tab-wordlog" type="button">违禁词记录</button>
+    </div>
     <div class="gm-reports" id="admin-reports">
       <div class="gm-report-list" id="admin-report-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+    <div class="gm-word-log" id="admin-word-log" hidden>
+      <div class="gm-subbar">
+        <span class="gm-subbar-tip">系统检测到的全部违禁词（含发给陌生人 / 群聊），按时间倒序</span>
+        <button class="btn-mini" id="admin-word-log-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-report-list" id="admin-word-log-list"><div class="gm-empty">加载中…</div></div>
     </div>
   </div>
 </div>
@@ -751,7 +772,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=110"></script>
-<script src="assets/app.js?v=110"></script>
+<script src="assets/config.js?v=111"></script>
+<script src="assets/app.js?v=111"></script>
 </body>
 </html>
