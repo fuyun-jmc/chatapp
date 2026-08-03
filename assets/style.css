@@ -800,6 +800,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-row-text { min-width: 0; }
 .gm-row-name { font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-row-sub { font-size: 12px; color: var(--text-3); }
+.gm-row-acts { display: flex; flex-wrap: wrap; align-items: center; }
+.gm-row-acts > .btn-mini { margin: 2px 4px 2px 0; }
 .gm-danger { color: var(--danger); border-color: var(--danger); }
 .gm-danger:hover { background: rgba(217,75,75,.08); }
 
