@@ -870,12 +870,24 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .title-badge.badge-dev {
   color: #ffffff;
   background: #7c4dff;
-  background: -webkit-linear-gradient(left, #7c4dff, #22d3ee);
-  background: linear-gradient(90deg, #7c4dff, #22d3ee);
+  background: -webkit-linear-gradient(90deg, #7c4dff, #22d3ee, #3bff9e, #ffd24d, #ff5d8f);
+  background: linear-gradient(90deg, #7c4dff, #22d3ee, #3bff9e, #ffd24d, #ff5d8f);
   box-shadow: 0 1px 4px rgba(124, 77, 255, .45);
 }
 /* 开发者专属头像框标记类（具体阴影由 JS 内联设置，含称号颜色） */
 .dev-frame { border-radius: 50%; }
+/* 管理员头像框「管理员」字样角标（顶部丝带，因 .avatar 设了 overflow:hidden，置于框内仍可显示，且兼容老 WebView） */
+.avatar.avatar-admin::after {
+  content: '管理员';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  text-align: center;
+  font-size: 9px; line-height: 13px;
+  color: #fff;
+  background: rgba(245, 81, 30, .95);
+  letter-spacing: .04em;
+  pointer-events: none;
+}
 
 /* friend-list 里的 nm 行需要给徽标留空间 */
 .friend-list .nm, .info .nm { display: flex; align-items: center; flex-wrap: wrap; }
