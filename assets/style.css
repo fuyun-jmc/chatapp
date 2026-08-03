@@ -406,6 +406,9 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .member-item .info { flex: 1; min-width: 0; padding-left: 0; }
 .member-item .nm { font-size: 14px; font-weight: 500; }
 .member-item .mini-ok, .member-item .mini-no { flex: 0 0 auto; margin-left: 6px; }
+.member-item .online-status { font-size: 12px; margin-top: 1px; }
+.member-item .online-status.on  { color: var(--ok); }
+.member-item .online-status.off { color: #98a0ad; }
 
 /* 群聊中他人消息显示发送者昵称 */
 .msg.group-in { flex-wrap: wrap; }
