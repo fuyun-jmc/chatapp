@@ -869,6 +869,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .appeal-section .btn-primary { margin-top: 6px; }
 /* 禁言提示弹窗正文 */
 .mute-notice-text { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word; margin: 0; }
+/* 管理员公告：强调「注意」行 */
+.warn-line { color: var(--danger); font-weight: 600; }
 /* GM 后台：禁言申诉 / 问题反馈 列表容器（与 gm-reports 一致） */
 .gm-appeals, .gm-feedback { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-appeals { overflow-y: auto; -webkit-overflow-scrolling: touch; }
