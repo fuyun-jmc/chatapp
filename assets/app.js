@@ -586,7 +586,12 @@
             frameStyle: 'dev'   // 开发者专属头像框，忽略 frame_style
           } : null;
           // 即便后端 get_profiles_titles 还是旧签名没过滤 hide_dev_title，前端也强制不展示
-          if (t.user_id === state.uid && state.hideDevTitle) dev = null;
+          if (t.user_id === state.uid && state.hideDevTitle) {
+            dev = null;
+            // 防止开发者称号被错误戴到自选槽位后仍显示
+            if (isDevSlot(primary)) primary = null;
+            if (isDevSlot(primary2)) primary2 = null;
+          }
           state.titlesMap[t.user_id] = { primary: primary, primary2: primary2, admin: admin, dev: dev };
         });
         // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
@@ -618,6 +623,12 @@
     if (t.id && (t.id === state.adminTitleId || t.id === state.devTitleId)) return true;
     return isForcedTitle(t.name);
   }
+  // 判断一个展示槽位是否代表「开发者」称号（按 id 优先，按名称兜底）
+  function isDevSlot(t) {
+    if (!t) return false;
+    if (state.devTitleId && t.titleId === state.devTitleId) return true;
+    return normTitleName(t.titleName) === '开发者';
+  }
 
   // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选1 > 自选2（按 titleId 去重）
   function titleSlots(uid) {
@@ -631,8 +642,9 @@
       list.push(t);
     });
     // 最终兜底：开发者本人隐藏称号时，任何情况下都不展示开发者框/徽标
+    //（按 frameStyle 过滤不够，需同时按 titleId / 名称过滤，防止开发者称号被手动戴到自选槽位后仍显示）
     if (uid === state.uid && state.hideDevTitle) {
-      list = list.filter(function (t) { return t.frameStyle !== 'dev'; });
+      list = list.filter(function (t) { return !isDevSlot(t); });
     }
     return list;
   }
@@ -2848,6 +2860,11 @@
           frameColor: devRow.frame_color || '#7c4dff',
           frameStyle: 'dev'
         } : null;
+        // 同时清理可能错误戴在自选槽位的开发者称号，确保隐藏彻底
+        if (state.hideDevTitle) {
+          if (isDevSlot(slot.primary)) slot.primary = null;
+          if (isDevSlot(slot.primary2)) slot.primary2 = null;
+        }
         // 自选称号若已不在拥有列表中（例如触发违禁词被撤销），立即摘下并前移，
         // 否则徽标/头像框要等刷新页面才消失。
         var ownedIds = {};
@@ -2901,6 +2918,11 @@
       frameColor: d.frame_color || '#7c4dff',
       frameStyle: 'dev'
     } : null;
+    // 同步清理自选槽位里的开发者称号，防止隐藏后仍通过自选槽展示
+    if (state.hideDevTitle) {
+      if (isDevSlot(slot.primary)) slot.primary = null;
+      if (isDevSlot(slot.primary2)) slot.primary2 = null;
+    }
     state.titlesMap[state.uid] = slot;
     applySelfTitle();
     if (typeof renderConversations === 'function') renderConversations();
