@@ -87,13 +87,16 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .auth-view {
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  /* 账号过多时让整个登录页可上下滑动，避免底部登录按钮被裁掉且不可达 */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 20px;
 }
 
 .auth-card {
   width: min(400px, 100%);
+  /* 内容小于视口时整体居中；超出视口时从顶部开始并支持滚动（避免 flex 居中把顶部裁掉） */
+  margin: auto;
   background: var(--panel);
   border-radius: 18px;
   padding: 34px 30px 30px;
