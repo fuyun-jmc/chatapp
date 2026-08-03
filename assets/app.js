@@ -4646,7 +4646,7 @@
         .then(function (r) {
           var cnt = r && r.data != null ? r.data : null;
           if (cnt != null && cnt > 10) {
-            toast('违禁保护系统生效，禁止发送。该账号已累计多次触发违禁词，已自动上报 GM。');
+            toast('违禁保护系统生效，禁止发送。该账号已累计多次触发违禁词，已上报管理员。');
           }
           // 管理员称号持有者：统计“获得称号之后”的违禁词次数，
           // 超 3 次（第 4 次）自动撤销；每次都提示“再发送 N 次将撤销”
@@ -4658,14 +4658,14 @@
             // 称号已被撤销：更新本地状态并即时刷新徽标/头像框
             state.isAdmin = false;
             updateAdminCard();
-            toast('你已多次发送违禁词，管理员称号已被撤销');
+            toast('你已多次发送违禁词，已上报管理员，管理员称号已被撤销');
             refreshAdminStatus();
             return;
           }
           var c = d.count || 0;
           if (c >= 1 && c <= 3) {
             var remain = 4 - c;  // 第 4 次触发即撤销
-            toast('警告：你已发送违禁词 ' + c + ' 次，再发送 ' + remain + ' 次将撤销管理员称号');
+            toast('你已发送违禁词 ' + c + ' 次，已上报管理员（再发送 ' + remain + ' 次将撤销称号）');
           }
         })
         .catch(function () {});
