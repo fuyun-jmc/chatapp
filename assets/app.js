@@ -51,7 +51,7 @@
     lastActive: {},     // uid -> last_active ISO 时间（好友在线状态）
     onlineTimer: null,  // 在线状态轮询定时器
     presenceChannel: null, // 在线状态 Realtime 广播频道
-    titlesMap: {},       // uid -> { primary:{titleId,titleName,frameColor,frameStyle}|null, admin:{...}|null, dev:{...}|null }
+    titlesMap: {},       // uid -> { primary:{titleId,titleName,frameColor,frameStyle}|null, primary2:{...}|null, admin:{...}|null, dev:{...}|null }
                          // primary=自选展示称号；admin=强制佩戴的「管理员」；dev=强制佩戴的「开发者」（专属头像框）
     gmAdminUid: null,    // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
     forbiddenWords: [],  // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
@@ -482,6 +482,13 @@
             frameColor: t.frame_color || '#ffd700',
             frameStyle: t.frame_style || 'ring'
           } : null;
+          // 第二个自选称号（后端旧签名无此列时自动为 null）
+          var primary2 = t.title2_id ? {
+            titleId: t.title2_id,
+            titleName: t.title2_name,
+            frameColor: t.title2_color || '#ffd700',
+            frameStyle: t.title2_frame || 'ring'
+          } : null;
           var admin = t.admin_title_id ? {
             titleId: t.admin_title_id,
             titleName: t.admin_title_name,
@@ -494,7 +501,7 @@
             frameColor: t.dev_title_color || '#7c4dff',
             frameStyle: 'dev'   // 开发者专属头像框，忽略 frame_style
           } : null;
-          state.titlesMap[t.user_id] = { primary: primary, admin: admin, dev: dev };
+          state.titlesMap[t.user_id] = { primary: primary, primary2: primary2, admin: admin, dev: dev };
         });
         // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
         if (selfPrev && state.titlesMap[state.uid]) {
@@ -526,18 +533,46 @@
     return isForcedTitle(t.name);
   }
 
-  // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选（按 titleId 去重）
+  // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选1 > 自选2（按 titleId 去重）
   function titleSlots(uid) {
     var m = state.titlesMap && state.titlesMap[uid];
     if (!m) return [];
     var list = [];
     var seen = {};
-    [m.dev, m.admin, m.primary].forEach(function (t) {
+    [m.dev, m.admin, m.primary, m.primary2].forEach(function (t) {
       if (!t || !t.titleId || seen[t.titleId]) return;
       seen[t.titleId] = 1;
       list.push(t);
     });
     return list;
+  }
+
+  // 自选称号可同时佩戴的数量（管理员 / 开发者为强制展示，不占用名额）
+  var MAX_CUSTOM_TITLES = 2;
+
+  // 当前自己已佩戴的自选称号 id（有序，去重，不含强制称号）
+  function wornTitleIds() {
+    var m = state.titlesMap && state.titlesMap[state.uid];
+    var ids = [];
+    if (!m) return ids;
+    [m.primary, m.primary2].forEach(function (t) {
+      if (t && t.titleId && ids.indexOf(t.titleId) < 0) ids.push(t.titleId);
+    });
+    return ids;
+  }
+
+  // 用 id 列表就地重建自己的两个自选槽位（详情取自现有槽位，extra 为本次新佩戴的称号）
+  function applyWornTitles(ids, extra) {
+    state.titlesMap = state.titlesMap || {};
+    var m = state.titlesMap[state.uid] || { primary: null, primary2: null, admin: null, dev: null };
+    var known = {};
+    [m.primary, m.primary2].forEach(function (x) { if (x && x.titleId) known[x.titleId] = x; });
+    if (extra && extra.titleId) known[extra.titleId] = extra;
+    var slots = [];
+    (ids || []).forEach(function (id) { if (known[id]) slots.push(known[id]); });
+    m.primary  = slots[0] || null;
+    m.primary2 = slots[1] || null;
+    state.titlesMap[state.uid] = m;
   }
 
   // 给头像元素套上称号边框（环 / 发光 / 加粗环 / 开发者专属框）
@@ -608,7 +643,7 @@
         var rows = (r.data || [])
           .map(function (u) { return { t: u.titles, granted_at: u.granted_at, source: u.source }; })
           .filter(function (x) { return x.t; });
-        var wornId = state.titlesMap && state.titlesMap[state.uid] && state.titlesMap[state.uid].primary && state.titlesMap[state.uid].primary.titleId;
+        var wornIds = wornTitleIds();
         // 先从本次结果里定位强制称号的真实 id（不依赖 refreshAdminStatus 是否已跑完）
         rows.forEach(function (x) {
           var nn = normTitleName(x.t && x.t.name);
@@ -620,12 +655,16 @@
           if (empty) empty.hidden = false;
           return;
         }
+        // 名额提示：自选称号 n / 2
+        box.appendChild(el('div', 'title-quota',
+          '自选称号 ' + wornIds.length + ' / ' + MAX_CUSTOM_TITLES +
+          '（管理员 / 开发者为强制展示，不占名额）'));
         rows.forEach(function (x) {
           var t = x.t;
           var n = normTitleName(t.name);
           var isDevTitle = (n === '开发者') || (t.id && t.id === state.devTitleId); // 开发者：专属头像框
           var forced = isForcedTitleRow(t);         // 开发者 / 管理员：强制佩戴，不可取消
-          var worn = forced ? true : (t.id === wornId);
+          var worn = forced ? true : (wornIds.indexOf(t.id) >= 0);
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
           // 边框预览
           var prev = el('div', 'title-prev' + (isDevTitle ? ' dev-frame' : ''));
@@ -662,9 +701,12 @@
             fsp.title = '管理员称号不可隐藏';
             card.appendChild(fsp);
           } else {
-            var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : ''), worn ? '取消佩戴' : '佩戴');
+            var full = !worn && wornIds.length >= MAX_CUSTOM_TITLES;
+            var btn = el('button', 'btn-mini' + (worn ? ' btn-outline' : '') + (full ? ' title-btn-full' : ''),
+                         worn ? '取消佩戴' : '佩戴');
             btn.type = 'button';
-            btn.onclick = function () { wearTitle(worn ? null : t.id, t.name, t.frame_color, t.frame_style); };
+            if (full) btn.title = '已佩戴 ' + MAX_CUSTOM_TITLES + ' 个自选称号，请先取消一个';
+            btn.onclick = function () { toggleWearTitle(t, worn); };
             card.appendChild(btn);
           }
           box.appendChild(card);
@@ -674,38 +716,63 @@
       .catch(function () { box.innerHTML = '<div class="title-loading">称号加载失败</div>'; });
   }
 
-  // 佩戴 / 取消佩戴称号，成功后立即刷新头像框
-  function wearTitle(titleId, name, color, style) {
+  // 佩戴 / 取消佩戴自选称号（最多同时 2 个），成功后立即刷新头像框
+  function toggleWearTitle(t, worn) {
+    if (!t || !t.id) return;
     // 强制称号不可手动佩戴/取消；若 UI 因名称空格等意外出现按钮，也在这里拦截
-    if (titleId && (isForcedTitle(name) || titleId === state.adminTitleId || titleId === state.devTitleId)) {
-      toast('「' + name + '」为强制称号，已自动展示，无需手动佩戴');
+    if (isForcedTitleRow(t)) {
+      toast('「' + t.name + '」为强制称号，已自动展示，无需手动佩戴');
       return;
     }
-    var prev = (state.titlesMap && state.titlesMap[state.uid]) || { primary: null, admin: null, dev: null };
-    if (!titleId && prev.primary && isForcedTitle(prev.primary.titleName)) {
-      toast('「' + prev.primary.titleName + '」为强制称号，不可取消');
-      return;
+    var ids = wornTitleIds();
+    var next = [];
+    if (worn) {
+      ids.forEach(function (id) { if (id !== t.id) next.push(id); });
+    } else {
+      if (ids.indexOf(t.id) >= 0) return;              // 已佩戴，无需重复
+      if (ids.length >= MAX_CUSTOM_TITLES) {
+        toast('最多同时佩戴 ' + MAX_CUSTOM_TITLES + ' 个自选称号，请先取消一个');
+        return;
+      }
+      next = ids.concat([t.id]);
     }
-    sb.rpc('set_my_title', { p_title_id: titleId })
+    // 成功后就地更新自选槽位（保留强制佩戴的 开发者/管理员 称号）并重绘
+    function done(ids) {
+      applyWornTitles(ids, {
+        titleId: t.id,
+        titleName: t.name,
+        frameColor: t.frame_color || '#ffd700',
+        frameStyle: t.frame_style || 'ring'
+      });
+      toast(worn ? '已取消佩戴：' + t.name : '已佩戴称号：' + t.name);
+      applySelfTitle();
+      if (typeof renderConversations === 'function') renderConversations();
+      loadMyTitles();
+    }
+
+    sb.rpc('set_my_titles', { p_ids: next })
       .then(function (r) {
         if (r.error) throw r.error;
-        // 更新本地展示称号（仅改自选 primary，保留强制佩戴的 开发者/管理员 称号）并立刻重绘头像框
-        var prev = (state.titlesMap && state.titlesMap[state.uid]) || { primary: null, admin: null, dev: null };
-        state.titlesMap = state.titlesMap || {};
-        if (titleId) {
-          prev.primary = { titleId: titleId, titleName: name, frameColor: color || '#ffd700', frameStyle: style || 'ring' };
-          toast('已佩戴称号：' + name);
-        } else {
-          prev.primary = null;
-          toast('已取消佩戴称号');
-        }
-        state.titlesMap[state.uid] = prev;
-        applySelfTitle();
-        if (typeof renderConversations === 'function') renderConversations();
-        loadMyTitles();
+        done(next);
       })
       .catch(function (e) {
-        var msg = (e && e.message === 'NOT_OWNED') ? '你尚未拥有该称号' : friendlyError(e);
+        var code = (e && e.message) || '';
+        // 后端还没执行 20260804_dual_custom_titles.sql：回退到单称号旧接口，功能不中断
+        if (code.indexOf('set_my_titles') >= 0 || (e && e.code === 'PGRST202')) {
+          var one = worn ? null : t.id;
+          sb.rpc('set_my_title', { p_title_id: one })
+            .then(function (r2) {
+              if (r2.error) throw r2.error;
+              done(one ? [one] : []);
+              toast('提示：数据库还未启用双称号，本次只佩戴了 1 个');
+            })
+            .catch(function () { toast('操作失败：请先在 Supabase 执行 20260804_dual_custom_titles.sql'); });
+          return;
+        }
+        var msg = code === 'NOT_OWNED'    ? '你尚未拥有该称号'
+                : code === 'SLOT_FULL'    ? '最多同时佩戴 ' + MAX_CUSTOM_TITLES + ' 个自选称号'
+                : code === 'FORCED_TITLE' ? '强制称号已自动展示，无需手动佩戴'
+                : friendlyError(e);
         toast('操作失败：' + msg);
       });
   }
@@ -2219,7 +2286,7 @@
         var adminRow = pick('管理员');
         var devRow   = pick('开发者');
         state.titlesMap = state.titlesMap || {};
-        var slot = state.titlesMap[state.uid] || { primary: null, admin: null, dev: null };
+        var slot = state.titlesMap[state.uid] || { primary: null, primary2: null, admin: null, dev: null };
         slot.admin = adminRow ? {
           titleId: adminRow.id,
           titleName: adminRow.name,
@@ -2235,13 +2302,16 @@
           frameColor: devRow.frame_color || '#7c4dff',
           frameStyle: 'dev'
         } : null;
-        // 主称号若已不在拥有列表中（例如触发违禁词被撤销），立即清空，
+        // 自选称号若已不在拥有列表中（例如触发违禁词被撤销），立即摘下并前移，
         // 否则徽标/头像框要等刷新页面才消失。
-        if (slot.primary && slot.primary.titleId) {
-          var stillOwned = false;
-          rows.forEach(function (t) { if (t && t.id === slot.primary.titleId) stillOwned = true; });
-          if (!stillOwned) slot.primary = null;
-        }
+        var ownedIds = {};
+        rows.forEach(function (t) { if (t && t.id) ownedIds[t.id] = 1; });
+        var keep = [];
+        [slot.primary, slot.primary2].forEach(function (x) {
+          if (x && x.titleId && ownedIds[x.titleId]) keep.push(x);
+        });
+        slot.primary  = keep[0] || null;
+        slot.primary2 = keep[1] || null;
         state.titlesMap[state.uid] = slot;
         // 记录强制称号的真实 id，后续 loadMyTitles 用 id 匹配更稳（避免名称隐藏字符问题）
         state.adminTitleId = adminRow ? adminRow.id : null;
@@ -2273,7 +2343,7 @@
   function applyDevSlot() {
     if (!state.uid) return;
     state.titlesMap = state.titlesMap || {};
-    var slot = state.titlesMap[state.uid] || { primary: null, admin: null, dev: null };
+    var slot = state.titlesMap[state.uid] || { primary: null, primary2: null, admin: null, dev: null };
     var d = state.devTitleRow;
     slot.dev = (d && !state.hideDevTitle) ? {
       titleId: d.id,
