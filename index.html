@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=111">
+<link rel="stylesheet" href="assets/style.css?v=112">
 </head>
 <body>
 
@@ -90,6 +90,13 @@
       </button>
     </header>
 
+    <!-- 管理员 / 开发者：侧边栏「违禁接收」入口（无口令进入管理面板） -->
+    <button class="side-admin-entry" id="admin-violation-open" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span class="sae-title">违禁接收</span>
+      <span class="sae-sub">查看违禁词违规详情</span>
+    </button>
+
     <div class="unified-search">
       <div class="friend-search" id="search-wrap">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -140,17 +147,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         </button>
         <button class="peer-del-btn" id="peer-del-btn" type="button" hidden>删除好友</button>
-        <button class="admin-violation-btn" id="admin-violation-open" type="button" hidden>违禁接收</button>
       </header>
-
-      <!-- 管理员称号：会话内「违禁接收」卡片（无口令进入管理面板） -->
-      <div class="admin-violation-card" id="admin-violation-card" hidden>
-        <div class="avc-text">
-          <strong>违禁接收</strong>
-          <span>查看一周内多次发送违禁词的用户及其违规详情</span>
-        </div>
-        <button class="btn-mini" id="admin-violation-enter" type="button">进入</button>
-      </div>
 
       <div class="messages" id="messages"></div>
 
@@ -704,6 +701,7 @@
       <button class="gm-tab active" id="admin-tab-reports" type="button">周报</button>
       <button class="gm-tab" id="admin-tab-wordlog" type="button">违禁词记录</button>
       <button class="gm-tab" id="admin-tab-userreports" type="button">用户举报</button>
+      <button class="gm-tab" id="admin-tab-appeals" type="button">禁言申诉</button>
     </div>
     <div class="gm-reports" id="admin-reports">
       <div class="gm-report-list" id="admin-report-list"><div class="gm-empty">加载中…</div></div>
@@ -717,6 +715,9 @@
         <button class="btn-mini" id="admin-word-log-refresh" type="button">刷新</button>
       </div>
       <div class="gm-report-list" id="admin-word-log-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+    <div class="gm-appeals" id="admin-appeals" hidden>
+      <div class="gm-report-list" id="admin-appeal-list"><div class="gm-empty">加载中…</div></div>
     </div>
   </div>
 </div>
@@ -833,6 +834,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.js?v=122"></script>
+<script src="assets/app.js?v=123"></script>
 </body>
 </html>
