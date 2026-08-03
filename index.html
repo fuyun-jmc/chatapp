@@ -8,7 +8,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>轻聊 · 在线聊天</title>
-<link rel="stylesheet" href="assets/style.css?v=105">
+<link rel="stylesheet" href="assets/style.css?v=106">
 </head>
 <body>
 
@@ -222,6 +222,15 @@
       </button>
     </header>
     <div class="settings-body">
+      <div class="avatar-edit">
+        <div class="avatar lg" id="group-info-avatar">群</div>
+        <div class="group-avatar-btns">
+          <button class="btn-mini" id="group-avatar-btn" type="button" hidden>更换群图标</button>
+          <button class="btn-mini btn-outline" id="group-avatar-clear" type="button" hidden>恢复默认</button>
+        </div>
+        <input type="file" id="group-avatar-file" accept="image/*" hidden>
+      </div>
+
       <label class="field" id="group-name-field">
         <span>群名称</span>
         <input type="text" id="group-info-name" maxlength="20" autocomplete="off">
@@ -639,7 +648,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="assets/config.js?v=105"></script>
-<script src="assets/app.js?v=105"></script>
+<script src="assets/config.js?v=106"></script>
+<script src="assets/app.js?v=106"></script>
 </body>
 </html>
