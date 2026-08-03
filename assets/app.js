@@ -459,6 +459,29 @@
     av.appendChild(dot);
   }
 
+  // 根据 last_active 字符串判断在线（用于非 state.lastActive 来源的数据，如 GM 后台成员列表）
+  function onlineFromIso(iso) {
+    if (!iso) return false;
+    var ms = Date.parse(iso);
+    if (isNaN(ms)) return false;
+    return (Date.now() - ms) < ONLINE_WINDOW_MS;
+  }
+
+  // 把 last_active 格式化成「在线 / X 分钟前 / X 小时前 / X 天前 / 离线」
+  function onlineText(iso) {
+    if (!iso) return '离线';
+    var ms = Date.parse(iso);
+    if (isNaN(ms)) return '离线';
+    var diff = Date.now() - ms;
+    if (diff < ONLINE_WINDOW_MS) return '在线';
+    var mins = Math.floor(diff / 60000);
+    if (mins < 60) return mins + ' 分钟前';
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + ' 小时前';
+    var days = Math.floor(hrs / 24);
+    return days + ' 天前';
+  }
+
   // 拉取所有好友的在线状态：直接查 profiles（全员可读），失败则静默降级为全离线
   function refreshOnline() {
     var ids = state.friends.map(function (f) { return f.id; });
@@ -2170,15 +2193,152 @@
       .catch(function (e) { toast('注销失败：' + friendlyError(e)); });
   }
 
+  // ---------- GM 群聊管理（搜索 / 成员在线 / 剥夺群主 / 移除成员 / 解散） ----------
+  var gmGroupCurrent = null; // 当前正在查看的群 { gid, name }
+
+  function openGmGroupsTab() {
+    $('gm-group-search-input').value = '';
+    $('gm-group-results').innerHTML = '';
+    $('gm-group-detail').hidden = true;
+    $('gm-group-detail').innerHTML = '';
+  }
+
+  function gmSearchGroups() {
+    var q = $('gm-group-search-input').value.trim();
+    var box = $('gm-group-results');
+    box.innerHTML = '<div class="gm-empty">搜索中…</div>';
+    $('gm-group-detail').hidden = true;
+    $('gm-group-detail').innerHTML = '';
+    sb.rpc('gm_search_groups', { p_pwd: gmPwd, p_query: q })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">未找到匹配群聊</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (g) {
+          var card = el('div', 'gm-user');
+          var main = el('div', 'gm-user-main');
+          var av = el('div', 'avatar sm');
+          av.textContent = initialOf(g.name);
+          av.style.background = '#7f77dd';
+          var info = el('div', 'gm-user-info');
+          info.appendChild(el('div', 'gm-user-name', g.name || '(未命名群)'));
+          info.appendChild(el('div', 'gm-user-phone', '群主：' + (g.owner_nickname || '?') + ' · ' + (g.member_count || 0) + ' 人'));
+          main.appendChild(av); main.appendChild(info);
+          var btn = el('button', 'btn-mini', '管理');
+          btn.type = 'button';
+          btn.onclick = function () { gmLoadGroupDetail(g.group_id, g.name); };
+          card.appendChild(main); card.appendChild(btn);
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box.innerHTML = '<div class="gm-empty">搜索失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function gmLoadGroupDetail(gid, gname) {
+    gmGroupCurrent = { gid: gid, name: gname };
+    var box = $('gm-group-detail');
+    box.hidden = false;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('gm_list_group_members', { p_pwd: gmPwd, p_group_id: gid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        renderGmGroupDetail(gid, gname, r.data || []);
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function renderGmGroupDetail(gid, gname, members) {
+    var box = $('gm-group-detail');
+    box.innerHTML = '';
+
+    var head = el('div', 'gm-detail-head');
+    head.appendChild(el('div', 'gm-detail-name', (gname || '(未命名群)') + '  ·  ' + members.length + ' 人'));
+    var delBtn = el('button', 'btn-danger', '解散群聊');
+    delBtn.type = 'button';
+    delBtn.onclick = function () { gmGmDissolveGroup(gid, gname); };
+    head.appendChild(delBtn);
+    box.appendChild(head);
+
+    box.appendChild(el('div', 'gm-subtitle', '群成员（' + members.length + '）· 含在线状态'));
+    if (!members.length) box.appendChild(el('div', 'gm-empty', '无成员'));
+    members.forEach(function (m) {
+      var row = el('div', 'gm-row');
+      var main = el('div', 'gm-user-main');
+      var av = el('div', 'avatar sm');
+      av.textContent = initialOf(m.nickname || m.phone);
+      av.style.background = colorOf(m.nickname || m.phone);
+      var old = av.querySelector('.online-dot'); domRemove(old);
+      var dot = el('span', 'online-dot');
+      dot.classList.add(onlineFromIso(m.last_active) ? 'online' : 'offline');
+      av.appendChild(dot);
+      var info = el('div', 'gm-user-info');
+      info.appendChild(el('div', 'gm-user-name', (m.nickname || '(无昵称)') + (m.is_owner ? '（群主）' : '')));
+      info.appendChild(el('div', 'gm-user-phone', (m.phone || '') + ' · ' + onlineText(m.last_active)));
+      main.appendChild(av); main.appendChild(info);
+      row.appendChild(main);
+
+      var acts = el('div', 'gm-row-acts');
+      if (!m.is_owner) {
+        var ownerBtn = el('button', 'btn-mini', '设为群主');
+        ownerBtn.type = 'button';
+        ownerBtn.onclick = function () { gmGmSetOwner(gid, m.user_id, m.nickname); };
+        acts.appendChild(ownerBtn);
+      }
+      var rmBtn = el('button', 'btn-mini gm-danger', '移除');
+      rmBtn.type = 'button';
+      rmBtn.onclick = function () { gmGmRemoveMember(gid, m.user_id, m.nickname); };
+      acts.appendChild(rmBtn);
+      row.appendChild(acts);
+      box.appendChild(row);
+    });
+  }
+
+  function gmGmSetOwner(gid, uid, name) {
+    if (!window.confirm('确认将群主转让给「' + (name || uid) + '」？原群主将降为普通成员。')) return;
+    sb.rpc('gm_set_group_owner', { p_pwd: gmPwd, p_group_id: gid, p_new_owner_id: uid })
+      .then(function (r) { if (r.error) throw r.error; toast('已转让群主'); gmLoadGroupDetail(gid, (gmGroupCurrent && gmGroupCurrent.name) || ''); })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  function gmGmRemoveMember(gid, uid, name) {
+    if (!window.confirm('确认将「' + (name || uid) + '」移出该群？')) return;
+    sb.rpc('gm_remove_group_member', { p_pwd: gmPwd, p_group_id: gid, p_user_id: uid })
+      .then(function (r) { if (r.error) throw r.error; toast('已移除成员'); gmLoadGroupDetail(gid, (gmGroupCurrent && gmGroupCurrent.name) || ''); })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  function gmGmDissolveGroup(gid, gname) {
+    if (!window.confirm('确认解散群聊「' + (gname || gid) + '」？该群所有成员与消息将一并删除。')) return;
+    sb.rpc('gm_force_delete_group', { p_pwd: gmPwd, p_group_id: gid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已解散群聊：' + (gname || ''));
+        $('gm-group-detail').hidden = true;
+        $('gm-group-detail').innerHTML = '';
+        gmSearchGroups();
+      })
+      .catch(function (e) { toast('解散失败：' + friendlyError(e)); });
+  }
+
   // ---------- 称号管理（GM 后台） ----------
   function gmSwitchTab(tab) {
-    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles' };
-    ['users', 'reports', 'titles'].forEach(function (k) {
+    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles', groups: 'gm-groups' };
+    ['users', 'reports', 'titles', 'groups'].forEach(function (k) {
       var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
     if (tab === 'titles') openTitleTab();
     else if (tab === 'reports') openReportsTab();
+    else if (tab === 'groups') openGmGroupsTab();
   }
 
   // 渲染单条违规上报卡片（GM 后台与「管理员」面板共用）
@@ -2843,6 +3003,9 @@
   $('gm-tab-users').addEventListener('click', function () { gmSwitchTab('users'); });
   $('gm-tab-reports').addEventListener('click', function () { gmSwitchTab('reports'); });
   $('gm-tab-titles').addEventListener('click', function () { gmSwitchTab('titles'); });
+  $('gm-tab-groups').addEventListener('click', function () { gmSwitchTab('groups'); });
+  $('gm-group-search-btn').addEventListener('click', gmSearchGroups);
+  $('gm-group-search-input').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') gmSearchGroups(); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
   $('gm-title-close').addEventListener('click', function () { hideModal('gm-title-modal'); });
   $('gm-title-cancel').addEventListener('click', function () { hideModal('gm-title-modal'); });
