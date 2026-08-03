@@ -839,23 +839,18 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-mute-row .btn-mini { margin-top: 0; margin-right: 8px; }
 
 /* 会话内「管理员」违禁接收卡片 */
-.admin-violation-card {
-  display: flex; align-items: center; justify-content: space-between;
-  margin: 8px 10px 0; padding: 8px 12px;
+/* 侧边栏「违禁接收」入口（仅管理员 / 开发者可见，位于搜索框上方） */
+.side-admin-entry {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 14px; padding: 9px 12px;
   background: linear-gradient(90deg, rgba(79,124,247,.14), rgba(79,124,247,.06));
   border: 1px solid rgba(79,124,247,.4); border-radius: 10px;
+  cursor: pointer; text-align: left; color: var(--text);
 }
-.admin-violation-card .avc-text { display: flex; flex-direction: column; }
-.admin-violation-card .avc-text strong { font-size: 13px; color: var(--brand); }
-.admin-violation-card .avc-text span { font-size: 11px; color: var(--text-2); margin-top: 2px; }
-
-/* 聊天头部「违禁接收」按钮（仅管理员可见） */
-.admin-violation-btn {
-  margin-left: 6px; padding: 4px 10px; border: 1px solid rgba(79,124,247,.5);
-  background: rgba(79,124,247,.12); color: var(--brand); border-radius: 999px;
-  font-size: 12px; cursor: pointer;
-}
-.admin-violation-btn:hover { background: rgba(79,124,247,.2); }
+.side-admin-entry svg { flex: 0 0 auto; color: var(--brand); }
+.side-admin-entry .sae-title { font-size: 13px; font-weight: 600; color: var(--brand); }
+.side-admin-entry .sae-sub { font-size: 11px; color: var(--text-2); margin-left: auto; }
+.side-admin-entry:hover { background: rgba(79,124,247,.2); }
 
 /* GM 称号管理 */
 .gm-tabs { display: flex; flex-wrap: wrap; margin: 0 8px; }
