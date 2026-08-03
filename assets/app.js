@@ -2349,6 +2349,42 @@
       .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
   }
 
+  // 违禁词记录：列出「任意」被系统检测出的违禁词（含发给陌生人 / 群聊），不限于好友
+  function openGmWordLogTab() {
+    var box = $('gm-word-log-list');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('gm_list_word_log', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) return; // 兼容旧部署：函数不存在时静默
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (w) {
+          box.appendChild(renderWordLogCard(w));
+        });
+      })
+      .catch(function () { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; });
+  }
+
+  // 单条违禁词检测卡片（GM 后台与「管理员」面板共用）
+  function renderWordLogCard(w) {
+    var card = el('div', 'gm-report');
+    var head = el('div', 'gm-report-head');
+    head.appendChild(el('div', 'gm-report-name', (w.nickname || '(无昵称)') + ' · ' + (w.phone || '—')));
+    head.appendChild(el('div', 'gm-report-badge', '命中：' + (w.word || '?')));
+    card.appendChild(head);
+    card.appendChild(el('div', 'gm-report-sub', '时间：' + (w.created_at ? w.created_at.replace('T', ' ').slice(0, 16) : '—')));
+    card.appendChild(el('div', 'gm-report-line', '内容：' + (w.content || '')));
+    var peerTxt = w.peer_type === 'group'
+      ? ('群聊「' + (w.peer_name || '') + '」')
+      : w.peer_type === 'user'
+        ? ((w.peer_name || '') + ' · ' + (w.peer_phone || ''))
+        : '（未知 / 未记录）';
+    card.appendChild(el('div', 'gm-report-line', '接收方：' + peerTxt));
+    return card;
+  }
+
   function gmSearchGroups() {
     var q = $('gm-group-search-input').value.trim();
     var box = $('gm-group-results');
@@ -2477,8 +2513,8 @@
 
   // ---------- 称号管理（GM 后台） ----------
   function gmSwitchTab(tab) {
-    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback' };
-    ['users', 'reports', 'titles', 'groups', 'appeals', 'feedback'].forEach(function (k) {
+    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback', wordlog: 'gm-word-log' };
+    ['users', 'reports', 'titles', 'groups', 'appeals', 'feedback', 'wordlog'].forEach(function (k) {
       var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
@@ -2487,6 +2523,7 @@
     else if (tab === 'groups') openGmGroupsTab();
     else if (tab === 'appeals') openGmAppealsTab();
     else if (tab === 'feedback') openGmFeedbackTab();
+    else if (tab === 'wordlog') openGmWordLogTab();
   }
 
   // 渲染单条违规上报卡片（GM 后台与「管理员」面板共用）
@@ -2777,6 +2814,26 @@
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
+      });
+  }
+
+  // 管理员面板：违禁词记录（任意检测，不限于好友）
+  function openAdminWordLog() {
+    var box = $('admin-word-log-list');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('admin_list_word_log')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (w) { box.appendChild(renderWordLogCard(w)); });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>';
       });
   }
 
@@ -3239,6 +3296,8 @@
   $('gm-tab-groups').addEventListener('click', function () { gmSwitchTab('groups'); });
   $('gm-tab-appeals').addEventListener('click', function () { gmSwitchTab('appeals'); });
   $('gm-tab-feedback').addEventListener('click', function () { gmSwitchTab('feedback'); });
+  $('gm-tab-wordlog').addEventListener('click', function () { gmSwitchTab('wordlog'); });
+  $('gm-word-log-refresh').addEventListener('click', openGmWordLogTab);
   $('gm-group-search-btn').addEventListener('click', gmSearchGroups);
   $('gm-group-search-input').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') gmSearchGroups(); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
@@ -3259,6 +3318,22 @@
   $('admin-violation-enter').addEventListener('click', openAdminPanel);
   $('admin-close').addEventListener('click', function () { hideModal('admin-panel'); });
   $('admin-panel').addEventListener('click', function (e) { if (e.target === this) hideModal('admin-panel'); });
+  // 管理员面板：子 tab 切换（周报 / 违禁词记录）
+  $('admin-tab-reports').addEventListener('click', function () {
+    $('admin-tab-reports').classList.add('active');
+    $('admin-tab-wordlog').classList.remove('active');
+    $('admin-reports').hidden = false;
+    $('admin-word-log').hidden = true;
+    openAdminReports();
+  });
+  $('admin-tab-wordlog').addEventListener('click', function () {
+    $('admin-tab-wordlog').classList.add('active');
+    $('admin-tab-reports').classList.remove('active');
+    $('admin-reports').hidden = true;
+    $('admin-word-log').hidden = false;
+    openAdminWordLog();
+  });
+  $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
