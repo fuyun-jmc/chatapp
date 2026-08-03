@@ -530,19 +530,22 @@
     if (!av) return;
     av.style.boxShadow = '';
     av.style.border = '';
-    if (av.classList) av.classList.remove('dev-frame');
+    if (av.classList) { av.classList.remove('dev-frame'); av.classList.remove('avatar-admin'); }
     var list = titleSlots(uid);
     if (!list.length) return;
     var t = list[0];
     var c = t.frameColor || '#ffd700';
     if (t.frameStyle === 'dev') {
-      // 开发者专属：内白圈 + 彩色双环 + 光晕（普通称号无法配置出这种样式）
-      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px ' + c + ', 0 0 14px 4px ' + c;
+      // 开发者专属：内白圈 + 彩色渐变环（多色叠加，普通称号无法配置） + 光晕
+      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px #7c4dff, 0 0 0 8px #22d3ee, 0 0 0 11px #3bff9e, 0 0 14px 5px #b04dff';
       if (av.classList) av.classList.add('dev-frame');
     }
     else if (t.frameStyle === 'solid') av.style.boxShadow = '0 0 0 4px ' + c;
     else if (t.frameStyle === 'glow')  av.style.boxShadow = '0 0 10px 3px ' + c;
     else                               av.style.boxShadow = '0 0 0 3px ' + c; // ring
+    // 管理员头像框加「管理员」字样角标
+    var m = state.titlesMap && state.titlesMap[uid];
+    if (m && m.admin && av.classList) av.classList.add('avatar-admin');
     // tooltip 合并全部称号名
     var names = list.map(function (x) { return x.titleName; });
     if (names.length) av.title = names.join(' · ');
@@ -612,8 +615,7 @@
           var prev = el('div', 'title-prev' + (isDevTitle ? ' dev-frame' : ''));
           prev.style.background = '#fff';
           if (isDevTitle) {
-            var dc = t.frame_color || '#7c4dff';
-            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px ' + dc + ', 0 0 14px 4px ' + dc;
+            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px #7c4dff, 0 0 0 8px #22d3ee, 0 0 0 11px #3bff9e, 0 0 14px 5px #b04dff';
           } else {
             prev.style.boxShadow = (t.frame_style === 'solid' ? '0 0 0 4px ' :
                                     t.frame_style === 'glow' ? '0 0 10px 3px ' : '0 0 0 3px ') + (t.frame_color || '#ffd700');
@@ -2173,7 +2175,8 @@
         var rows = (r.data || []).map(function (x) { return x.titles; }).filter(Boolean);
         var names = rows.map(function (t) { return (t.name || '').trim(); }).filter(Boolean);
         state.ownedTitles = names;
-        state.isAdmin = names.indexOf('管理员') >= 0;
+        // 开发者拥有管理员全部权限与能力：开发者同样视为管理员（违禁接收卡片/面板对开发者开放）
+        state.isAdmin = names.indexOf('管理员') >= 0 || names.indexOf('开发者') >= 0;
         state.isDev = names.indexOf('开发者') >= 0;
         updateAdminCard();
 
@@ -3485,6 +3488,8 @@
           if (cnt != null && cnt > 10) {
             toast('违禁保护系统生效，禁止发送。该账号已累计多次触发违禁词，已自动上报 GM。');
           }
+          // 若因本次违禁词被撤销「连续N天未触发」类称号，立即刷新自身头像框/徽标
+          refreshAdminStatus();
         })
         .catch(function () {});
       toast('违禁保护系统生效，禁止发送。');
