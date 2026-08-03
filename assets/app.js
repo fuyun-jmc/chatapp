@@ -1800,6 +1800,7 @@
     resetPwdFields();
     loadDeviceSessions();
     loadMyTitles();
+    refreshAppealSection();
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
     // 强制改密码期间不允许注销账号 / 进入 GM 后台（先完成安全流程）
@@ -1817,6 +1818,37 @@
     }
     hideModal('settings-modal');
     pendingAvatar = null;
+  }
+
+  // 个人设置「禁言申诉」区块：根据当前禁言状态与已有申诉展示
+  function refreshAppealSection() {
+    var hint = $('appeal-status-hint');
+    var btn = $('appeal-open-btn');
+    if (!hint || !btn) return;
+    var u = state.mutedUntil;
+    if (u && new Date(u).getTime() > Date.now()) {
+      hint.textContent = '你已被禁言，' + formatMuteDuration(u) + '后自动解除。如认为有误，可提交申诉。';
+      btn.hidden = false;
+    } else {
+      hint.textContent = '你当前未被禁言。';
+      btn.hidden = true;
+    }
+    // 若已有申诉，按状态展示并禁用按钮
+    sb.rpc('get_my_mute_appeal').then(function (r) {
+      if (r.error) return;
+      var row = (r.data && r.data[0]) || null;
+      if (!row) return;
+      if (row.status === 'pending') {
+        hint.textContent = '你的禁言申诉正在审核中，请耐心等待。';
+        btn.hidden = true;
+      } else if (row.status === 'approved') {
+        hint.textContent = '你的禁言申诉已通过，禁言已解除。';
+        btn.hidden = true;
+      } else if (row.status === 'rejected') {
+        hint.textContent = '你的禁言申诉未通过。';
+        btn.hidden = false;
+      }
+    }).catch(function () {});
   }
 
   // 个人设置内「切换账号」：登出当前账号并返回登录页，保留已记住的账号列表，
@@ -2123,12 +2155,15 @@
     var status = el('div', 'gm-mute-status', '加载中…');
     sec.appendChild(status);
     var row = el('div', 'gm-mute-row');
-    var inp = el('input');
-    inp.type = 'number'; inp.min = '1'; inp.max = '8760'; inp.value = '24';
-    inp.placeholder = '小时';
+    var durLabel = el('span', 'gm-mute-label', '禁言时长：');
+    var inpD = el('input', 'gm-dur-input'); inpD.type = 'number'; inpD.min = '0'; inpD.max = '365'; inpD.value = '0'; inpD.placeholder = '天';
+    var inpH = el('input', 'gm-dur-input'); inpH.type = 'number'; inpH.min = '0'; inpH.max = '23'; inpH.value = '0'; inpH.placeholder = '时';
+    var inpM = el('input', 'gm-dur-input'); inpM.type = 'number'; inpM.min = '0'; inpM.max = '59'; inpM.value = '30'; inpM.placeholder = '分';
     var muteBtn = el('button', 'btn-mini', '禁言'); muteBtn.type = 'button';
     var unmuteBtn = el('button', 'btn-mini gm-danger', '立即解除'); unmuteBtn.type = 'button';
-    row.appendChild(inp); row.appendChild(muteBtn); row.appendChild(unmuteBtn);
+    row.appendChild(durLabel);
+    row.appendChild(inpD); row.appendChild(inpH); row.appendChild(inpM);
+    row.appendChild(muteBtn); row.appendChild(unmuteBtn);
     sec.appendChild(row);
     box.appendChild(sec);
 
@@ -2144,12 +2179,15 @@
         .catch(function () { status.textContent = '状态获取失败'; });
     }
     muteBtn.onclick = function () {
-      var h = parseInt(inp.value, 10);
-      if (!h || h < 1) { toast('请填写有效的禁言时长（小时）'); return; }
-      sb.rpc('gm_mute_user', { p_pwd: gmPwd, p_user_id: uid, p_hours: h })
+      var d = parseInt(inpD.value, 10) || 0;
+      var h = parseInt(inpH.value, 10) || 0;
+      var m = parseInt(inpM.value, 10) || 0;
+      if (d < 0 || h < 0 || h > 23 || m < 0 || m > 59) { toast('请填写有效的禁言时长'); return; }
+      if (d === 0 && h === 0 && m === 0) { toast('请至少填写 1 分钟'); return; }
+      sb.rpc('gm_mute_user', { p_pwd: gmPwd, p_user_id: uid, p_days: d, p_hours: h, p_minutes: m })
         .then(function (r) {
           if (r.error) throw r.error;
-          toast('已禁言 ' + h + ' 小时');
+          toast('已禁言 ' + muteLenText(d, h, m));
           refresh();
         })
         .catch(function (e) { toast('禁言失败：' + friendlyError(e)); });
@@ -2209,6 +2247,106 @@
     $('gm-group-results').innerHTML = '';
     $('gm-group-detail').hidden = true;
     $('gm-group-detail').innerHTML = '';
+  }
+
+  function openGmAppealsTab() {
+    var box = $('gm-appeals');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('gm_list_mute_appeals', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无禁言申诉</div>'; return; }
+        rows.forEach(function (a) {
+          var card = el('div', 'gm-report');
+          var head = el('div', 'gm-report-head');
+          var name = el('div', 'gm-report-name', (a.nickname || '(无昵称)') + ' · ' + (a.phone || '—'));
+          head.appendChild(name);
+          var badge = el('div', 'gm-report-badge' + (a.status === 'pending' ? '' : ' done'),
+            a.status === 'pending' ? '待处理' : (a.status === 'approved' ? '已通过' : '已驳回'));
+          head.appendChild(badge);
+          card.appendChild(head);
+          card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (a.created_at ? a.created_at.replace('T', ' ').slice(0, 16) : '—')));
+          card.appendChild(el('div', 'gm-report-line', '申诉理由：' + (a.reason || '')));
+
+          if (a.status === 'pending') {
+            var acts = el('div', 'gm-row-acts');
+            var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
+            ok.onclick = function () { gmReviewAppeal(a.id, 'approve', a.nickname); };
+            var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
+            no.onclick = function () { gmReviewAppeal(a.id, 'reject', a.nickname); };
+            acts.appendChild(ok); acts.appendChild(no);
+            card.appendChild(acts);
+          }
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/BAD_PWD|GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function gmReviewAppeal(id, action, name) {
+    var verb = action === 'approve' ? '通过并解禁' : '驳回';
+    if (!window.confirm('确认' + verb + '「' + (name || id) + '」的申诉？')) return;
+    sb.rpc('gm_review_mute_appeal', { p_pwd: gmPwd, p_id: id, p_action: action })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已' + (action === 'approve' ? '通过，已解除禁言' : '驳回'));
+        openGmAppealsTab();
+      })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  // ---------- GM 问题反馈列表 ----------
+  function openGmFeedbackTab() {
+    var box = $('gm-feedback');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('gm_list_feedback', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无反馈</div>'; return; }
+        rows.forEach(function (f) {
+          var card = el('div', 'gm-report');
+          var head = el('div', 'gm-report-head');
+          var name = el('div', 'gm-report-name', (f.nickname || '(无昵称)') + ' · ' + (f.phone || '—'));
+          head.appendChild(name);
+          var badge = el('div', 'gm-report-badge' + (f.status === 'new' ? '' : ' done'),
+            f.status === 'new' ? '未读' : '已读');
+          head.appendChild(badge);
+          card.appendChild(head);
+          card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (f.created_at ? f.created_at.replace('T', ' ').slice(0, 16) : '—')));
+          card.appendChild(el('div', 'gm-report-line', '内容：' + (f.content || '')));
+          if (f.contact) card.appendChild(el('div', 'gm-report-sub', '联系方式：' + f.contact));
+
+          if (f.status === 'new') {
+            var acts = el('div', 'gm-row-acts');
+            var read = el('button', 'btn-mini', '标记已读'); read.type = 'button';
+            read.onclick = function () { gmMarkFeedbackRead(f.id); };
+            acts.appendChild(read);
+            card.appendChild(acts);
+          }
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/BAD_PWD|GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function gmMarkFeedbackRead(id) {
+    sb.rpc('gm_mark_feedback_read', { p_pwd: gmPwd, p_id: id })
+      .then(function (r) { if (r.error) throw r.error; openGmFeedbackTab(); })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
   }
 
   function gmSearchGroups() {
@@ -2339,14 +2477,16 @@
 
   // ---------- 称号管理（GM 后台） ----------
   function gmSwitchTab(tab) {
-    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles', groups: 'gm-groups' };
-    ['users', 'reports', 'titles', 'groups'].forEach(function (k) {
+    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback' };
+    ['users', 'reports', 'titles', 'groups', 'appeals', 'feedback'].forEach(function (k) {
       var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
     if (tab === 'titles') openTitleTab();
     else if (tab === 'reports') openReportsTab();
     else if (tab === 'groups') openGmGroupsTab();
+    else if (tab === 'appeals') openGmAppealsTab();
+    else if (tab === 'feedback') openGmFeedbackTab();
   }
 
   // 渲染单条违规上报卡片（GM 后台与「管理员」面板共用）
@@ -2383,25 +2523,30 @@
     else recentTxt = '未知';
     card.appendChild(el('div', 'gm-report-line', '接收方近期是否触发违禁词：' + recentTxt));
 
-    // —— 管理员模式：禁言（最高 20 天）+ 解除禁言 ——
+    // —— 管理员模式：禁言（最高 20 天，可精确到天/时/分）+ 解除禁言 ——
     if (mode === 'admin') {
       var muteRow = el('div', 'gm-mute-row');
-      var inp = el('input', 'gm-mute-input');
-      inp.type = 'number'; inp.min = '1'; inp.max = '20'; inp.value = '1'; inp.placeholder = '天数(1-20)';
+      var durLabel = el('span', 'gm-mute-label', '禁言：');
+      var inpD = el('input', 'gm-dur-input'); inpD.type = 'number'; inpD.min = '0'; inpD.max = '20'; inpD.value = '1'; inpD.placeholder = '天';
+      var inpH = el('input', 'gm-dur-input'); inpH.type = 'number'; inpH.min = '0'; inpH.max = '23'; inpH.value = '0'; inpH.placeholder = '时';
+      var inpM = el('input', 'gm-dur-input'); inpM.type = 'number'; inpM.min = '0'; inpM.max = '59'; inpM.value = '0'; inpM.placeholder = '分';
       var muteBtn = el('button', 'btn-mini', '禁言');
       muteBtn.type = 'button';
       muteBtn.onclick = function () {
-        var days = parseInt(inp.value, 10);
-        if (isNaN(days) || days < 1) { toast('请输入 1–20 之间的天数'); return; }
-        if (days > 20) { days = 20; inp.value = '20'; }
-        sb.rpc('admin_mute_user', { p_user_id: rep.user_id, p_hours: days * 24 })
+        var d = parseInt(inpD.value, 10) || 0;
+        var h = parseInt(inpH.value, 10) || 0;
+        var m = parseInt(inpM.value, 10) || 0;
+        var totalMin = d * 1440 + h * 60 + m;
+        if (totalMin < 1) { toast('请至少填写 1 分钟'); return; }
+        if (totalMin > 28800) { toast('管理员禁言上限为 20 天'); return; }
+        sb.rpc('admin_mute_user', { p_user_id: rep.user_id, p_days: d, p_hours: h, p_minutes: m })
           .then(function (r) {
             if (r.error) throw r.error;
-            toast('已对该用户禁言 ' + days + ' 天（管理员上限 20 天）');
+            toast('已对该用户禁言 ' + muteLenText(d, h, m) + '（管理员上限 20 天）');
           })
           .catch(function (e) {
-            var m = (e && (e.message || '')) || '';
-            if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('禁言失败：' + friendlyError(e)); }
+            var msg = (e && (e.message || '')) || '';
+            if (/ADMIN_FORBIDDEN/.test(msg)) { onAdminRevoked(); } else { toast('禁言失败：' + friendlyError(e)); }
           });
       };
       var unmuteBtn = el('button', 'btn-mini gm-danger', '解除禁言');
@@ -2410,11 +2555,13 @@
         sb.rpc('admin_unmute_user', { p_user_id: rep.user_id })
           .then(function (r) { if (r.error) throw r.error; toast('已解除禁言'); })
           .catch(function (e) {
-            var m = (e && (e.message || '')) || '';
-            if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
+            var m2 = (e && (e.message || '')) || '';
+            if (/ADMIN_FORBIDDEN/.test(m2)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
           });
       };
-      muteRow.appendChild(inp); muteRow.appendChild(muteBtn); muteRow.appendChild(unmuteBtn);
+      muteRow.appendChild(durLabel);
+      muteRow.appendChild(inpD); muteRow.appendChild(inpH); muteRow.appendChild(inpM);
+      muteRow.appendChild(muteBtn); muteRow.appendChild(unmuteBtn);
       card.appendChild(muteRow);
     }
 
@@ -2981,6 +3128,84 @@
   $('switch-account-settings').addEventListener('click', switchAccountFromSettings);
   $('settings-cancel').addEventListener('click', closeSettings);
 
+  // 禁言提示弹窗（发送被拦截时弹出）
+  $('mute-notice-close').addEventListener('click', function () { hideModal('mute-notice-modal'); });
+  $('mute-notice-ok').addEventListener('click', function () { hideModal('mute-notice-modal'); });
+  $('mute-notice-appeal').addEventListener('click', function () {
+    hideModal('mute-notice-modal');
+    $('appeal-reason').value = '';
+    $('appeal-error').hidden = true;
+    showModal('appeal-modal');
+  });
+
+  // 禁言申诉弹窗
+  $('appeal-close').addEventListener('click', function () { hideModal('appeal-modal'); });
+  $('appeal-cancel').addEventListener('click', function () { hideModal('appeal-modal'); });
+  $('appeal-open-btn').addEventListener('click', function () {
+    var u = state.mutedUntil;
+    if (!(u && new Date(u).getTime() > Date.now())) {
+      toast('你未被禁言');
+      return;
+    }
+    $('appeal-reason').value = '';
+    $('appeal-error').hidden = true;
+    showModal('appeal-modal');
+  });
+  $('appeal-submit').addEventListener('click', function () {
+    var reason = $('appeal-reason').value.trim();
+    if (reason.length < 5) {
+      $('appeal-error').textContent = '申诉理由至少 5 个字';
+      $('appeal-error').hidden = false;
+      return;
+    }
+    sb.rpc('submit_mute_appeal', { p_reason: reason })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('申诉已提交，管理员将尽快审核');
+        hideModal('appeal-modal');
+        refreshAppealSection();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/NOT_MUTED/.test(m)) $('appeal-error').textContent = '你当前未被禁言，无需申诉';
+        else if (/REASON_TOO_SHORT/.test(m)) $('appeal-error').textContent = '申诉理由至少 5 个字';
+        else $('appeal-error').textContent = '提交失败：' + friendlyError(e);
+        $('appeal-error').hidden = false;
+      });
+  });
+
+  // 问题反馈弹窗
+  $('feedback-close').addEventListener('click', function () { hideModal('feedback-modal'); });
+  $('feedback-cancel').addEventListener('click', function () { hideModal('feedback-modal'); });
+  $('feedback-open-btn').addEventListener('click', function () {
+    $('feedback-content').value = '';
+    $('feedback-contact').value = '';
+    $('feedback-error').hidden = true;
+    showModal('feedback-modal');
+  });
+  $('feedback-submit').addEventListener('click', function () {
+    var content = $('feedback-content').value.trim();
+    var contact = $('feedback-contact').value.trim();
+    if (content.length < 5) {
+      $('feedback-error').textContent = '反馈内容至少 5 个字';
+      $('feedback-error').hidden = false;
+      return;
+    }
+    sb.rpc('submit_feedback', { p_content: content, p_contact: contact })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('反馈已提交，感谢你的建议');
+        hideModal('feedback-modal');
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/CONTENT_TOO_SHORT/.test(m)) $('feedback-error').textContent = '反馈内容至少 5 个字';
+        else if (/NOT_AUTH/.test(m)) $('feedback-error').textContent = '请先登录后再反馈';
+        else $('feedback-error').textContent = '提交失败：' + friendlyError(e);
+        $('feedback-error').hidden = false;
+      });
+  });
+
   // 注销账号：入口与各步骤按钮
   $('delete-account-btn').addEventListener('click', openDeleteAccount);
   $('del-account-close').addEventListener('click', function () { hideModal('del-account-modal'); });
@@ -3012,6 +3237,8 @@
   $('gm-tab-reports').addEventListener('click', function () { gmSwitchTab('reports'); });
   $('gm-tab-titles').addEventListener('click', function () { gmSwitchTab('titles'); });
   $('gm-tab-groups').addEventListener('click', function () { gmSwitchTab('groups'); });
+  $('gm-tab-appeals').addEventListener('click', function () { gmSwitchTab('appeals'); });
+  $('gm-tab-feedback').addEventListener('click', function () { gmSwitchTab('feedback'); });
   $('gm-group-search-btn').addEventListener('click', gmSearchGroups);
   $('gm-group-search-input').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') gmSearchGroups(); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
@@ -3942,7 +4169,7 @@
   }
 
   /* ---------- 禁言相关 ---------- */
-  // 将 ISO 时间格式化为「2026年08月02日11时46分」
+  // 将 ISO 时间格式化为「2026年08月02日11时46分」（用于 GM/管理员后台绝对时间展示）
   function formatMuteUntil(iso) {
     var d = new Date(iso);
     if (isNaN(d.getTime())) return '';
@@ -3950,10 +4177,38 @@
     return d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日' +
            p(d.getHours()) + '时' + p(d.getMinutes()) + '分';
   }
-  function mutePrompt(iso) {
-    return '您已被禁言，' + formatMuteUntil(iso) + '将自动解除。';
+  // 把「到期时间」换算成「还剩 x天x时x分」（用于向被禁言用户提示）
+  function formatMuteDuration(iso) {
+    var ms = new Date(iso).getTime() - Date.now();
+    if (isNaN(ms) || ms < 0) ms = 0;
+    var totalMin = Math.floor(ms / 60000);
+    var d = Math.floor(totalMin / 1440);
+    var h = Math.floor((totalMin % 1440) / 60);
+    var m = totalMin % 60;
+    var parts = [];
+    if (d > 0) parts.push(d + '天');
+    if (h > 0) parts.push(h + '时');
+    if (m > 0 || parts.length === 0) parts.push(m + '分');
+    return parts.join('');
   }
-  // 发送前调用：拉取最新禁言状态；若被禁言则弹提示并返回 false
+  // 把「天/时/分」数字拼成中文时长文本（用于禁言操作后的 toast）
+  function muteLenText(d, h, m) {
+    var a = [];
+    if (d > 0) a.push(d + '天');
+    if (h > 0) a.push(h + '时');
+    if (m > 0 || a.length === 0) a.push(m + '分');
+    return a.join('');
+  }
+  function mutePrompt(iso) {
+    return '你已被禁言，' + formatMuteDuration(iso) + '后自动解除。可在「个人设置 → 禁言申诉」向管理员申诉。';
+  }
+  // 弹「禁言提示」弹窗（含去申诉入口）
+  function showMuteNotice(iso) {
+    var t = $('mute-notice-text');
+    if (t) t.textContent = mutePrompt(iso);
+    showModal('mute-notice-modal');
+  }
+
   async function ensureNotMuted() {
     var until = null;
     try {
@@ -3962,7 +4217,7 @@
     } catch (e) { /* 查询失败不阻断发送 */ }
     state.mutedUntil = until;
     if (until && new Date(until).getTime() > Date.now()) {
-      toast(mutePrompt(until));
+      showMuteNotice(until);
       return false;
     }
     return true;
