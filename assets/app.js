@@ -36,6 +36,7 @@
     friends: [],        // { id, phone, nickname }
     incoming: [],       // 待我处理的好友申请
     groups: [],         // { id, name, ownerId, memberIds, memberCount, iAmOwner }
+    groupRemarks: {},    // { groupId: remark }  我给各群设置的个人备注（仅自己可见）
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
@@ -94,6 +95,25 @@
     return peer.remark || peer.nickname || '用户';
   }
 
+  /* 群聊显示名：有备注时「备注（群名）」，否则显示群名 */
+  function groupDisplayName(g) {
+    if (!g) return '群聊';
+    return g.remark ? g.remark + '（' + g.name + '）' : (g.name || '未命名群聊');
+  }
+
+  /* 拉取我的所有群备注（后端 SQL 未执行时静默降级，不影响主流程） */
+  function loadGroupRemarks() {
+    return sb.rpc('get_my_group_remarks')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.groupRemarks = {};
+        (r.data || []).forEach(function (row) {
+          if (row.group_id && row.remark != null) state.groupRemarks[row.group_id] = row.remark;
+        });
+      })
+      .catch(function () { state.groupRemarks = state.groupRemarks || {}; });
+  }
+
   /* 统一渲染头像：有自定义头像图则显示图片，否则显示首字母色块 */
   function setAvatar(node, opts) {
     opts = opts || {};
@@ -134,7 +154,7 @@
       node.classList.remove('avatar-admin');
     }
     node.title = '';
-    var name = g.name || '群聊';
+    var name = g.remark || g.name || '群聊';
     node.textContent = '';
     node.style.background = '#7f77dd';
     var old = node.querySelector('img');
@@ -1277,6 +1297,7 @@
 
     loadProfile()
       .then(loadRelations)
+      .then(loadGroupRemarks)
       .then(loadGroups)
       .then(loadDisplayTitles)
       .then(applySelfTitle)
@@ -1453,7 +1474,7 @@
     var av = el('div', 'avatar sm');
     setGroupAvatar(av, g);
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', g.name));
+    info.appendChild(el('div', 'nm', groupDisplayName(g)));
     info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
     li.appendChild(av); li.appendChild(info);
 
@@ -1537,7 +1558,7 @@
     var av = el('div', 'avatar sm');
     setGroupAvatar(av, g);
     var info = el('div', 'info');
-    info.appendChild(el('div', 'nm', g.name || '未命名群聊'));
+    info.appendChild(el('div', 'nm', groupDisplayName(g) || '未命名群聊'));
     info.appendChild(el('div', 'ph', (g.memberCount || 0) + ' 位成员' + (g.iAmOwner ? ' · 我是群主' : '')));
     row.appendChild(av); row.appendChild(info);
 
@@ -2072,6 +2093,7 @@
           var info = el('div', 'gm-user-info');
           info.appendChild(el('div', 'gm-user-name', u.nickname || '(无昵称)'));
           info.appendChild(el('div', 'gm-user-phone', u.phone || ''));
+          if (u.remark) info.appendChild(el('div', 'gm-user-phone', '备注：' + u.remark));
           main.appendChild(av); main.appendChild(info);
           var btn = el('button', 'btn-mini', '管理');
           btn.type = 'button';
@@ -2423,6 +2445,7 @@
           var info = el('div', 'gm-user-info');
           info.appendChild(el('div', 'gm-user-name', g.name || '(未命名群)'));
           info.appendChild(el('div', 'gm-user-phone', '群主：' + (g.owner_nickname || '?') + ' · ' + (g.member_count || 0) + ' 人'));
+          if (g.remark) info.appendChild(el('div', 'gm-user-phone', '备注：' + g.remark));
           main.appendChild(av); main.appendChild(info);
           var btn = el('button', 'btn-mini', '管理');
           btn.type = 'button';
@@ -3660,7 +3683,8 @@
         memberIds: members,
         memberCount: members.length,
         iAmOwner: g.owner_id === state.uid,
-        pinned: pinned
+        pinned: pinned,
+        remark: state.groupRemarks[g.id] || null
       };
     });
     state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
@@ -3765,6 +3789,7 @@
     var g = state.active;
     pendingGroupAvatar = null;
     $('group-info-name').value = g.name;
+    $('group-remark').value = state.groupRemarks[g.id] || '';
     $('group-info-name').disabled = !g.iAmOwner;
     $('group-name-field').hidden = !g.iAmOwner;
     $('group-info-save').hidden = !g.iAmOwner;
@@ -4101,7 +4126,7 @@
     $('chat-room').hidden = false;
     document.querySelector('.app-view').classList.add('show-chat');
 
-    $('peer-name').textContent = isGroup ? peer.name : displayName(peer);
+    $('peer-name').textContent = isGroup ? groupDisplayName(peer) : displayName(peer);
     $('peer-phone').textContent = isGroup ? (peer.memberCount + ' 位成员')
       : peer.phone + (isOnline(peer.id) ? ' · 在线' : '');
 
@@ -4120,7 +4145,11 @@
     }
 
     var rb = $('peer-remark-btn');
-    if (rb) { rb.hidden = isGroup; if (!isGroup) rb.onclick = function () { editRemark(peer); }; }
+    if (rb) {
+      rb.hidden = false;
+      // 群聊：打开群资料弹窗（内含「我的群备注」）；好友：直接编辑备注
+      rb.onclick = isGroup ? openGroupInfo : function () { editRemark(peer); };
+    }
     var db = $('peer-del-btn');
     if (db) { db.hidden = isGroup; if (!isGroup) db.onclick = function () { deleteFriend(peer); }; }
     var cb = $('peer-clear-btn');
