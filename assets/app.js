@@ -126,6 +126,14 @@
   function setGroupAvatar(node, g) {
     if (!node) return;
     g = g || {};
+    // 群图标不应带任何个人称号头像框（开发者/管理员/称号环），无论来自哪个调用点都先清除
+    node.style.boxShadow = '';
+    node.style.border = '';
+    if (node.classList) {
+      node.classList.remove('dev-frame');
+      node.classList.remove('avatar-admin');
+    }
+    node.title = '';
     var name = g.name || '群聊';
     node.textContent = '';
     node.style.background = '#7f77dd';
