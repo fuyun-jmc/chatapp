@@ -122,6 +122,34 @@
     }
   }
 
+  // 群聊图标：有自定义图标则显示图片，否则回退到「群名首字 + 紫底」
+  function setGroupAvatar(node, g) {
+    if (!node) return;
+    g = g || {};
+    var name = g.name || '群聊';
+    node.textContent = '';
+    node.style.background = '#7f77dd';
+    var old = node.querySelector('img');
+    domRemove(old);
+    if (g.avatar) {
+      signedUrl(g.avatar).then(function (url) {
+        if (!url) { node.textContent = name.charAt(0); return; }
+        var im = new Image();
+        im.className = 'avatar-img';
+        im.alt = name;
+        im.onload = function () {
+          node.textContent = '';
+          node.style.background = 'transparent';
+          node.appendChild(im);
+        };
+        im.onerror = function () { node.textContent = name.charAt(0); };
+        im.src = url;
+      });
+    } else {
+      node.textContent = name.charAt(0);
+    }
+  }
+
   function maskPhone(p) {
     return p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : (p || '');
   }
@@ -1376,8 +1404,7 @@
     var li = el('li');
     if (state.active && state.active.id === g.id) li.classList.add('is-active');
     var av = el('div', 'avatar sm');
-    av.textContent = g.name ? g.name.charAt(0) : '群';
-    av.style.background = '#7f77dd';
+    setGroupAvatar(av, g);
     var info = el('div', 'info');
     info.appendChild(el('div', 'nm', g.name));
     info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
@@ -1461,8 +1488,7 @@
   function makeGroupRow(g, clickFn) {
     var row = el('div', 'row clickable');
     var av = el('div', 'avatar sm');
-    av.textContent = g.name ? g.name.charAt(0) : '群';
-    av.style.background = '#7f77dd';
+    setGroupAvatar(av, g);
     var info = el('div', 'info');
     info.appendChild(el('div', 'nm', g.name || '未命名群聊'));
     info.appendChild(el('div', 'ph', (g.memberCount || 0) + ' 位成员' + (g.iAmOwner ? ' · 我是群主' : '')));
@@ -2907,24 +2933,28 @@
   }
 
   function loadGroups() {
-    return sb.from('groups')
-      .select('id,name,owner_id, group_members(user_id, pinned)')
-      .order('created_at', { ascending: false })
-      .then(function (r) {
-        if (!r.error) return parseGroups(true, r);
-        var msg = (r.error.message || '') + ' ' + (r.error.details || '') + ' ' + (r.error.hint || '');
-        // 如果 pinned 列还没建，自动降级到不带 pinned 的查询，保证列表能显示
-        if (msg.indexOf('pinned') !== -1) {
-          return sb.from('groups')
-            .select('id,name,owner_id, group_members(user_id)')
-            .order('created_at', { ascending: false })
-            .then(function (r2) { return parseGroups(false, r2); });
-        }
-        throw r.error;
+    // 逐级降级：avatar_path / pinned 列若尚未建立（SQL 未执行），自动退回可用的查询，
+    // 保证群列表永远能显示，不会因为缺列整块空掉。
+    function fetchGroups(withAvatar, withPin) {
+      var cols = 'id,name,owner_id' + (withAvatar ? ',avatar_path' : '') +
+                 ', group_members(user_id' + (withPin ? ', pinned' : '') + ')';
+      return sb.from('groups').select(cols).order('created_at', { ascending: false });
+    }
+    return fetchGroups(true, true).then(function (r) {
+      if (!r.error) return parseGroups(true, true, r);
+      var msg = (r.error.message || '') + ' ' + (r.error.details || '') + ' ' + (r.error.hint || '');
+      var noAvatar = msg.indexOf('avatar_path') !== -1;
+      var noPin    = msg.indexOf('pinned') !== -1;
+      if (!noAvatar && !noPin) throw r.error;
+      return fetchGroups(!noAvatar, !noPin).then(function (r2) {
+        if (!r2.error) return parseGroups(!noAvatar, !noPin, r2);
+        // 两列都缺时，第二次查询仍可能报另一个列名，再退到最小集合
+        return fetchGroups(false, false).then(function (r3) { return parseGroups(false, false, r3); });
       });
+    });
   }
 
-  function parseGroups(withPin, r) {
+  function parseGroups(withAvatar, withPin, r) {
     if (r.error) throw r.error;
     state.groups = (r.data || []).map(function (g) {
       var members = (g.group_members || []).map(function (m) { return m.user_id; });
@@ -2935,6 +2965,7 @@
         id: g.id,
         name: g.name,
         ownerId: g.owner_id,
+        avatar: withAvatar ? (g.avatar_path || null) : null,
         memberIds: members,
         memberCount: members.length,
         iAmOwner: g.owner_id === state.uid,
@@ -3035,14 +3066,22 @@
   }
 
   /* ---------- 群资料 / 管理 ---------- */
+  // null = 本次未改动群图标；'' = 要清除；字符串 = 新的存储路径
+  var pendingGroupAvatar = null;
+
   function openGroupInfo() {
     if (!state.active || state.active.type !== 'group') return;
     var g = state.active;
+    pendingGroupAvatar = null;
     $('group-info-name').value = g.name;
     $('group-info-name').disabled = !g.iAmOwner;
     $('group-name-field').hidden = !g.iAmOwner;
     $('group-info-save').hidden = !g.iAmOwner;
     $('group-info-add').hidden = !g.iAmOwner;
+    // 群图标：仅群主可改，非群主只看不改
+    setGroupAvatar($('group-info-avatar'), g);
+    $('group-avatar-btn').hidden = !g.iAmOwner;
+    $('group-avatar-clear').hidden = !g.iAmOwner || !g.avatar;
     // 群主显示「解散群聊」、隐藏「退出群聊」；普通成员反之
     $('group-info-dissolve').hidden = !g.iAmOwner;
     $('group-info-leave').hidden = g.iAmOwner;
@@ -3149,22 +3188,103 @@
   $('new-group-create').addEventListener('click', createGroup);
   $('new-group-close').addEventListener('click', function () { hideModal('new-group-modal'); });
   $('new-group-cancel').addEventListener('click', function () { hideModal('new-group-modal'); });
-  $('new-group-modal').addEventListener('click', function (e) { if (e.target === this) this.close(); });
+  $('new-group-modal').addEventListener('click', function (e) { if (e.target === this) hideModal('new-group-modal'); });
 
   $('group-info-btn').addEventListener('click', openGroupInfo);
   $('group-info-close').addEventListener('click', function () { hideModal('group-info-modal'); });
-  $('group-info-modal').addEventListener('click', function (e) { if (e.target === this) this.close(); });
+  // 注意：#group-info-modal 是 div 不是 <dialog>，没有 close()，必须走 hideModal
+  $('group-info-modal').addEventListener('click', function (e) { if (e.target === this) hideModal('group-info-modal'); });
+  // 选择群图标：上传到 <uid>/avatars/ 下（沿用个人头像的存储策略），点「保存」才写库
+  $('group-avatar-btn').addEventListener('click', function () {
+    $('group-avatar-file').click();
+  });
+
+  $('group-avatar-clear').addEventListener('click', function () {
+    if (!state.active || !state.active.iAmOwner) return;
+    pendingGroupAvatar = '';
+    setGroupAvatar($('group-info-avatar'), { name: $('group-info-name').value || state.active.name, avatar: null });
+    $('group-avatar-clear').hidden = true;
+    toast('已恢复默认图标，点「保存」生效');
+  });
+
+  $('group-avatar-file').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    if (!state.active || !state.active.iAmOwner) { toast('只有群主可以修改群图标'); return; }
+    if (file.size > 2 * 1024 * 1024) { toast('群图标请小于 2 MB'); return; }
+
+    var ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
+    var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+             : Date.now() + (Math.random() * 1e6 | 0);
+    var path = state.uid + '/avatars/' + rand + (ext ? '.' + ext : '');
+
+    var btn = $('group-avatar-btn');
+    btn.disabled = true; btn.textContent = '上传中…';
+    sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || 'image/png', upsert: true })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        pendingGroupAvatar = path;
+        var url = URL.createObjectURL(file);   // 立即本地预览，不等签名地址
+        var av = $('group-info-avatar');
+        av.textContent = '';
+        av.style.background = 'transparent';
+        domRemove(av.querySelector('img'));
+        var im = new Image();
+        im.className = 'avatar-img';
+        im.src = url;
+        av.appendChild(im);
+        $('group-avatar-clear').hidden = false;
+        toast('群图标已选择，点「保存」生效');
+      })
+      .catch(function (e) { toast(friendlyError(e)); })
+      .then(function () { btn.disabled = false; btn.textContent = '更换群图标'; });
+  });
+
   $('group-info-save').addEventListener('click', function () {
     if (!state.active || !state.active.iAmOwner) return;
     var name = $('group-info-name').value.trim();
     if (!name) { toast('群名称不能为空'); return; }
-    sb.rpc('update_group', { p_group_id: state.active.id, p_name: name })
-      .then(function (r) { if (r.error) throw r.error; toast('已保存'); return loadGroups(); })
-      .then(function () {
-        var ng = groupById(state.active.id);
-        if (ng) { $('peer-name').textContent = ng.name; openGroupInfo(); }
+    var gid = state.active.id;
+    var args = { p_group_id: gid, p_name: name };
+    if (pendingGroupAvatar !== null) args.p_avatar_path = pendingGroupAvatar;
+
+    var btn = $('group-info-save');
+    btn.disabled = true; btn.textContent = '保存中…';
+    sb.rpc('update_group', args)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        return null;
       })
-      .catch(function (e) { toast(friendlyError(e)); });
+      .catch(function (e) {
+        // 后端 SQL 还没执行时（update_group 仍是两参数版本），降级：只改群名并提示
+        var msg = (e && e.message) || '';
+        if (pendingGroupAvatar !== null &&
+            (msg.indexOf('p_avatar_path') !== -1 || msg.indexOf('PGRST202') !== -1 ||
+             msg.indexOf('does not exist') !== -1)) {
+          return sb.rpc('update_group', { p_group_id: gid, p_name: name })
+            .then(function (r2) {
+              if (r2.error) throw r2.error;
+              toast('群图标需要先在 Supabase 执行 20260804_group_avatar.sql');
+              return null;
+            });
+        }
+        throw e;
+      })
+      .then(function () { return loadGroups(); })
+      .then(function () {
+        pendingGroupAvatar = null;
+        var ng = groupById(gid);
+        if (ng) {
+          if (state.active && state.active.id === gid) state.active = ng;
+          $('peer-name').textContent = ng.name;
+          setGroupAvatar($('peer-avatar'), ng);
+          openGroupInfo();
+        }
+        toast('已保存');
+      })
+      .catch(function (e) { toast(friendlyError(e)); })
+      .then(function () { btn.disabled = false; btn.textContent = '保存'; });
   });
   $('group-info-leave').addEventListener('click', leaveGroup);
   $('group-info-dissolve').addEventListener('click', dissolveGroup);
@@ -3192,7 +3312,7 @@
   });
   $('add-member-close').addEventListener('click', function () { hideModal('add-member-modal'); });
   $('add-member-cancel').addEventListener('click', function () { hideModal('add-member-modal'); });
-  $('add-member-modal').addEventListener('click', function (e) { if (e.target === this) this.close(); });
+  $('add-member-modal').addEventListener('click', function (e) { if (e.target === this) hideModal('add-member-modal'); });
 
   /* ---------- 统一搜索：搜好友 + 手机号加好友 ---------- */
   $('search-box').addEventListener('input', onUnifiedSearch);
@@ -3259,9 +3379,11 @@
 
     var av = $('peer-avatar');
     if (isGroup) {
-      av.textContent = peer.name ? peer.name.charAt(0) : '群';
-      av.style.background = '#7f77dd';
-      var oldImg = av.querySelector('img'); domRemove(oldImg);
+      // 清掉上一位好友遗留的称号头像框（boxShadow / 开发者框 / 管理员角标）
+      av.style.boxShadow = '';
+      av.style.border = '';
+      if (av.classList) { av.classList.remove('dev-frame'); av.classList.remove('avatar-admin'); }
+      setGroupAvatar(av, peer);
     } else {
       setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
       addOnlineDot(av, peer.id);
@@ -3883,6 +4005,8 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && state.uid) {
       loadRelations();
+      // 群资料（群名 / 群图标 / 成员数）由群主单方修改，这里补拉一次让其他成员同步到
+      loadGroups().catch(function () {});
       if (state.active) openChat(state.active);
       fillNewMessages();
     }
