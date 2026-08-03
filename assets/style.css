@@ -441,13 +441,17 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 .chat-head {
   display: flex; align-items: center;
-  padding: 12px 16px; background: var(--panel);
+  padding: 7px 12px; background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-.chat-head > * { margin-right: 16px; }
+.chat-head > * { margin-right: 10px; }
 .chat-head > *:last-child { margin-right: 0; }
-.chat-name { font-weight: 500; font-size: 15.5px; }
-.chat-phone { font-size: 12.5px; color: var(--text-3); }
+/* 昵称+手机号信息块：占满剩余空间并截断，避免与右侧按钮挤压（特殊设备防遮挡） */
+.chat-peer-info { flex: 1 1 auto; min-width: 0; }
+.chat-name { font-weight: 500; font-size: 14px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-phone { font-size: 11.5px; color: var(--text-3); line-height: 1.25; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 聊天头头像略小于列表头像，进一步压缩纵向占用 */
+.chat-head .avatar { width: 32px; height: 32px; flex-basis: 32px; font-size: 13px; border-radius: 9px; }
 .back-btn { display: none; }
 
 .messages {
@@ -708,10 +712,17 @@ input, textarea { font-family: inherit; font-size: 15px; }
     transform: translateX(100%); transition: transform .22s ease;
   }
   .app-view.show-chat .chat { transform: translateX(0); }
-  .back-btn { display: flex; }
+  .back-btn { display: flex; margin-right: 6px; }
   .chat-empty { display: none; }
   .msg { max-width: 84%; }
   .bubble.media img, .bubble.media video { max-width: 62vw; }
+  /* 特殊设备（手机 WebView）：聊天头进一步压缩，减少纵向占用、防止遮挡聊天内容 */
+  .chat-head { padding: 6px 10px; }
+  .chat-head .avatar { width: 30px; height: 30px; flex-basis: 30px; font-size: 12px; }
+  .chat-name { font-size: 13.5px; }
+  .chat-phone { font-size: 11px; }
+  .peer-remark-btn, .peer-report-btn, .peer-del-btn { padding: 4px 9px; font-size: 12px; }
+  .peer-clear-btn { margin-left: 4px; }
 }
 
 /* ---------- 弹窗（普通 div 遮罩层，全设备兼容，顶部居中） ---------- */
