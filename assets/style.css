@@ -744,6 +744,10 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .pwd-section .btn-primary { width: 100%; justify-content: center; }
 .avatar-edit { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .avatar-edit .avatar { box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+/* 老 WebView 不支持 flex gap，这里用 margin 兜底保证按钮与头像有间距 */
+.avatar-edit > * { margin-top: 5px; margin-bottom: 5px; }
+.group-avatar-btns { display: flex; flex-wrap: wrap; justify-content: center; }
+.group-avatar-btns > .btn-mini { margin: 4px; }
 .modal-foot { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--line); }
 .modal-foot .btn-primary, .modal-foot .btn-ghost, .modal-foot .btn-danger { flex: 1; justify-content: center; }
 .btn-ghost {
