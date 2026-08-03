@@ -2842,6 +2842,59 @@
       });
   }
 
+  // 用户手动举报（昵称/信息/视频/图片）→ 管理员 / 开发者管理页展示
+  function openUserReports() {
+    var box = $('admin-userreport-list');
+    if (!box) return;
+    if (box.innerHTML === '') box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    sb.rpc('list_user_reports')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无用户举报</div>'; return; }
+        box.innerHTML = '';
+        rows.forEach(function (rep) { box.appendChild(renderUserReportCard(rep)); });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function renderUserReportCard(rep) {
+    var card = el('div', 'gm-report');
+    var head = el('div', 'gm-report-head');
+    var name = el('div', 'gm-report-name',
+      (rep.reporter_nickname || '(匿名)') + ' 举报 ' + (rep.reported_name || (rep.reported_kind === 'group' ? '群聊' : '用户')));
+    var badge = el('div', 'gm-report-badge' + (rep.status === 'handled' ? ' done' : ''),
+      rep.status === 'handled' ? '已处理' : '待处理');
+    head.appendChild(name); head.appendChild(badge);
+    card.appendChild(head);
+
+    var typeTxt = { nickname: '昵称', message: '信息', video: '视频', image: '图片', other: '其他' }[rep.report_type] || rep.report_type;
+    card.appendChild(el('div', 'gm-report-sub',
+      '类型：' + typeTxt + ' · 提交时间：' + (rep.created_at ? rep.created_at.replace('T', ' ').slice(0, 16) : '—')));
+
+    if (rep.reporter_phone) card.appendChild(el('div', 'gm-report-sub', '举报人手机号：' + rep.reporter_phone));
+    if (rep.target_ref)   card.appendChild(el('div', 'gm-report-line', '被举报内容：' + rep.target_ref));
+    if (rep.detail)       card.appendChild(el('div', 'gm-report-line', '补充说明：' + rep.detail));
+
+    var btn = el('button', 'btn-mini' + (rep.status === 'handled' ? ' gm-danger' : ''),
+      rep.status === 'handled' ? '撤销处理' : '标记处理');
+    btn.type = 'button';
+    btn.onclick = function () {
+      sb.rpc('resolve_user_report', { p_report_id: rep.id, p_handled: rep.status !== 'handled' })
+        .then(function (r) { if (r.error) throw r.error; openUserReports(); })
+        .catch(function (e) {
+          var m = (e && (e.message || '')) || '';
+          if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
+        });
+    };
+    card.appendChild(btn);
+    return card;
+  }
+
   // 管理员面板：违禁词记录（任意检测，不限于好友）
   function openAdminWordLog() {
     var box = $('admin-word-log-list');
@@ -3216,6 +3269,22 @@
   // 管理员称号公告弹窗
   $('admin-announce-close').addEventListener('click', function () { hideModal('admin-announce-modal'); });
   $('admin-announce-ok').addEventListener('click', function () { hideModal('admin-announce-modal'); });
+
+  // 举报弹窗
+  $('report-close').addEventListener('click', function () { hideModal('report-modal'); });
+  $('report-cancel').addEventListener('click', function () { hideModal('report-modal'); });
+  $('report-submit').addEventListener('click', submitReport);
+  var reportChips = document.querySelectorAll('#report-types .report-chip');
+  for (var ri = 0; ri < reportChips.length; ri++) {
+    reportChips[ri].addEventListener('click', function () {
+      var t = this.getAttribute('data-type');
+      state.reportType = t;
+      var sibs = document.querySelectorAll('#report-types .report-chip');
+      for (var s = 0; s < sibs.length; s++) sibs[s].classList.remove('active');
+      this.classList.add('active');
+      renderReportTargets();
+    });
+  }
   $('mute-notice-appeal').addEventListener('click', function () {
     hideModal('mute-notice-modal');
     $('appeal-reason').value = '';
@@ -3357,9 +3426,20 @@
   $('admin-tab-wordlog').addEventListener('click', function () {
     $('admin-tab-wordlog').classList.add('active');
     $('admin-tab-reports').classList.remove('active');
+    $('admin-tab-userreports').classList.remove('active');
     $('admin-reports').hidden = true;
     $('admin-word-log').hidden = false;
+    $('admin-userreports').hidden = true;
     openAdminWordLog();
+  });
+  $('admin-tab-userreports').addEventListener('click', function () {
+    $('admin-tab-userreports').classList.add('active');
+    $('admin-tab-reports').classList.remove('active');
+    $('admin-tab-wordlog').classList.remove('active');
+    $('admin-reports').hidden = true;
+    $('admin-word-log').hidden = true;
+    $('admin-userreports').hidden = false;
+    openUserReports();
   });
   $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
 
@@ -3945,8 +4025,13 @@
     if (cb) { cb.hidden = isGroup; if (!isGroup) cb.onclick = function () { openClearModal(peer); }; }
     $('group-info-btn').hidden = !isGroup;
 
+    // 举报按钮：聊天页内显示在「备注」左侧，1:1 与群聊均可用
+    var rpb = $('peer-report-btn');
+    if (rpb) { rpb.hidden = false; rpb.onclick = openReportModal; }
+
     var box = $('messages');
     box.innerHTML = '';
+    state.activeMessages = [];   // 重置当前会话消息缓存，供举报选择器使用
     box.appendChild(el('div', 'day-sep', '加载中…'));
 
     var query = sb.from('messages')
@@ -3977,6 +4062,10 @@
         if (!box.querySelector('.msg')) {
           box.appendChild(el('div', 'day-sep', EMPTY_TIP));
         }
+        // 缓存当前会话消息（供举报选择器筛选「信息/图片/视频」），剔除本端已删除
+        state.activeMessages = rows.filter(function (m) {
+          return !(m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0);
+        });
         scrollBottom();
         // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
         state.lastSeenTs = rows.reduce(function (mx, x) {
@@ -4049,10 +4138,108 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  /* ============================================================
+   *  举报（昵称 / 信息 / 视频 / 图片）
+   * ============================================================ */
+  var REPORT_TYPES = ['nickname', 'message', 'video', 'image'];
+  var REPORT_LABEL = { nickname: '昵称', message: '信息', video: '视频', image: '图片' };
+
+  function openReportModal() {
+    if (!state.active) return;
+    state.reportType = null;
+    state.reportTarget = null;
+    var chips = document.querySelectorAll('#report-types .report-chip');
+    for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+    $('report-targets').innerHTML = '<div class="gm-empty">请先选择举报类型</div>';
+    $('report-detail').value = '';
+    $('report-error').hidden = true;
+    showModal('report-modal');
+  }
+
+  // 根据当前选中的举报类型，列出可举报的聊天记录（信息/视频/图片），
+  // 或对于昵称直接以对方昵称作为唯一目标。
+  function renderReportTargets() {
+    var box = $('report-targets');
+    var type = state.reportType;
+    box.innerHTML = '';
+    state.reportTarget = null;
+
+    if (type === 'nickname') {
+      var name = displayName(state.active);
+      var item = el('button', 'report-item sel', '「' + (name || '?') + '」的昵称/群名');
+      item.type = 'button';
+      state.reportTarget = { ref: name || '', meta: '' };
+      box.appendChild(item);
+      return;
+    }
+
+    var msgs = (state.activeMessages || []).filter(function (m) {
+      if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return false;
+      if (type === 'message') return m.kind === 'text';
+      if (type === 'image')  return m.kind === 'image';
+      if (type === 'video')  return m.kind === 'video' || isVideoFile(m);
+      return false;
+    });
+    if (!msgs.length) {
+      box.innerHTML = '<div class="gm-empty">当前聊天中没有可举报的' + (REPORT_LABEL[type] || '') + '</div>';
+      return;
+    }
+    msgs.forEach(function (m) {
+      var preview = m.kind === 'text' ? (m.content || '(空消息)')
+                  : (type === 'image' ? '[图片]' : '[视频]') + (m.file_name ? ' ' + m.file_name : '');
+      var meta = (m.created_at ? fmtTime(m.created_at) : '') + (m.sender_id === state.uid ? ' · 我' : ' · 对方');
+      var item = el('button', 'report-item', preview);
+      item.type = 'button';
+      var mt = el('span', 'rt-meta', meta);
+      item.appendChild(mt);
+      item.onclick = function () {
+        var prev = box.querySelectorAll('.report-item.sel');
+        for (var k = 0; k < prev.length; k++) prev[k].classList.remove('sel');
+        item.classList.add('sel');
+        state.reportTarget = { ref: preview, meta: meta, msgId: m.id };
+      };
+      box.appendChild(item);
+    });
+  }
+
+  function submitReport() {
+    var err = $('report-error');
+    if (!state.active) { err.hidden = false; err.textContent = '未进入任何聊天'; return; }
+    if (REPORT_TYPES.indexOf(state.reportType) < 0) {
+      err.hidden = false; err.textContent = '请选择举报类型'; return;
+    }
+    if (!state.reportTarget) {
+      err.hidden = false; err.textContent = '请选择要举报的' + (REPORT_LABEL[state.reportType] || '对象'); return;
+    }
+    var isGroup = state.active.type === 'group';
+    var payload = {
+      p_reported_id: state.active.id,
+      p_reported_kind: isGroup ? 'group' : 'user',
+      p_report_type: state.reportType,
+      p_target_ref: state.reportTarget.ref + (state.reportTarget.meta ? '  (' + state.reportTarget.meta + ')' : ''),
+      p_detail: ($('report-detail').value || '').trim()
+    };
+    sb.rpc('submit_user_report', payload)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        hideModal('report-modal');
+        toast('举报已提交，开发者和管理员将会处理');
+      })
+      .catch(function (e) { toast('举报失败：' + friendlyError(e)); });
+  }
+
   function appendMessage(m) {
     var box = $('messages');
     // 幂等：同一消息只渲染一次，避免实时推送与兜底轮询重复追加
     if (m && m.id && box.querySelector('[data-id="' + m.id + '"]')) return;
+    // 同步进当前会话缓存（供举报选择器使用），去重
+    if (m && m.id && state.activeMessages) {
+      var dup = false;
+      for (var i = 0; i < state.activeMessages.length; i++) {
+        if (state.activeMessages[i] && state.activeMessages[i].id === m.id) { dup = true; break; }
+      }
+      if (!dup) state.activeMessages.push(m);
+    }
     // 必须先渲染再动 DOM：本端已删除的消息返回 null，
     // 若先把空态提示删掉再 return，聊天区会变成彻底空白（一键清空后最易触发）
     var node = renderMessage(m);
