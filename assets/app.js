@@ -2661,6 +2661,8 @@
         // 开发者拥有管理员全部权限与能力：开发者同样视为管理员（违禁接收卡片/面板对开发者开放）
         state.isAdmin = names.indexOf('管理员') >= 0 || names.indexOf('开发者') >= 0;
         state.isDev = names.indexOf('开发者') >= 0;
+        // 「管理员」称号专属标记（公告/撤销规则只针对「管理员」称号，不含纯开发者）
+        state.hasAdminTitle = names.indexOf('管理员') >= 0;
         updateAdminCard();
 
         // 兜底回填自己的强制称号槽位，保证右上角一定能看到徽标
@@ -2704,6 +2706,8 @@
         state.devTitleId   = devRow   ? devRow.id   : null;
         applySelfTitle();
         loadHideDevPref();
+        // 获得「管理员」称号后首次登录：显示管理员公告（被撤销后重新获得会再次提示）
+        syncAdminAnnounceState();
       })
       .catch(function () {});
   }
@@ -2762,6 +2766,27 @@
   function updateAdminCard() {
     var card = $('admin-violation-card');
     if (card) card.hidden = !state.isAdmin;
+  }
+
+  // 管理员称号「首次登录」公告：
+  // 用 localStorage 记录迁移状态，仅在「从非管理员变为管理员」的那次登录显示一次；
+  // 若称号被撤销后重新获得，会再次提示。纯开发者（无管理员称号）不触发。
+  function syncAdminAnnounceState() {
+    if (!state.uid) return;
+    var KEY = 'admin_announce_' + state.uid;
+    try {
+      if (state.hasAdminTitle) {
+        var prev = localStorage.getItem(KEY);
+        if (prev !== '1') showAdminAnnouncement();
+        localStorage.setItem(KEY, '1');
+      } else {
+        localStorage.setItem(KEY, '0');
+      }
+    } catch (e) {}
+  }
+
+  function showAdminAnnouncement() {
+    showModal('admin-announce-modal');
   }
 
   // 权限被撤销（GM 撤回「管理员」称号）时：隐藏卡片并提示
@@ -3188,6 +3213,9 @@
   // 禁言提示弹窗（发送被拦截时弹出）
   $('mute-notice-close').addEventListener('click', function () { hideModal('mute-notice-modal'); });
   $('mute-notice-ok').addEventListener('click', function () { hideModal('mute-notice-modal'); });
+  // 管理员称号公告弹窗
+  $('admin-announce-close').addEventListener('click', function () { hideModal('admin-announce-modal'); });
+  $('admin-announce-ok').addEventListener('click', function () { hideModal('admin-announce-modal'); });
   $('mute-notice-appeal').addEventListener('click', function () {
     hideModal('mute-notice-modal');
     $('appeal-reason').value = '';
