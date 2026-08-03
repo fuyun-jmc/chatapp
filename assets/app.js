@@ -56,7 +56,7 @@
                          // primary=自选展示称号；admin=强制佩戴的「管理员」；dev=强制佩戴的「开发者」（专属头像框）
     gmAdminUid: null,    // 后端 gm_admin_uid() 返回的管理员 uid；未取到时回退到 GM_ADMIN_UID 常量
     forbiddenWords: [],  // 违禁词（小写），登录后从 forbidden_words 表拉取，发送消息时检测
-    isAdmin: false,      // 是否持有「管理员」称号（会话内显示违禁接收卡片的开关）
+    isAdmin: false,      // 是否持有「管理员」称号（侧边栏显示违禁接收入口的开关）
     isDev: false,        // 是否持有「开发者」称号（专属头像框）
     ownedTitles: [],     // 当前用户已拥有的全部称号名称
     adminTitleId: null,  // 「管理员」称号在 titles 表里的真实 id（按 id 判断强制佩戴，最可靠）
@@ -2662,7 +2662,7 @@
   }
 
   // ============================================================
-  //  「管理员」称号体系：会话内「违禁接收卡片」 + 无口令管理面板
+  //  「管理员」称号体系：侧边栏「违禁接收」入口 + 无口令管理面板
   // ============================================================
   function refreshAdminStatus() {
     if (!state.uid) return Promise.resolve();
@@ -2677,7 +2677,7 @@
         var rows = (r.data || []).map(function (x) { return x.titles; }).filter(Boolean);
         var names = rows.map(function (t) { return (t.name || '').trim(); }).filter(Boolean);
         state.ownedTitles = names;
-        // 开发者拥有管理员全部权限与能力：开发者同样视为管理员（违禁接收卡片/面板对开发者开放）
+        // 开发者拥有管理员全部权限与能力：开发者同样视为管理员（违禁接收入口/面板对开发者开放）
         state.isAdmin = names.indexOf('管理员') >= 0 || names.indexOf('开发者') >= 0;
         state.isDev = names.indexOf('开发者') >= 0;
         // 「管理员」称号专属标记（公告/撤销规则只针对「管理员」称号，不含纯开发者）
@@ -2785,8 +2785,9 @@
   }
 
   function updateAdminCard() {
-    var card = $('admin-violation-card');
-    if (card) card.hidden = !state.isAdmin;
+    // 侧边栏「违禁接收」入口（搜索框上方），仅管理员 / 开发者可见
+    var btn = $('admin-violation-open');
+    if (btn) btn.hidden = !state.isAdmin;
   }
 
   // 管理员称号「首次登录」公告：
@@ -2839,6 +2840,7 @@
     if (adminTabCurrent === 'reports') openAdminReports();
     else if (adminTabCurrent === 'wordlog') openAdminWordLog();
     else if (adminTabCurrent === 'userreports') openUserReports();
+    else if (adminTabCurrent === 'appeals') openAdminAppeals();
   }
 
   // 隐藏后的占位行：内容本身不显示，仅留恢复入口
@@ -3059,6 +3061,64 @@
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>';
+      });
+  }
+
+  // 管理员面板：禁言申诉列表（查看 + 通过/驳回）
+  function openAdminAppeals() {
+    adminTabCurrent = 'appeals';
+    var box = $('admin-appeal-list');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('admin_list_mute_appeals')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无禁言申诉</div>'; return; }
+        rows.forEach(function (a) {
+          var card = el('div', 'gm-report');
+          var head = el('div', 'gm-report-head');
+          var name = el('div', 'gm-report-name', (a.nickname || '(无昵称)') + ' · ' + (a.phone || '—'));
+          head.appendChild(name);
+          var badge = el('div', 'gm-report-badge' + (a.status === 'pending' ? '' : ' done'),
+            a.status === 'pending' ? '待处理' : (a.status === 'approved' ? '已通过' : '已驳回'));
+          head.appendChild(badge);
+          card.appendChild(head);
+          card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (a.created_at ? a.created_at.replace('T', ' ').slice(0, 16) : '—')));
+          card.appendChild(el('div', 'gm-report-line', '申诉理由：' + (a.reason || '')));
+
+          if (a.status === 'pending') {
+            var acts = el('div', 'gm-row-acts');
+            var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
+            ok.onclick = function () { adminReviewAppeal(a.id, 'approve', a.nickname); };
+            var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
+            no.onclick = function () { adminReviewAppeal(a.id, 'reject', a.nickname); };
+            acts.appendChild(ok); acts.appendChild(no);
+            card.appendChild(acts);
+          }
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function adminReviewAppeal(id, action, name) {
+    var verb = action === 'approve' ? '通过并解禁' : '驳回';
+    if (!window.confirm('确认' + verb + '「' + (name || id) + '」的申诉？')) return;
+    sb.rpc('admin_review_mute_appeal', { p_id: id, p_action: action })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已' + (action === 'approve' ? '通过，已解除禁言' : '驳回'));
+        openAdminAppeals();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
       });
   }
 
@@ -3554,12 +3614,8 @@
     setDaysLabel(this.value);
   });
 
-  // 管理员（称号）后台：会话内「违禁接收」卡片 + 免密面板
-  $('admin-violation-open').addEventListener('click', function () {
-    var card = $('admin-violation-card');
-    if (card) card.hidden = false;
-  });
-  $('admin-violation-enter').addEventListener('click', openAdminPanel);
+  // 管理员（称号）后台：侧边栏「违禁接收」入口 + 免密面板
+  $('admin-violation-open').addEventListener('click', openAdminPanel);
   $('admin-close').addEventListener('click', function () { hideModal('admin-panel'); });
   $('admin-panel').addEventListener('click', function (e) { if (e.target === this) hideModal('admin-panel'); });
   // 管理员面板：子 tab 切换（周报 / 违禁词记录）
