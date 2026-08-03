@@ -565,6 +565,8 @@
             frameColor: t.dev_title_color || '#7c4dff',
             frameStyle: 'dev'   // 开发者专属头像框，忽略 frame_style
           } : null;
+          // 即便后端 get_profiles_titles 还是旧签名没过滤 hide_dev_title，前端也强制不展示
+          if (t.user_id === state.uid && state.hideDevTitle) dev = null;
           state.titlesMap[t.user_id] = { primary: primary, primary2: primary2, admin: admin, dev: dev };
         });
         // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
@@ -1289,7 +1291,7 @@
   }
 
   function loadProfile() {
-    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until').eq('id', state.uid).maybeSingle()
+    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until,hide_dev_title').eq('id', state.uid).maybeSingle()
       .then(function (r) {
         if (r.error) throw r.error;
         if (!r.data) {
@@ -1311,6 +1313,8 @@
       .then(function (p) {
         state.profile = p;
         state.mutedUntil = p.muted_until || null;
+        // 尽早把「隐藏开发者称号」开关读到内存，避免后续 refreshAdminStatus 先用旧值把徽标画出来
+        state.hideDevTitle = !!p.hide_dev_title;
         $('me-name').textContent = p.nickname;
         $('me-phone').textContent = p.phone;
         setAvatar($('me-avatar'), { nickname: p.nickname, phone: p.phone, avatarPath: p.avatar_path });
@@ -2697,9 +2701,8 @@
       .limit(1)
       .then(function (r) {
         if (r.error || !r.data || !r.data.length) return;
-        var v = !!r.data[0].hide_dev_title;
-        if (v === state.hideDevTitle) return;
-        state.hideDevTitle = v;
+        state.hideDevTitle = !!r.data[0].hide_dev_title;
+        //  always re-apply，避免其它流程先把 dev 槽位写错
         applyDevSlot();
       })
       .catch(function () {});
