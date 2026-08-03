@@ -871,6 +871,21 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .mute-notice-text { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word; margin: 0; }
 /* 管理员公告：强调「注意」行 */
 .warn-line { color: var(--danger); font-weight: 600; }
+/* 举报弹窗：类型选择 + 目标记录列表（老 WebView 兼容，用 margin 兜底间距） */
+.report-types { display: flex; flex-wrap: wrap; }
+.report-types > .report-chip { margin: 0 8px 8px 0; }
+.report-chip {
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  padding: 8px 16px; border-radius: 999px; font-size: 14px; cursor: pointer;
+}
+.report-chip.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.report-targets { max-height: 240px; overflow-y: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.report-targets > .report-item { display: block; width: 100%; text-align: left; border: 0; background: transparent;
+  color: var(--text); padding: 10px 10px; border-radius: 8px; font-size: 14px; cursor: pointer; word-break: break-word; }
+.report-targets > .report-item + .report-item { margin-top: 4px; }
+.report-targets > .report-item:active { background: var(--line); }
+.report-targets > .report-item.sel { background: rgba(245,81,30,.12); box-shadow: inset 0 0 0 1px var(--brand); }
+.report-targets > .report-item .rt-meta { display: block; color: var(--text-2); font-size: 12px; margin-top: 2px; }
 /* GM 后台：禁言申诉 / 问题反馈 列表容器（与 gm-reports 一致） */
 .gm-appeals, .gm-feedback { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-appeals { overflow-y: auto; -webkit-overflow-scrolling: touch; }
