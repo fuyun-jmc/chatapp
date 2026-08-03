@@ -2405,6 +2405,8 @@
         if (rows.length > CAP) {
           box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
         }
+        var saG = $('gm-wl-selectall'); if (saG) saG.checked = false;
+        updateWlCount('gm');
       })
       .catch(function () { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; });
   }
@@ -2412,6 +2414,16 @@
   // 单条违禁词检测卡片（GM 后台与「管理员」面板共用）
   function renderWordLogCard(w, mode) {
     var card = el('div', 'gm-report');
+    // 多选勾选框（批量禁言 / 不禁言 / 删除用）
+    var selRow = el('div', 'wl-check-row');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.className = 'wl-check';
+    cb.setAttribute('data-id', w.id || '');
+    if (w.user_id) cb.setAttribute('data-uid', w.user_id);
+    cb.title = '选择此条';
+    selRow.appendChild(cb);
+    card.appendChild(selRow);
     var head = el('div', 'gm-report-head');
     head.appendChild(el('div', 'gm-report-name', (w.nickname || '(无昵称)') + ' · ' + (w.phone || '—')));
     head.appendChild(el('div', 'gm-report-badge', '命中：' + (w.word || '?')));
@@ -2434,6 +2446,133 @@
       card.appendChild(acts);
     }
     return card;
+  }
+
+  // ---------- 违禁词记录：多选 + 批量禁言 / 不禁言 / 删除 ----------
+  // 顺序执行任务数组（避免 Supabase thenable 的 Promise.all 陷阱）；全部完成回调 done，任一失败回调 fail 并停止
+  function seqRun(tasks, done, fail) {
+    var i = 0;
+    function step() {
+      if (i >= tasks.length) { if (done) done(); return; }
+      var t = tasks[i++];
+      t().then(step, fail);
+    }
+    step();
+  }
+
+  // 收集某面板当前勾选的记录：返回 { ids:[记录id], uids:[去重后的违规用户id], count:勾选数 }
+  function collectCheckedWl(panel) {
+    var listId = (panel === 'gm') ? 'gm-word-log-list' : 'admin-word-log-list';
+    var list = $(listId);
+    var ids = [], uids = [], count = 0;
+    if (list) {
+      var boxes = list.querySelectorAll('.wl-check');
+      for (var i = 0; i < boxes.length; i++) {
+        var b = boxes[i];
+        if (!b.checked) continue;
+        count++;
+        var id = b.getAttribute('data-id');
+        if (id) ids.push(id);
+        var u = b.getAttribute('data-uid');
+        if (u && uids.indexOf(u) < 0) uids.push(u);
+      }
+    }
+    return { ids: ids, uids: uids, count: count };
+  }
+
+  // 绑定某面板的批量操作栏（全选 / 列表勾选变化计数 / 三个批量按钮）
+  function bindWlBatch(panel) {
+    var pre = (panel === 'gm') ? 'gm-wl' : 'admin-wl';
+    var listId = (panel === 'gm') ? 'gm-word-log-list' : 'admin-word-log-list';
+    var selAll = $(pre + '-selectall');
+    var list = $(listId);
+    if (selAll) selAll.addEventListener('change', function () {
+      var boxes = list.querySelectorAll('.wl-check');
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = this.checked;
+      updateWlCount(panel);
+    });
+    if (list) list.addEventListener('change', function () { updateWlCount(panel); });
+    var mute = $(pre + '-mute'); if (mute) mute.addEventListener('click', function () { batchWlMute(panel); });
+    var nomute = $(pre + '-nomute'); if (nomute) nomute.addEventListener('click', function () { batchWlNoMute(panel); });
+    var del = $(pre + '-del'); if (del) del.addEventListener('click', function () { batchWlDelete(panel); });
+  }
+
+  function reloadWl(panel) {
+    if (panel === 'gm') openGmWordLogTab();
+    else openAdminWordLog();
+  }
+
+  function updateWlCount(panel) {
+    var sel = collectCheckedWl(panel);
+    var pre = (panel === 'gm') ? 'gm-wl' : 'admin-wl';
+    var c = $(pre + '-count');
+    if (c) c.textContent = '已选 ' + sel.count + ' 项';
+  }
+
+  // 批量禁言：禁言每个去重后的违规用户，并把这些记录标记为「全局隐藏」
+  function batchWlMute(panel) {
+    var sel = collectCheckedWl(panel);
+    if (!sel.ids.length) { toast('请先勾选要禁言的记录'); return; }
+    var pre = (panel === 'gm') ? 'gm-wl' : 'admin-wl';
+    var d = parseInt($(pre + '-days').value, 10) || 0;
+    var h = parseInt($(pre + '-hours').value, 10) || 0;
+    var m = parseInt($(pre + '-mins').value, 10) || 0;
+    var total = d * 1440 + h * 60 + m;
+    if (total < 1) { toast('请至少填写 1 分钟禁言时长'); return; }
+    if (total > 28800) { toast('禁言时长上限为 20 天'); return; }
+    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条记录执行「禁言」？将禁言 ' + sel.uids.length + ' 名用户并隐藏这些记录。')) return;
+    var muteFn = (panel === 'gm')
+      ? function (uid) { return sb.rpc('gm_mute_user', { p_pwd: gmPwd, p_user_id: uid, p_days: d, p_hours: h, p_minutes: m }); }
+      : function (uid) { return sb.rpc('admin_mute_user', { p_user_id: uid, p_days: d, p_hours: h, p_minutes: m }); };
+    var tasks = [];
+    sel.uids.forEach(function (uid) { tasks.push(function () { return muteFn(uid); }); });
+    sel.ids.forEach(function (id) { tasks.push(function () { return sb.rpc('set_content_hide', { p_target_type: 'word_warning', p_target_id: id, p_kind: 'global' }); }); });
+    seqRun(tasks,
+      function () { toast('已批量禁言 ' + sel.uids.length + ' 人，并隐藏 ' + sel.ids.length + ' 条记录'); reloadWl(panel); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(msg)) toast('口令已失效，请重新进入');
+        else if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('批量禁言失败：' + friendlyError(e));
+      });
+  }
+
+  // 批量不禁言：把选中记录标记为「全局隐藏」（不再提示，等价于逐条点「不禁言」）
+  function batchWlNoMute(panel) {
+    var sel = collectCheckedWl(panel);
+    if (!sel.ids.length) { toast('请先勾选记录'); return; }
+    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条记录标记为「不禁言」（隐藏且不再提示）？')) return;
+    var tasks = [];
+    sel.ids.forEach(function (id) { tasks.push(function () { return sb.rpc('set_content_hide', { p_target_type: 'word_warning', p_target_id: id, p_kind: 'global' }); }); });
+    seqRun(tasks,
+      function () { toast('已标记 ' + sel.ids.length + ' 条为「不禁言」并隐藏'); reloadWl(panel); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(msg)) toast('口令已失效');
+        else if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('操作失败：' + friendlyError(e));
+      });
+  }
+
+  // 批量删除：按 id 数组删除 word_warnings 记录（并清理对应 content_hides）
+  function batchWlDelete(panel) {
+    var sel = collectCheckedWl(panel);
+    if (!sel.ids.length) { toast('请先勾选要删除的记录'); return; }
+    if (!window.confirm('确认删除选中的 ' + sel.ids.length + ' 条违禁词记录？此操作不可恢复。')) return;
+    var call = (panel === 'gm')
+      ? sb.rpc('gm_delete_word_log', { p_pwd: gmPwd, p_ids: sel.ids })
+      : sb.rpc('admin_delete_word_log', { p_ids: sel.ids });
+    call.then(function (r) {
+      if (r.error) throw r.error;
+      var n = (r.data === null || r.data === undefined) ? sel.ids.length : (r.data || 0);
+      toast('已删除 ' + n + ' 条违禁词记录');
+      reloadWl(panel);
+    }).catch(function (e) {
+      var msg = (e && (e.message || '')) || '';
+      if (/GM_AUTH_FAIL/.test(msg)) toast('口令已失效');
+      else if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+      else toast('删除失败：' + friendlyError(e));
+    });
   }
 
   function gmSearchGroups() {
@@ -3055,6 +3194,8 @@
           if (rows.length > CAP) {
             box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
           }
+          var saA = $('admin-wl-selectall'); if (saA) saA.checked = false;
+          updateWlCount('admin');
         });
       })
       .catch(function (e) {
@@ -3619,6 +3760,7 @@
       })
       .then(function () { this.disabled = false; }.bind(this));
   });
+  bindWlBatch('gm');
   $('gm-group-search-btn').addEventListener('click', gmSearchGroups);
   $('gm-group-search-input').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') gmSearchGroups(); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
@@ -3679,6 +3821,7 @@
       })
       .then(function () { this.disabled = false; }.bind(this));
   });
+  bindWlBatch('admin');
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
