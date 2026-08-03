@@ -2297,44 +2297,39 @@
   }
 
   function openGmAppealsTab() {
-    var box = $('gm-appeals');
+    var box = $('gm-appeal-list');
     if (!box) return;
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_mute_appeals', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
-        var rows = r.data || [];
-        box.innerHTML = '';
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无禁言申诉</div>'; return; }
-        rows.forEach(function (a) {
-          var card = el('div', 'gm-report');
-          var head = el('div', 'gm-report-head');
-          var name = el('div', 'gm-report-name', (a.nickname || '(无昵称)') + ' · ' + (a.phone || '—'));
-          head.appendChild(name);
-          var badge = el('div', 'gm-report-badge' + (a.status === 'pending' ? '' : ' done'),
-            a.status === 'pending' ? '待处理' : (a.status === 'approved' ? '已通过' : '已驳回'));
-          head.appendChild(badge);
-          card.appendChild(head);
-          card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (a.created_at ? a.created_at.replace('T', ' ').slice(0, 16) : '—')));
-          card.appendChild(el('div', 'gm-report-line', '申诉理由：' + (a.reason || '')));
-
-          if (a.status === 'pending') {
-            var acts = el('div', 'gm-row-acts');
-            var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
-            ok.onclick = function () { gmReviewAppeal(a.id, 'approve', a.nickname); };
-            var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
-            no.onclick = function () { gmReviewAppeal(a.id, 'reject', a.nickname); };
-            acts.appendChild(ok); acts.appendChild(no);
-            card.appendChild(acts);
-          }
-          box.appendChild(card);
-        });
+        state.gmAppealsAll = r.data || [];
+        renderGmAppeals();
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        if (/BAD_PWD|GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
-        else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+        var box2 = $('gm-appeal-list');
+        if (!box2) return;
+        if (/BAD_PWD|GM_AUTH_FAIL/.test(m)) box2.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else box2.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  function renderGmAppeals() {
+    var box = $('gm-appeal-list');
+    if (!box) return;
+    var kw = ((($('gm-appeal-search') && $('gm-appeal-search').value) || '').trim().toLowerCase());
+    var rows = state.gmAppealsAll || [];
+    if (kw) {
+      rows = rows.filter(function (a) {
+        var n = (a.nickname || '').toLowerCase();
+        var p = (a.phone || '').toLowerCase();
+        return n.indexOf(kw) >= 0 || p.indexOf(kw) >= 0;
+      });
+    }
+    box.innerHTML = '';
+    if (!rows.length) { box.innerHTML = '<div class="gm-empty">' + (kw ? '无匹配结果' : '暂无禁言申诉') + '</div>'; return; }
+    rows.forEach(function (a) { box.appendChild(buildAppealCard(a, 'gm')); });
   }
 
   function gmReviewAppeal(id, action, name) {
@@ -3207,38 +3202,61 @@
     sb.rpc('admin_list_mute_appeals')
       .then(function (r) {
         if (r.error) throw r.error;
-        var rows = r.data || [];
-        box.innerHTML = '';
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无禁言申诉</div>'; return; }
-        rows.forEach(function (a) {
-          var card = el('div', 'gm-report');
-          var head = el('div', 'gm-report-head');
-          var name = el('div', 'gm-report-name', (a.nickname || '(无昵称)') + ' · ' + (a.phone || '—'));
-          head.appendChild(name);
-          var badge = el('div', 'gm-report-badge' + (a.status === 'pending' ? '' : ' done'),
-            a.status === 'pending' ? '待处理' : (a.status === 'approved' ? '已通过' : '已驳回'));
-          head.appendChild(badge);
-          card.appendChild(head);
-          card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (a.created_at ? a.created_at.replace('T', ' ').slice(0, 16) : '—')));
-          card.appendChild(el('div', 'gm-report-line', '申诉理由：' + (a.reason || '')));
-
-          if (a.status === 'pending') {
-            var acts = el('div', 'gm-row-acts');
-            var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
-            ok.onclick = function () { adminReviewAppeal(a.id, 'approve', a.nickname); };
-            var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
-            no.onclick = function () { adminReviewAppeal(a.id, 'reject', a.nickname); };
-            acts.appendChild(ok); acts.appendChild(no);
-            card.appendChild(acts);
-          }
-          box.appendChild(card);
-        });
+        state.adminAppealsAll = r.data || [];
+        renderAdminAppeals();
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  function renderAdminAppeals() {
+    var box = $('admin-appeal-list');
+    if (!box) return;
+    var kw = ((($('admin-appeal-search') && $('admin-appeal-search').value) || '').trim().toLowerCase());
+    var rows = state.adminAppealsAll || [];
+    if (kw) {
+      rows = rows.filter(function (a) {
+        var n = (a.nickname || '').toLowerCase();
+        var p = (a.phone || '').toLowerCase();
+        return n.indexOf(kw) >= 0 || p.indexOf(kw) >= 0;
+      });
+    }
+    box.innerHTML = '';
+    if (!rows.length) { box.innerHTML = '<div class="gm-empty">' + (kw ? '无匹配结果' : '暂无禁言申诉') + '</div>'; return; }
+    rows.forEach(function (a) { box.appendChild(buildAppealCard(a, 'admin')); });
+  }
+
+  function buildAppealCard(a, mode) {
+    var card = el('div', 'gm-report');
+    var head = el('div', 'gm-report-head');
+    var name = el('div', 'gm-report-name', (a.nickname || '(无昵称)') + ' · ' + (a.phone || '—'));
+    head.appendChild(name);
+    var badge = el('div', 'gm-report-badge' + (a.status === 'pending' ? '' : ' done'),
+      a.status === 'pending' ? '待处理' : (a.status === 'approved' ? '已通过' : '已驳回'));
+    head.appendChild(badge);
+    card.appendChild(head);
+    card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (a.created_at ? a.created_at.replace('T', ' ').slice(0, 16) : '—')));
+    card.appendChild(el('div', 'gm-report-line', '申诉理由：' + (a.reason || '')));
+
+    if (a.status === 'pending') {
+      var acts = el('div', 'gm-row-acts');
+      var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
+      ok.onclick = function () {
+        if (mode === 'gm') gmReviewAppeal(a.id, 'approve', a.nickname);
+        else adminReviewAppeal(a.id, 'approve', a.nickname);
+      };
+      var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
+      no.onclick = function () {
+        if (mode === 'gm') gmReviewAppeal(a.id, 'reject', a.nickname);
+        else adminReviewAppeal(a.id, 'reject', a.nickname);
+      };
+      acts.appendChild(ok); acts.appendChild(no);
+      card.appendChild(acts);
+    }
+    return card;
   }
 
   function adminReviewAppeal(id, action, name) {
@@ -3798,6 +3816,11 @@
     setAdminTabActive('appeals');
     openAdminAppeals();
   });
+  // 禁言申诉搜索框（前端过滤，兼容老 WebView）
+  var gmAs = $('gm-appeal-search');
+  if (gmAs) gmAs.addEventListener('input', renderGmAppeals);
+  var admAs = $('admin-appeal-search');
+  if (admAs) admAs.addEventListener('input', renderAdminAppeals);
   $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
   $('admin-word-log-clear').addEventListener('click', function () {
     if (!window.confirm('确认清空全部违禁词检测记录？此操作不可恢复。')) return;
