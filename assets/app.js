@@ -2772,14 +2772,6 @@
       card.appendChild(acts);
     }
 
-    // —— 标记 / 撤销处理 ——
-    var btn = el('button', 'btn-mini' + (rep.handled ? ' gm-danger' : ''), rep.handled ? '撤销处理' : '标记处理');
-    btn.type = 'button';
-    btn.onclick = function () {
-      if (mode === 'gm') gmResolveReport(rep.id, !rep.handled);
-      else adminResolveReport(rep.id, !rep.handled);
-    };
-    card.appendChild(btn);
     return card;
   }
 
@@ -2801,15 +2793,6 @@
           ? '<div class="gm-empty">口令已失效，请重新进入</div>'
           : '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
-  }
-
-  function gmResolveReport(id, markHandled) {
-    sb.rpc('gm_resolve_report', { p_pwd: gmPwd, p_report_id: id, p_handled: !!markHandled })
-      .then(function (r) {
-        if (r.error) throw r.error;
-        openReportsTab();
-      })
-      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
   }
 
   // ============================================================
@@ -3109,18 +3092,6 @@
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
-      });
-  }
-
-  function adminResolveReport(id, markHandled) {
-    sb.rpc('admin_resolve_report', { p_report_id: id, p_handled: !!markHandled })
-      .then(function (r) {
-        if (r.error) throw r.error;
-        openAdminReports();
-      })
-      .catch(function (e) {
-        var m = (e && (e.message || '')) || '';
-        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
       });
   }
 
