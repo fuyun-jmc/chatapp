@@ -866,6 +866,16 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-subbar-acts .btn-mini { margin-left: 6px; }
 .btn-danger-mini { border: 1px solid rgba(229,72,77,.6); color: #e5484d; background: rgba(229,72,77,.1); }
 .btn-danger-mini:hover { background: rgba(229,72,77,.2); }
+/* 违禁词记录：多选批量操作栏 */
+.gm-word-log-batch { display: flex; align-items: center; flex-wrap: wrap; padding: 8px; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.wl-selall { display: flex; align-items: center; font-size: 13px; color: var(--text); cursor: pointer; margin-right: 8px; }
+.wl-selall input { margin-right: 4px; }
+.wl-dur-label { font-size: 13px; color: var(--text-2); margin-right: 4px; }
+.wl-dur-unit { font-size: 12px; color: var(--text-2); margin: 0 4px 0 1px; }
+.gm-dur-input { width: 50px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; }
+.wl-count { font-size: 12px; color: var(--text-2); margin-left: auto; }
+.wl-check-row { display: flex; align-items: center; margin-bottom: 4px; }
+.wl-check-row input { margin-right: 6px; }
 .gm-word-log { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 /* 个人设置内的「禁言申诉 / 问题反馈」区块 */
 .appeal-section { margin: 6px 0 12px; }
