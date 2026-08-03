@@ -2390,9 +2390,16 @@
         var rows = r.data || [];
         if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
         box.innerHTML = '';
+        var CAP = 100;
+        var shown = 0;
         rows.forEach(function (w) {
+          if (shown >= CAP) return;
           box.appendChild(renderWordLogCard(w));
+          shown++;
         });
+        if (rows.length > CAP) {
+          box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
+        }
       })
       .catch(function () { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; });
   }
@@ -3026,11 +3033,18 @@
         return loadHideSets('word_warning').then(function (sets) {
           box.innerHTML = '';
           if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
+          var CAP = 100;
+          var shown = 0;
           rows.forEach(function (w) {
+            if (shown >= CAP) return;
             var hidden = sets.global[w.id] ? 'global' : (sets.my[w.id] ? 'ignore' : null);
             if (hidden) box.appendChild(renderHiddenRow('word_warning', w.id, hidden));
             else box.appendChild(renderWordLogCard(w, 'admin'));
+            shown++;
           });
+          if (rows.length > CAP) {
+            box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
+          }
         });
       })
       .catch(function (e) {
