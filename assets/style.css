@@ -637,6 +637,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .btn-outline:hover { background: rgba(79,124,247,.10); }
 /* 开发者 / 管理员称号：强制佩戴标签（不可取消） */
+/* 自选称号名额提示 */
+.title-quota {
+  font-size: 12px; color: var(--text-2, #8b8b8b);
+  padding: 2px 2px 8px; line-height: 1.5;
+}
+/* 名额已满时的「佩戴」按钮：弱化但仍可点（点后给出提示） */
+.title-btn-full { opacity: .5; }
+
 .title-forced {
   display: inline-block; padding: 3px 10px; border-radius: 999px;
   font-size: 12px; font-weight: 600; color: #fff;
