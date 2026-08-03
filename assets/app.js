@@ -3799,31 +3799,33 @@
   $('admin-violation-open').addEventListener('click', openAdminPanel);
   $('admin-close').addEventListener('click', function () { hideModal('admin-panel'); });
   $('admin-panel').addEventListener('click', function (e) { if (e.target === this) hideModal('admin-panel'); });
-  // 管理员面板：子 tab 切换（周报 / 违禁词记录）
+  // 管理员面板：子 tab 切换（周报 / 违禁词记录 / 用户举报 / 禁言申诉）
+  function setAdminTabActive(name) {
+    ['reports','wordlog','userreports','appeals'].forEach(function (k) {
+      var t = $('admin-tab-' + k);
+      if (t) {
+        if (k === name) t.classList.add('active');
+        else t.classList.remove('active');
+      }
+      var p = $('admin-' + (k === 'reports' ? 'reports' : (k === 'wordlog' ? 'word-log' : k)));
+      if (p) p.hidden = (k !== name);
+    });
+  }
   $('admin-tab-reports').addEventListener('click', function () {
-    $('admin-tab-reports').classList.add('active');
-    $('admin-tab-wordlog').classList.remove('active');
-    $('admin-reports').hidden = false;
-    $('admin-word-log').hidden = true;
+    setAdminTabActive('reports');
     openAdminReports();
   });
   $('admin-tab-wordlog').addEventListener('click', function () {
-    $('admin-tab-wordlog').classList.add('active');
-    $('admin-tab-reports').classList.remove('active');
-    $('admin-tab-userreports').classList.remove('active');
-    $('admin-reports').hidden = true;
-    $('admin-word-log').hidden = false;
-    $('admin-userreports').hidden = true;
+    setAdminTabActive('wordlog');
     openAdminWordLog();
   });
   $('admin-tab-userreports').addEventListener('click', function () {
-    $('admin-tab-userreports').classList.add('active');
-    $('admin-tab-reports').classList.remove('active');
-    $('admin-tab-wordlog').classList.remove('active');
-    $('admin-reports').hidden = true;
-    $('admin-word-log').hidden = true;
-    $('admin-userreports').hidden = false;
+    setAdminTabActive('userreports');
     openUserReports();
+  });
+  $('admin-tab-appeals').addEventListener('click', function () {
+    setAdminTabActive('appeals');
+    openAdminAppeals();
   });
   $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
   $('admin-word-log-clear').addEventListener('click', function () {
