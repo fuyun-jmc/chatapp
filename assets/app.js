@@ -423,6 +423,11 @@
           }
         })
         .catch(function () {});
+      // 群资料弹窗打开时，周期性刷新群成员在线状态
+      if (state.active && state.active.type === 'group' &&
+          $('group-info-modal') && $('group-info-modal').classList.contains('open')) {
+        refreshGroupMembersOnline(state.active);
+      }
     }, 15000);
   }
 
@@ -936,9 +941,11 @@
       .on('broadcast', { event: 'tick' }, function (payload) {
         var p = payload && payload.payload;
         if (!p || !p.uid || p.uid === state.uid) return;
-        // 只处理好友的在线变化
+        // 处理好友，以及当前所在群聊的成员
         var isFriend = state.friends.some(function (f) { return f.id === p.uid; });
-        if (!isFriend) return;
+        var inGroup = !!(state.active && state.active.type === 'group' &&
+                         state.active.memberIds && state.active.memberIds.indexOf(p.uid) >= 0);
+        if (!isFriend && !inGroup) return;
         if (p.offline) {
           delete state.lastActive[p.uid];
         } else {
@@ -946,6 +953,7 @@
         }
         renderConversations();
         if (state.active && state.active.type === 'friend' && state.active.id === p.uid) updatePeerOnline();
+        if (inGroup) updateMemberOnlineDots(state.active);
       })
       .subscribe(function (status) {
         if (status === 'SUBSCRIBED') broadcastPresence(); // 上线即广播一次，让好友秒级看到我
@@ -3086,6 +3094,7 @@
     $('group-info-dissolve').hidden = !g.iAmOwner;
     $('group-info-leave').hidden = g.iAmOwner;
     renderMemberList(g);
+    refreshGroupMembersOnline(g);
     showModal('group-info-modal');
   }
 
@@ -3113,13 +3122,16 @@
     $('group-member-count').textContent = g.memberIds.length;
     g.memberIds.forEach(function (uid) {
       var p = state.profilesById[uid] || { nickname: '用户', phone: '' };
-      var li = el('li', 'member-item');
+      var li = el('li', 'member-item'); li.dataset.uid = uid;
       var av = el('div', 'avatar sm');
       av.textContent = (p.nickname || '?').charAt(0);
       av.style.background = colorOf(p.phone || uid);
+      addOnlineDot(av, uid);
       var info = el('div', 'info');
       var tag = (uid === g.ownerId) ? '（群主）' : (uid === state.uid ? '（我）' : '');
       info.appendChild(el('div', 'nm', (p.nickname || '用户') + tag));
+      var on = isOnline(uid);
+      info.appendChild(el('div', 'online-status ' + (on ? 'on' : 'off'), on ? '在线' : '离线'));
       li.appendChild(av); li.appendChild(info);
       if (g.iAmOwner && uid !== g.ownerId) {
         var tr = el('button', 'mini-ok', '转让'); tr.type = 'button';
@@ -3142,6 +3154,39 @@
       }
       list.appendChild(li);
     });
+  }
+
+  // 仅刷新群成员在线点（不重建列表，避免重设按钮事件）
+  function updateMemberOnlineDots(g) {
+    if (!g) return;
+    var list = $('group-member-list');
+    if (!list) return;
+    var items = list.querySelectorAll('.member-item');
+    for (var i = 0; i < items.length; i++) {
+      var li = items[i];
+      var uid = li.getAttribute('data-uid');
+      if (!uid) continue;
+      var av = li.querySelector('.avatar');
+      if (av) addOnlineDot(av, uid);
+      var st = li.querySelector('.online-status');
+      if (st) {
+        var on = isOnline(uid);
+        st.textContent = on ? '在线' : '离线';
+        st.className = 'online-status ' + (on ? 'on' : 'off');
+      }
+    }
+  }
+
+  // 拉取群成员 last_active 并刷新在线点（profiles 全员可读，失败静默降级为全离线）
+  function refreshGroupMembersOnline(g) {
+    if (!g || !g.memberIds || !g.memberIds.length) return;
+    sb.from('profiles').select('id, last_active').in('id', g.memberIds)
+      .then(function (r) {
+        if (r.error) return;
+        (r.data || []).forEach(function (p) { state.lastActive[p.id] = p.last_active; });
+        updateMemberOnlineDots(g);
+      })
+      .catch(function () {});
   }
 
   function removeMember(g, uid) {
