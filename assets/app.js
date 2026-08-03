@@ -3602,6 +3602,23 @@
   $('gm-tab-feedback').addEventListener('click', function () { gmSwitchTab('feedback'); });
   $('gm-tab-wordlog').addEventListener('click', function () { gmSwitchTab('wordlog'); });
   $('gm-word-log-refresh').addEventListener('click', openGmWordLogTab);
+  $('gm-word-log-clear').addEventListener('click', function () {
+    if (!window.confirm('确认清空全部违禁词检测记录？此操作不可恢复。')) return;
+    this.disabled = true;
+    sb.rpc('gm_clear_word_log', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var n = (r.data === null || r.data === undefined) ? 0 : (r.data || 0);
+        toast('已清空违禁词记录' + (n ? ('（' + n + ' 条）') : ''));
+        openGmWordLogTab();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(m)) toast('口令已失效，请重新进入');
+        else toast('清空失败：' + friendlyError(e));
+      })
+      .then(function () { this.disabled = false; }.bind(this));
+  });
   $('gm-group-search-btn').addEventListener('click', gmSearchGroups);
   $('gm-group-search-input').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') gmSearchGroups(); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
@@ -3645,6 +3662,23 @@
     openUserReports();
   });
   $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
+  $('admin-word-log-clear').addEventListener('click', function () {
+    if (!window.confirm('确认清空全部违禁词检测记录？此操作不可恢复。')) return;
+    this.disabled = true;
+    sb.rpc('admin_clear_word_log')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var n = (r.data === null || r.data === undefined) ? 0 : (r.data || 0);
+        toast('已清空违禁词记录' + (n ? ('（' + n + ' 条）') : ''));
+        openAdminWordLog();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        toast('清空失败：' + friendlyError(e));
+      })
+      .then(function () { this.disabled = false; }.bind(this));
+  });
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
