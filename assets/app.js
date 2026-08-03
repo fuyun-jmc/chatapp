@@ -2202,6 +2202,13 @@
           frameColor: devRow.frame_color || '#7c4dff',
           frameStyle: 'dev'
         } : null;
+        // 主称号若已不在拥有列表中（例如触发违禁词被撤销），立即清空，
+        // 否则徽标/头像框要等刷新页面才消失。
+        if (slot.primary && slot.primary.titleId) {
+          var stillOwned = false;
+          rows.forEach(function (t) { if (t && t.id === slot.primary.titleId) stillOwned = true; });
+          if (!stillOwned) slot.primary = null;
+        }
         state.titlesMap[state.uid] = slot;
         // 记录强制称号的真实 id，后续 loadMyTitles 用 id 匹配更稳（避免名称隐藏字符问题）
         state.adminTitleId = adminRow ? adminRow.id : null;
@@ -2310,7 +2317,7 @@
   function condText(t) {
     if (t.cond_type === 'streak') return '连续登录 ' + (t.cond_value || '?') + ' 天自动获得';
     if (t.cond_type === 'total_login') return '累计登录 ' + (t.cond_value || '?') + ' 天自动获得';
-    if (t.cond_type === 'clean_streak') return '连续 ' + (t.cond_value || '?') + ' 天未触发违禁词警告自动获得';
+    if (t.cond_type === 'clean_streak') return '自注册起满 ' + (t.cond_value || '?') + ' 天且从未触发违禁词警告自动获得；一旦触发即中断，已获得的也会被撤销';
     return '仅 GM 手动授予';
   }
 
