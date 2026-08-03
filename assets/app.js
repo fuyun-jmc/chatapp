@@ -785,6 +785,11 @@
             hb.type = 'button';
             hb.onclick = function () { toggleHideDevTitle(!state.hideDevTitle); };
             card.appendChild(hb);
+            // 已隐藏时把预览框变淡，明确告知“当前不会展示”
+            if (hidden) {
+              prev.style.opacity = '0.4';
+              prev.title = '已隐藏，不会在头像/聊天中展示';
+            }
           } else if (forced) {
             // 管理员：强制佩戴，不可取消、不可隐藏
             var fsp = el('span', 'title-forced', '强制佩戴');
@@ -2668,7 +2673,7 @@
       .select('title_id, titles(id,name,frame_color,frame_style)')
       .eq('user_id', state.uid)
       .then(function (r) {
-        if (r.error) return;
+        if (r.error) return Promise.resolve();
         var rows = (r.data || []).map(function (x) { return x.titles; }).filter(Boolean);
         var names = rows.map(function (t) { return (t.name || '').trim(); }).filter(Boolean);
         state.ownedTitles = names;
@@ -2718,18 +2723,21 @@
         // 记录强制称号的真实 id，后续 loadMyTitles 用 id 匹配更稳（避免名称隐藏字符问题）
         state.adminTitleId = adminRow ? adminRow.id : null;
         state.devTitleId   = devRow   ? devRow.id   : null;
-        applySelfTitle();
-        loadHideDevPref();
-        // 获得「管理员」称号后首次登录：显示管理员公告（被撤销后重新获得会再次提示）
-        syncAdminAnnounceState();
+        // 等 loadHideDevPref 确认完最新开关状态后再最终渲染，
+        // 避免先用 loadProfile 里的旧值把徽标画出来再闪烁消失。
+        return loadHideDevPref().then(function () {
+          applySelfTitle();
+          // 获得「管理员」称号后首次登录：显示管理员公告（被撤销后重新获得会再次提示）
+          syncAdminAnnounceState();
+        });
       })
       .catch(function () {});
   }
 
   // 读取「隐藏开发者称号」开关（后端列不存在时静默按「未隐藏」处理）
   function loadHideDevPref() {
-    if (!state.uid || !state.isDev) return;
-    sb.from('profiles')
+    if (!state.uid || !state.isDev) return Promise.resolve();
+    return sb.from('profiles')
       .select('hide_dev_title')
       .eq('id', state.uid)
       .limit(1)
