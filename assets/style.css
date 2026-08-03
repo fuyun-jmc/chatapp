@@ -642,6 +642,10 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 12px; font-weight: 600; color: #fff;
   background: var(--brand); white-space: nowrap;
 }
+/* 开发者称号已隐藏：标签转为中性灰，与「强制佩戴」区分 */
+.title-forced.title-hidden-tag { background: var(--text-3); }
+/* 开发者称号的隐藏 / 取消隐藏按钮（老 WebView 无 flex gap，用 margin） */
+.title-hidebtn { margin-left: 8px; flex: 0 0 auto; }
 
 /* 危险操作区：注销账号 */
 .danger-zone { margin-top: 2px; }
