@@ -4327,17 +4327,35 @@
     // 违禁词检测：命中则拦截发送 + 记录一次警告（清零连续清净天数）
     var badWord = matchForbidden(text);
     if (badWord) {
+      // 先给即时反馈（无论后端成败都会显示），后续更具体的提示会覆盖它
+      toast('违禁保护系统生效，禁止发送。');
       sb.rpc('record_word_warning', { p_word: badWord, p_content: text, p_peer_id: peerId })
         .then(function (r) {
           var cnt = r && r.data != null ? r.data : null;
           if (cnt != null && cnt > 10) {
             toast('违禁保护系统生效，禁止发送。该账号已累计多次触发违禁词，已自动上报 GM。');
           }
-          // 若因本次违禁词被撤销「连续N天未触发」类称号，立即刷新自身头像框/徽标
-          refreshAdminStatus();
+          // 管理员称号持有者：统计“获得称号之后”的违禁词次数，
+          // 超 3 次（第 4 次）自动撤销；每次都提示“再发送 N 次将撤销”
+          return sb.rpc('check_admin_title_violation');
+        })
+        .then(function (r) {
+          var d = (r && r.data) || {};
+          if (d.revoked) {
+            // 称号已被撤销：更新本地状态并即时刷新徽标/头像框
+            state.isAdmin = false;
+            updateAdminCard();
+            toast('你已多次发送违禁词，管理员称号已被撤销');
+            refreshAdminStatus();
+            return;
+          }
+          var c = d.count || 0;
+          if (c >= 1 && c <= 3) {
+            var remain = 4 - c;  // 第 4 次触发即撤销
+            toast('警告：你已发送违禁词 ' + c + ' 次，再发送 ' + remain + ' 次将撤销管理员称号');
+          }
         })
         .catch(function () {});
-      toast('违禁保护系统生效，禁止发送。');
       return;   // 拦截：不发送、不清空输入，便于修改后重发
     }
 
