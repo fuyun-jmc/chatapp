@@ -62,7 +62,9 @@
     adminTitleId: null,  // 「管理员」称号在 titles 表里的真实 id（按 id 判断强制佩戴，最可靠）
     devTitleId: null,    // 「开发者」称号在 titles 表里的真实 id
     hideDevTitle: false, // 是否隐藏「开发者」称号（仅影响展示，权限不变；管理员称号不可隐藏）
-    devTitleRow: null    // 最近一次查到的「开发者」称号行，用于隐藏开关即时切换展示
+    devTitleRow: null,   // 最近一次查到的「开发者」称号行，用于隐藏开关即时切换展示
+    profileTitleSig: {}, // uid -> 称号列签名（实时通道过滤用：仅称号变化才刷新）
+    titleReloadTimer: {}, // uid -> 节流定时器，避免同一用户高频刷新
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -536,6 +538,62 @@
   }
 
   // 批量获取好友/自己/当前会话对象的展示称号（头像框渲染用）
+  // 计算某用户称号列的签名（用于实时通道过滤，判断称号是否真的变化）
+  function titleSigFromRow(t) {
+    return [t.title_id, t.title2_id, t.admin_title_id, t.dev_title_id]
+      .map(function (x) { return x == null ? null : x; }).join('|');
+  }
+
+  // 他人（或自己）称号变更后，局部重拉该用户称号并重绘其显示
+  function reloadTitleFor(uid) {
+    if (!uid) return;
+    sb.rpc('get_profiles_titles', { p_ids: [uid] })
+      .then(function (r) {
+        if (r.error) return;
+        (r.data || []).forEach(function (t) {
+          if (t.user_id !== uid) return;
+          var primary = t.title_id ? {
+            titleId: t.title_id, titleName: t.title_name,
+            frameColor: t.frame_color || '#ffd700', frameStyle: t.frame_style || 'ring'
+          } : null;
+          var primary2 = t.title2_id ? {
+            titleId: t.title2_id, titleName: t.title2_name,
+            frameColor: t.title2_color || '#ffd700', frameStyle: t.title2_frame || 'ring'
+          } : null;
+          var admin = t.admin_title_id ? {
+            titleId: t.admin_title_id, titleName: t.admin_title_name,
+            frameColor: t.admin_title_color || '#ffd700', frameStyle: t.admin_title_frame || 'ring'
+          } : null;
+          var dev = t.dev_title_id ? {
+            titleId: t.dev_title_id, titleName: t.dev_title_name,
+            frameColor: t.dev_title_color || '#7c4dff', frameStyle: 'dev'
+          } : null;
+          if (uid === state.uid && state.hideDevTitle) {
+            dev = null;
+            if (isDevSlot(primary)) primary = null;
+            if (isDevSlot(primary2)) primary2 = null;
+          }
+          state.titlesMap[uid] = { primary: primary, primary2: primary2, admin: admin, dev: dev };
+          if (!state.profileTitleSig) state.profileTitleSig = {};
+          state.profileTitleSig[uid] = titleSigFromRow(t);
+        });
+        refreshTitleUI(uid);
+      })
+      .catch(function () {});
+  }
+
+  // 重绘某个用户的称号显示：侧边栏好友列表 + 自己 + 当前聊天头
+  function refreshTitleUI(uid) {
+    if (uid === state.uid) applySelfTitle();
+    if (typeof renderConversations === 'function') renderConversations();
+    if (state.active && state.active.type === 'friend' && state.active.id === uid) {
+      var av = $('chat-peer-avatar');
+      if (av) applyTitleFrame(av, uid);
+      var nm = $('chat-peer-name');
+      if (nm) addTitleBadge(nm, uid);
+    }
+  }
+
   function loadDisplayTitles() {
     var ids = [state.uid];
     state.friends.forEach(function (f) { ids.push(f.id); });
@@ -593,6 +651,8 @@
             if (isDevSlot(primary2)) primary2 = null;
           }
           state.titlesMap[t.user_id] = { primary: primary, primary2: primary2, admin: admin, dev: dev };
+          if (!state.profileTitleSig) state.profileTitleSig = {};
+          state.profileTitleSig[t.user_id] = titleSigFromRow(t);
         });
         // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
         if (selfPrev && state.titlesMap[state.uid]) {
@@ -5239,6 +5299,35 @@
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'group_members'
       }, function () { loadGroups(); })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'profiles'
+      }, function (payload) {
+        var nr = payload.new;
+        if (!nr || !nr.id) return;
+        var uid = nr.id;
+        // 只关心：自己 / 好友 / 当前会话对手
+        var care = (uid === state.uid);
+        if (!care && state.friends) {
+          for (var fi = 0; fi < state.friends.length; fi++) {
+            if (state.friends[fi].id === uid) { care = true; break; }
+          }
+        }
+        if (!care && state.active && state.active.type === 'friend' && state.active.id === uid) care = true;
+        if (!care) return;
+        // 仅当称号相关列发生变化才刷新（last_seen 等心跳直接忽略）
+        var nsig = [nr.display_title_id, nr.display_title_id2, nr.admin_title_id, nr.dev_title_id]
+          .map(function (x) { return x == null ? null : x; }).join('|');
+        if (state.profileTitleSig && state.profileTitleSig[uid] === nsig) return;
+        if (!state.profileTitleSig) state.profileTitleSig = {};
+        state.profileTitleSig[uid] = nsig;
+        // 节流：同一用户 400ms 内只刷新一次，避免高频 UPDATE 反复拉取
+        if (!state.titleReloadTimer) state.titleReloadTimer = {};
+        if (state.titleReloadTimer[uid]) return;
+        state.titleReloadTimer[uid] = setTimeout(function () {
+          state.titleReloadTimer[uid] = null;
+          reloadTitleFor(uid);
+        }, 400);
+      })
       .subscribe(function (status) {
         // 断线/超时时自动重连，避免实时推送永久失效
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
