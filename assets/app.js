@@ -3572,6 +3572,28 @@
     }
   }
 
+  /* 违禁词记录被清空（DELETE）后，GM 后台与管理员面板若正打开该 tab，自动刷新列表。
+     清空会一次性删除多条，用 400ms 节流避免高频重拉；GM 后台同时清空搜索框，
+     让用户直接看到「暂无违禁词检测记录」而非「无匹配结果」。 */
+  function onWordLogDelete() {
+    if (!state.isAdmin) return;
+    if (state.gmPanelOpen && state.gmCurrentTab === 'wordlog') {
+      var s = $('gm-word-log-search'); if (s) s.value = '';
+      if (state.wordLogDeleteTimer) clearTimeout(state.wordLogDeleteTimer);
+      state.wordLogDeleteTimer = setTimeout(function () {
+        state.wordLogDeleteTimer = null;
+        openGmWordLogTab();
+      }, 400);
+    }
+    if (state.adminPanelOpen && adminTabCurrent === 'wordlog') {
+      if (state.wordLogDeleteTimer) clearTimeout(state.wordLogDeleteTimer);
+      state.wordLogDeleteTimer = setTimeout(function () {
+        state.wordLogDeleteTimer = null;
+        refreshWordLogList();
+      }, 400);
+    }
+  }
+
   // 兼容旧调用点
   function loadWordLogUnread()    { return loadUnread('wordlog'); }
   function markWordLogReadAll()   { return markUnreadRead('wordlog'); }
@@ -6194,6 +6216,9 @@
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'word_warnings'
       }, onAdminFeedInsert)
+      .on('postgres_changes', {
+        event: 'DELETE', schema: 'public', table: 'word_warnings'
+      }, onWordLogDelete)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'user_reports'
       }, onAdminFeedInsert)
