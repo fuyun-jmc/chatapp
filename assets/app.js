@@ -83,6 +83,20 @@
     el._t = setTimeout(function () { el.hidden = true; }, ms || 2600);
   }
 
+  /* 新消息红点自动清零：收到消息弹提示后，红点短暂显示即自动消失，
+     不必非得点开对话才清（避免“不点开就永远挂着”）。点开对话时由 openChat 立即清并取消定时器。 */
+  function scheduleUnreadAutoClear(key, isGroup) {
+    if (!key) return;
+    if (state.unreadAutoClear[key]) clearTimeout(state.unreadAutoClear[key]);
+    state.unreadAutoClear[key] = setTimeout(function () {
+      delete state.unreadAutoClear[key];
+      if (state.unread[key]) {
+        delete state.unread[key];
+        if (isGroup) renderGroups(); else renderFriends();
+      }
+    }, 5000);
+  }
+
   function colorOf(seed) {
     var s = String(seed || ''), n = 0;
     for (var i = 0; i < s.length; i++) n = (n * 31 + s.charCodeAt(i)) >>> 0;
@@ -1470,7 +1484,7 @@
       state.presenceChannel = null;
     }
     state.uid = null; state.profile = null; state.friends = [];
-    state.incoming = []; state.active = null; state.unread = {}; state.urlCache = {};
+    state.incoming = []; state.active = null; state.unread = {}; state.urlCache = {}; state.unreadAutoClear = {};
     $('app-view').hidden = true;
     $('auth-view').hidden = false;
     document.querySelector('.app-view').classList.remove('show-chat');
@@ -5036,6 +5050,9 @@
     state.active = peer;
     state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
+    if (state.unreadAutoClear && state.unreadAutoClear[peer.id]) {
+      clearTimeout(state.unreadAutoClear[peer.id]); delete state.unreadAutoClear[peer.id];
+    }
     delete state.unread[peer.id];
     // 注意：仅“收到消息”或“发送消息”才把会话前置（见下方发送处与实时接收处），
     // 点击打开查看不再触发前置，避免一进对话框就打乱列表顺序。
@@ -5988,6 +6005,7 @@
             renderGroups();
             var g = groupById(m.group_id);
             if (g) toast(g.name + ' 发来一条消息');
+            scheduleUnreadAutoClear(m.group_id, true);
           }
         } else if (m.receiver_id === state.uid) {
           if (state.active && state.active.type !== 'group' && state.active.id === m.sender_id) {
@@ -5998,6 +6016,7 @@
             renderFriends();
             var from = friendById(m.sender_id);
             if (from) toast(from.nickname + ' 发来一条消息');
+            scheduleUnreadAutoClear(m.sender_id, false);
           }
         }
       })
