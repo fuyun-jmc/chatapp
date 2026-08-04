@@ -3154,6 +3154,28 @@
     if (rep.target_ref)   card.appendChild(el('div', 'gm-report-line', '被举报内容：' + rep.target_ref));
     if (rep.detail)       card.appendChild(el('div', 'gm-report-line', '补充说明：' + rep.detail));
 
+    // 图片 / 视频举报：渲染缩略图，点击大图预览（复用 lightbox 全屏框）
+    if ((rep.report_type === 'image' || rep.report_type === 'video') && rep.file_path) {
+      var isVid = rep.report_type === 'video';
+      var media = el('div', 'gm-report-media');
+      var thumb = document.createElement(isVid ? 'video' : 'img');
+      if (isVid) { thumb.controls = true; thumb.preload = 'metadata'; thumb.playsInline = true; }
+      else { thumb.alt = '举报图片'; thumb.loading = 'lazy'; }
+      thumb.className = 'report-thumb';
+      media.appendChild(thumb);
+      card.appendChild(media);
+      signedUrl(rep.file_path).then(function (u) {
+        if (!u) return;
+        if (isVid) {
+          thumb.src = u;
+          thumb.onclick = function (e) { e.stopPropagation(); openReportPreview(u, true); };
+        } else {
+          thumb.src = u;
+          thumb.onclick = function () { openReportPreview(u, false); };
+        }
+      });
+    }
+
     var btn = el('button', 'btn-mini' + (rep.status === 'handled' ? ' gm-danger' : ''),
       rep.status === 'handled' ? '撤销处理' : '标记处理');
     btn.type = 'button';
@@ -4618,7 +4640,7 @@
       var name = displayName(state.active);
       var item = el('button', 'report-item sel', '「' + (name || '?') + '」的昵称/群名');
       item.type = 'button';
-      state.reportTargets = [{ ref: name || '', meta: '', msgId: null }];
+      state.reportTargets = [{ ref: name || '', meta: '', msgId: null, filePath: null }];
       box.appendChild(item);
       updateReportTip();
       return;
@@ -4650,7 +4672,7 @@
           reportRemoveMid(m.id);
           item.classList.remove('sel');
         } else {
-          state.reportTargets.push({ ref: preview, meta: meta, msgId: m.id });
+          state.reportTargets.push({ ref: preview, meta: meta, msgId: m.id, filePath: m.file_path });
           item.classList.add('sel');
         }
         updateReportTip();
@@ -4686,6 +4708,7 @@
         p_reported_kind: isGroup ? 'group' : 'user',
         p_report_type: state.reportType,
         p_target_ref: t.ref + (t.meta ? '  (' + t.meta + ')' : ''),
+        p_file_path: t.filePath || null,
         p_detail: detail
       };
       sb.rpc('submit_user_report', payload)
@@ -4917,6 +4940,15 @@
     var vv = $('lightbox-video');
     if (vv) { vv.pause(); vv.removeAttribute('src'); vv.load(); }
   });
+
+  // 举报预览：打开 lightbox 显示图片 / 视频（已有 lightbox 框，仅做 src 切换）
+  function openReportPreview(u, isVid) {
+    var lb = $('lightbox');
+    var im = $('lightbox-img'), vv = $('lightbox-video');
+    if (isVid) { im.hidden = true; vv.hidden = false; vv.src = u; vv.play().catch(function () {}); }
+    else { vv.hidden = true; im.hidden = false; im.src = u; }
+    lb.hidden = false;
+  }
 
   function signedUrl(path) {
     if (!path) return Promise.resolve(null);
