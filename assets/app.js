@@ -4109,7 +4109,7 @@
     var file = this.files && this.files[0];
     this.value = '';
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast('头像图片请小于 2 MB'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast('头像图片请小于 10 MB'); return; }
 
     var ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
     var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
