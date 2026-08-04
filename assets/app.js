@@ -4976,7 +4976,7 @@
         var lb = $('lightbox');
         var im = $('lightbox-img'), vv = $('lightbox-video');
         im.hidden = true; vv.hidden = false; vv.src = u;
-        lb.hidden = false;
+        lb.classList.add('open');
         vv.play().catch(function () {});
       });
     };
@@ -5015,7 +5015,7 @@
           var lb = $('lightbox');
           var im = $('lightbox-img'), vv = $('lightbox-video');
           vv.hidden = true; im.hidden = false; im.src = u;
-          lb.hidden = false;
+          lb.classList.add('open');
         };
       });
     } else if (m.kind === 'video') {
@@ -5130,10 +5130,17 @@
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
-  $('lightbox').addEventListener('click', function () {
-    this.hidden = true;
+  function closeLightbox() {
+    var lb = $('lightbox');
+    if (lb) { lb.classList.remove('open'); }
     var vv = $('lightbox-video');
     if (vv) { vv.pause(); vv.removeAttribute('src'); vv.load(); }
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t) return;
+    var id = t.id;
+    if (id === 'lightbox' || id === 'lightbox-img' || id === 'lightbox-video') closeLightbox();
   });
 
   // 举报预览：打开 lightbox 显示图片 / 视频（已有 lightbox 框，仅做 src 切换）
@@ -5142,7 +5149,7 @@
     var im = $('lightbox-img'), vv = $('lightbox-video');
     if (isVid) { im.hidden = true; vv.hidden = false; vv.src = u; vv.play().catch(function () {}); }
     else { vv.hidden = true; im.hidden = false; im.src = u; }
-    lb.hidden = false;
+    lb.classList.add('open');
   }
 
   function signedUrl(path) {
