@@ -5151,14 +5151,33 @@
     var reportedKind = state.reportUserId ? 'user' : (isGroup ? 'group' : 'user');
     var detail = ($('report-detail').value || '').trim();
     var total = state.reportTargets.length;
+    var ok = 0, fail = 0, lastErr = '';
+
+    function resetReportModal() {
+      state.reportTargets = [];
+      var chips = document.querySelectorAll('#report-types .report-chip');
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove('selected');
+      var box = $('report-targets');
+      if (box) box.innerHTML = '<div class="gm-empty">选择举报类型后，点击下方对应的聊天记录（可多选）</div>';
+      var tip = $('report-tip');
+      if (tip) tip.textContent = '选择举报类型后，点击下方对应的聊天记录（可多选）：';
+      var di = $('report-detail');
+      if (di) di.value = '';
+    }
+
+    function finishReport() {
+      hideModal('report-modal');
+      resetReportModal();
+      if (fail === 0) {
+        toast('举报已提交（' + ok + ' 项），开发者和管理员将会处理');
+      } else {
+        toast('举报提交完成：成功 ' + ok + ' 项，失败 ' + fail + ' 项' + (lastErr ? '（' + lastErr + '）' : ''));
+      }
+    }
 
     // 逐条串行提交：规避 Supabase thenable 不能 Promise.all 的问题
     function doOne(idx) {
-      if (idx >= total) {
-        hideModal('report-modal');
-        toast('举报已提交（' + total + ' 项），开发者和管理员将会处理');
-        return;
-      }
+      if (idx >= total) { finishReport(); return; }
       var t = state.reportTargets[idx];
       var payload = {
         p_reported_id: reportedId,
@@ -5168,15 +5187,18 @@
         p_file_path: t.filePath || null,
         p_detail: detail
       };
-      sb.rpc('submit_user_report', payload)
+      Promise.resolve(sb.rpc('submit_user_report', payload))
         .then(function (r) {
           if (r.error) throw r.error;
+          ok++;
           doOne(idx + 1);
         })
         .catch(function (e) {
+          fail++;
           var msg = (e && (e.message || '')) || '';
-          if (/CANNOT_REPORT_SELF/.test(msg)) { toast('不能举报自己'); return; }
-          toast('举报失败：' + friendlyError(e));
+          if (/CANNOT_REPORT_SELF/.test(msg)) { lastErr = '不能举报自己'; }
+          else { lastErr = friendlyError(e); }
+          doOne(idx + 1);
         });
     }
     doOne(0);
@@ -5756,6 +5778,21 @@
           state.titleReloadTimer[uid] = null;
           reloadTitleFor(uid);
         }, 400);
+      })
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'word_warnings'
+      }, function (payload) {
+        // 仅管理员/开发者需要实时提示；RLS 策略已同步开放管理员可读
+        if (!state.isAdmin) return;
+        var w = payload.new;
+        if (!w) return;
+        // 刷新红点数字，若正打开违禁词记录 tab 则同步刷新列表并标已读
+        loadWordLogUnread();
+        if (adminTabCurrent === 'wordlog') {
+          refreshWordLogList().then(function () { markWordLogReadAll(); });
+        }
+        // 瞬时 toast 提示
+        toast('收到新的违禁词记录：' + (w.word || '未知'));
       })
       .subscribe(function (status) {
         // 断线/超时时自动重连，避免实时推送永久失效
