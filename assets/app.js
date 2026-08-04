@@ -3715,20 +3715,9 @@
       });
     }
 
-    var btn = el('button', 'btn-mini' + (rep.status === 'handled' ? ' gm-danger' : ''),
-      rep.status === 'handled' ? '撤销处理' : '标记处理');
-    btn.type = 'button';
-    btn.onclick = function () {
-      sb.rpc('resolve_user_report', { p_report_id: rep.id, p_handled: rep.status !== 'handled' })
-        .then(function (r) { if (r.error) throw r.error; openUserReports(); })
-        .catch(function (e) {
-          var m = (e && (e.message || '')) || '';
-          if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
-        });
-    };
-    card.appendChild(btn);
-
     // —— 处置：禁言（全网隐藏）/ 不禁言（全网隐藏）/ 忽略（仅自己隐藏）——
+    // 说明：原卡片上的「标记处理 / 撤销处理」单按钮已移除（v163），统一由批量栏的「批量不禁言」完成标记处理，
+    //       单个举报如需处置走下方禁言 / 不禁言 / 忽略按钮。
     card.appendChild(buildMuteRow('user_report', rep.id, rep.reported_id, rep.target_ref, rep.report_type));
     var acts = el('div', 'gm-report-acts');
     acts.appendChild(noMuteBtn('user_report', rep.id));
