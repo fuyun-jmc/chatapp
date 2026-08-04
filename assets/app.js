@@ -2802,6 +2802,7 @@
     var mute = $('admin-ur-mute');   if (mute)   mute.addEventListener('click', batchUrMute);
     var nomute = $('admin-ur-nomute'); if (nomute) nomute.addEventListener('click', batchUrNoMute);
     var del = $('admin-ur-del');     if (del)     del.addEventListener('click', batchUrDelete);
+    var clr = $('admin-ur-clear');   if (clr)     clr.addEventListener('click', clearAllUserReports);
   }
 
   // 批量禁言：禁言每个去重后的「被举报用户」（仅 user 类），并把这些举报标记已处理
@@ -2863,6 +2864,26 @@
       var msg = (e && (e.message || '')) || '';
       if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
       else toast('删除失败：' + friendlyError(e));
+    });
+  }
+
+  // 清空全部：删除所有用户举报（极危险，需二次确认）
+  function clearAllUserReports() {
+    if (!window.confirm('⚠️ 确认清空【全部】用户举报？\n此操作将删除所有举报记录，不可恢复！')) return;
+    if (!window.confirm('再次确认：真的要清空全部用户举报吗？此操作不可撤销。')) return;
+    var btn = $('admin-ur-clear');
+    if (btn) { btn.disabled = true; btn.textContent = '清空中…'; }
+    sb.rpc('admin_clear_user_reports').then(function (r) {
+      if (r.error) throw r.error;
+      var n = (r.data === null || r.data === undefined) ? 0 : (r.data || 0);
+      toast('已清空全部用户举报（共 ' + n + ' 条）');
+      openUserReports(); loadAllUnread();
+    }).catch(function (e) {
+      var msg = (e && (e.message || '')) || '';
+      if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+      else toast('清空失败：' + friendlyError(e));
+    }).then(function () {
+      if (btn) { btn.disabled = false; btn.textContent = '清空全部'; }
     });
   }
 
