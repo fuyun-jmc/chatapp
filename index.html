@@ -413,6 +413,15 @@
       </button>
     </header>
     <div class="settings-body">
+      <div class="report-member-filter" id="report-member-filter" hidden>
+        <p class="form-hint">按成员筛选（群聊可选；选后可单独举报该成员，并只显示其发送的消息）：</p>
+        <input class="report-member-search" id="report-member-search" type="search" placeholder="搜索成员昵称 / 手机号" />
+        <div class="report-member-list" id="report-member-list"></div>
+        <div class="report-member-sel" id="report-member-sel" hidden>
+          <span>已选择成员：<b id="report-member-sel-name"></b></span>
+          <button class="report-member-clear" id="report-member-clear" type="button">清除</button>
+        </div>
+      </div>
       <p class="form-hint">请选择举报类型：</p>
       <div class="report-types" id="report-types">
         <button class="report-chip" data-type="nickname" type="button">昵称</button>
@@ -860,7 +869,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.js?v=138"></script>
+<script src="assets/app.js?v=139"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
