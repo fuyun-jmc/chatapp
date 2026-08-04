@@ -826,6 +826,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .gm-panel.open { padding: 24px 16px; align-items: center; }
   .gm-inner { height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
 }
+/* 手机端：管理员 / GM 面板整体可上下滑动。
+   老 WebView 下 flex 高度约束常失效，内部列表区 overflow-y:auto 无法触发滚动，
+   故改为 .gm-inner 整体滚动，各内容区与列表按内容高度撑开、不再限制高度。 */
+@media (max-width: 599px) {
+  .gm-panel .gm-inner { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .gm-reports, .gm-word-log, .gm-userreports, .gm-appeals,
+  .gm-titles, .gm-feedback { flex: none; overflow: visible; min-height: 0; }
+  .gm-report-list, .gm-title-list { flex: none; overflow: visible; }
+}
 .gm-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px; border-bottom: 1px solid var(--line); flex: 0 0 auto;
