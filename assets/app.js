@@ -3700,9 +3700,9 @@
     if (rep.target_ref)   card.appendChild(el('div', 'gm-report-line', '被举报内容：' + rep.target_ref));
     if (rep.detail)       card.appendChild(el('div', 'gm-report-line', '补充说明：' + rep.detail));
 
-    // 图片 / 视频举报：渲染缩略图，点击大图预览（复用 lightbox 全屏框）
-    if ((rep.report_type === 'image' || rep.report_type === 'video') && rep.file_path) {
-      var isVid = rep.report_type === 'video';
+    // 任何带 file_path 的举报（图片/视频/信息类型皆可能携带）都渲染缩略图，点击大图预览（复用 lightbox 全屏框）
+    if (rep.file_path) {
+      var isVid = rep.report_type === 'video' || /\.(mp4|webm|mov|ogg|m4v)$/i.test(rep.file_path || '');
       var media = el('div', 'gm-report-media');
       var thumb = document.createElement(isVid ? 'video' : 'img');
       if (isVid) { thumb.controls = true; thumb.preload = 'metadata'; thumb.playsInline = true; }
