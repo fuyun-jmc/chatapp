@@ -629,7 +629,10 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* ---------- 图片预览 ---------- */
 .lightbox {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.85);
-  display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 24px;
+  display: none; align-items: center; justify-content: center; z-index: 10000; padding: 24px;
+}
+.lightbox.open {
+  display: flex;
 }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 .lightbox video { max-width: 100%; max-height: 100%; border-radius: 8px; background: #000; }
