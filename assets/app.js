@@ -3476,6 +3476,11 @@
         return n.indexOf(kw) >= 0 || p.indexOf(kw) >= 0;
       });
     }
+    // 普通管理员视图：已处理（approved/rejected）超过 10 分钟自动清空；GM 后台保留全部
+    rows = rows.filter(function (a) {
+      if (a.status === 'pending') return true;
+      return !isUndoExpired(a.reviewed_at);
+    });
     box.innerHTML = '';
     if (!rows.length) { box.innerHTML = '<div class="gm-empty">' + (kw ? '无匹配结果' : '暂无禁言申诉') + '</div>'; return; }
     rows.forEach(function (a) { box.appendChild(buildAppealCard(a, 'admin')); });
@@ -3507,6 +3512,13 @@
       };
       acts.appendChild(ok); acts.appendChild(no);
       card.appendChild(acts);
+    } else if (mode === 'admin' && !isUndoExpired(a.reviewed_at)) {
+      // 普通管理员：处理完成后 10 分钟内可撤销审核决定（GM 后台始终可见全部，不提供撤销）
+      var undoActs = el('div', 'gm-row-acts');
+      var undo = el('button', 'btn-mini', '撤销'); undo.type = 'button';
+      undo.onclick = function () { adminUndoAppealReview(a.id, a.nickname); };
+      undoActs.appendChild(undo);
+      card.appendChild(undoActs);
     }
     return card;
   }
@@ -3523,6 +3535,22 @@
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); } else { toast('操作失败：' + friendlyError(e)); }
+      });
+  }
+
+  function adminUndoAppealReview(id, name) {
+    if (!window.confirm('确认撤销对「' + (name || id) + '」申诉的审核决定？撤销后该申诉恢复为待处理状态。')) return;
+    sb.rpc('admin_undo_mute_appeal_review', { p_id: id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已撤销，申诉恢复为待处理');
+        openAdminAppeals();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); }
+        else if (/UNDO_WINDOW_EXPIRED/.test(m)) { toast('已超过 10 分钟撤销窗口'); }
+        else { toast('撤销失败：' + friendlyError(e)); }
       });
   }
 
