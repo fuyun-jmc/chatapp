@@ -2997,9 +2997,9 @@
         // 「管理员」称号专属标记（公告/撤销规则只针对「管理员」称号，不含纯开发者）
         state.hasAdminTitle = names.indexOf('管理员') >= 0;
         updateAdminCard();
-        // 启动「违禁词记录」未读数轮询（右上角数字提示）
-        if (state.isAdmin) { startWordLogUnreadPoller(); loadWordLogUnread(); loadUserReportUnread(); }
-        else { stopWordLogUnreadPoller(); updateWordLogBadge(0); updateUserReportBadge(0); }
+        // 启动管理后台四大板块未读数轮询（tab 与侧边栏入口的数字提示）
+        if (state.isAdmin) { startWordLogUnreadPoller(); loadAllUnread(); }
+        else { stopWordLogUnreadPoller(); clearAllUnreadBadges(); }
 
         // 兜底回填自己的强制称号槽位，保证右上角一定能看到徽标
         function pick(n) {
@@ -3136,16 +3136,52 @@
     }
   }
 
-  // 侧边栏「违禁接收」蓝色入口：显示 违禁词记录 + 用户举报 的未读总数
+  /* ---------------------------------------------------------------------
+     管理后台四大板块统一「未读 + 实时提示」模块
+     key 同时用作 adminTabCurrent 的取值，便于「当前正打开该 tab 就自动刷新列表」
+     --------------------------------------------------------------------- */
+  var UNREAD_KINDS = [
+    { key: 'wordlog',     badge: 'admin-tab-wordlog-badge',     table: 'word_warnings',
+      count: 'admin_count_word_log_unread',    mark: 'admin_mark_word_log_read_all',    label: '违禁词记录' },
+    { key: 'userreports', badge: 'admin-tab-userreports-badge', table: 'user_reports',
+      count: 'admin_count_user_report_unread', mark: 'admin_mark_user_report_read_all', label: '用户举报' },
+    { key: 'reports',     badge: 'admin-tab-reports-badge',     table: 'forbidden_reports',
+      count: 'admin_count_report_unread',      mark: 'admin_mark_report_read_all',      label: '违规周报' },
+    { key: 'appeals',     badge: 'admin-tab-appeals-badge',     table: 'mute_appeals',
+      count: 'admin_count_appeal_unread',      mark: 'admin_mark_appeal_read_all',      label: '禁言申诉' }
+  ];
+
+  function unreadKind(key) {
+    for (var i = 0; i < UNREAD_KINDS.length; i++) {
+      if (UNREAD_KINDS[i].key === key) return UNREAD_KINDS[i];
+    }
+    return null;
+  }
+
+  function unreadKindByTable(tbl) {
+    for (var i = 0; i < UNREAD_KINDS.length; i++) {
+      if (UNREAD_KINDS[i].table === tbl) return UNREAD_KINDS[i];
+    }
+    return null;
+  }
+
+  // 侧边栏「违禁接收」蓝色入口：显示四大板块未读总数
   function updateSideViolationBadge() {
-    var total = (state.unreadWordLog || 0) + (state.unreadUserReport || 0);
+    if (!state.unreadMap) state.unreadMap = {};
+    var total = 0;
+    for (var i = 0; i < UNREAD_KINDS.length; i++) {
+      total += (state.unreadMap[UNREAD_KINDS[i].key] || 0);
+    }
     paintBadge('admin-violation-badge', total);
   }
 
-  // 「违禁词记录」tab 及侧边栏「违禁接收」入口右上角未读数字提示
-  function updateWordLogBadge(n) {
-    state.unreadWordLog = n || 0;
-    paintBadge('admin-tab-wordlog-badge', n);
+  // 写入某板块未读数：更新 tab 红点 + 侧边栏总数
+  function paintUnread(key, n) {
+    var k = unreadKind(key);
+    if (!k) return;
+    if (!state.unreadMap) state.unreadMap = {};
+    state.unreadMap[key] = n || 0;
+    paintBadge(k.badge, n);
     updateSideViolationBadge();
   }
 
@@ -3153,45 +3189,83 @@
      realtime 事件只负责立刻触发一次计数刷新，避免两条重复提示。
      首次拉取只建立基线（prev 为 null），不提示。 */
   function noticeUnreadGrow(key, n, label) {
-    var prev = state[key];
-    state[key] = n;
+    if (!state.seenUnread) state.seenUnread = {};
+    var prev = state.seenUnread[key];
+    state.seenUnread[key] = n;
     if (prev === null || prev === undefined) return;
     if (n > prev) toast('收到 ' + (n - prev) + ' 条新的' + label);
   }
 
-  function loadWordLogUnread() {
-    if (!state.isAdmin) return Promise.resolve();
-    return Promise.resolve(sb.rpc('admin_count_word_log_unread'))
+  /* 后端 SQL 未执行时，RPC 会报 PGRST202「找不到函数」。
+     以前这里静默吞掉，导致「明明没生效却毫无线索」。改为整场会话只提示一次。 */
+  function warnUnreadRpcMissing(e) {
+    var m = (e && (e.message || e.code || '')) || '';
+    if (!/PGRST202|Could not find the function|does not exist|schema cache/i.test(String(m))) return;
+    if (state.unreadRpcWarned) return;
+    state.unreadRpcWarned = true;
+    toast('管理通知功能未启用：请在 Supabase 执行 20260804_admin_unread_all.sql');
+  }
+
+  // 拉取某板块未读数
+  function loadUnread(key) {
+    var k = unreadKind(key);
+    if (!k || !state.isAdmin) return Promise.resolve(0);
+    return Promise.resolve(sb.rpc(k.count))
       .then(function (r) {
         if (r.error) throw r.error;
         var n = (r.data === null || r.data === undefined) ? 0 : Number(r.data);
-        noticeUnreadGrow('seenWordLogUnread', n, '违禁词记录');
-        updateWordLogBadge(n);
+        noticeUnreadGrow(key, n, k.label);
+        paintUnread(key, n);
         return n;
       })
       .catch(function (e) {
-        // 后端 RPC 未部署时不影响主流程
-        updateWordLogBadge(0);
+        warnUnreadRpcMissing(e);
+        paintUnread(key, 0);
         return 0;
       });
   }
 
+  function loadAllUnread() {
+    if (!state.isAdmin) return;
+    for (var i = 0; i < UNREAD_KINDS.length; i++) loadUnread(UNREAD_KINDS[i].key);
+  }
+
+  // 某板块全部标为已读
+  function markUnreadRead(key) {
+    var k = unreadKind(key);
+    if (!k || !state.isAdmin) return Promise.resolve();
+    if (!state.seenUnread) state.seenUnread = {};
+    state.seenUnread[key] = 0;
+    paintUnread(key, 0);
+    return Promise.resolve(sb.rpc(k.mark))
+      .then(function (r) { if (r.error) throw r.error; paintUnread(key, 0); })
+      .catch(function () { paintUnread(key, 0); });
+  }
+
+  // 按 tab key 重新拉取列表内容（用于「停留在该 tab 时自动出现新记录」）
+  function refreshTabList(key) {
+    if (key === 'wordlog')     return refreshWordLogList();
+    if (key === 'userreports') return refreshUserReportList();
+    if (key === 'reports')     return refreshAdminReportList();
+    if (key === 'appeals')     return refreshAdminAppealList();
+    return Promise.resolve();
+  }
+
+  /* 轮询兜底：老 WebView 的 WebSocket 容易静默断开，单靠 realtime 不可靠。
+     8 秒一轮，四个板块全部刷新计数；正在查看的 tab 顺带刷新列表并标已读。 */
   function startWordLogUnreadPoller() {
     if (state.wordLogUnreadTimer) return;
     state.wordLogUnreadTimer = setInterval(function () {
       if (!state.isAdmin) return;
-      loadWordLogUnread().then(function () {
-        // 正在查看「违禁词记录」tab 时，实时刷新列表内容，无需手动刷新页面
-        if (adminTabCurrent === 'wordlog') {
-          refreshWordLogList().then(function () { markWordLogReadAll(); });
-        }
-      });
-      loadUserReportUnread().then(function () {
-        // 正在查看「用户举报」tab 时，实时刷新列表内容
-        if (adminTabCurrent === 'userreports') {
-          refreshUserReportList().then(function () { markUserReportReadAll(); });
-        }
-      });
+      for (var i = 0; i < UNREAD_KINDS.length; i++) {
+        (function (key) {
+          loadUnread(key).then(function () {
+            if (adminTabCurrent === key) {
+              Promise.resolve(refreshTabList(key)).then(function () { markUnreadRead(key); });
+            }
+          });
+        })(UNREAD_KINDS[i].key);
+      }
     }, 8000);
   }
 
@@ -3202,44 +3276,29 @@
     }
   }
 
-  function markWordLogReadAll() {
-    if (!state.isAdmin) return Promise.resolve();
-    state.seenWordLogUnread = 0;
-    return Promise.resolve(sb.rpc('admin_mark_word_log_read_all'))
-      .then(function (r) { if (r.error) throw r.error; updateWordLogBadge(0); })
-      .catch(function () { updateWordLogBadge(0); });
+  function clearAllUnreadBadges() {
+    for (var i = 0; i < UNREAD_KINDS.length; i++) paintUnread(UNREAD_KINDS[i].key, 0);
   }
 
-  function updateUserReportBadge(n) {
-    state.unreadUserReport = n || 0;
-    paintBadge('admin-tab-userreports-badge', n);
-    updateSideViolationBadge();
+  /* 管理后台四大板块的实时 INSERT 统一处理。
+     只负责「立刻刷新一次未读计数」，toast 由 loadUnread 的未读增量逻辑统一发出，
+     避免 realtime 与轮询各弹一次造成重复提示。 */
+  function onAdminFeedInsert(payload) {
+    if (!state.isAdmin) return;
+    if (!payload || !payload.new) return;
+    var k = unreadKindByTable(payload.table);
+    if (!k) return;
+    loadUnread(k.key);
+    if (adminTabCurrent === k.key) {
+      Promise.resolve(refreshTabList(k.key)).then(function () { markUnreadRead(k.key); });
+    }
   }
 
-  function loadUserReportUnread() {
-    if (!state.isAdmin) return Promise.resolve();
-    return Promise.resolve(sb.rpc('admin_count_user_report_unread'))
-      .then(function (r) {
-        if (r.error) throw r.error;
-        var n = (r.data === null || r.data === undefined) ? 0 : Number(r.data);
-        noticeUnreadGrow('seenUserReportUnread', n, '用户举报');
-        updateUserReportBadge(n);
-        return n;
-      })
-      .catch(function () {
-        updateUserReportBadge(0);
-        return 0;
-      });
-  }
-
-  function markUserReportReadAll() {
-    if (!state.isAdmin) return Promise.resolve();
-    state.seenUserReportUnread = 0;
-    updateUserReportBadge(0);
-    return Promise.resolve(sb.rpc('admin_mark_user_report_read_all'))
-      .then(function (r) { if (r.error) throw r.error; updateUserReportBadge(0); })
-      .catch(function () { updateUserReportBadge(0); });
-  }
+  // 兼容旧调用点
+  function loadWordLogUnread()    { return loadUnread('wordlog'); }
+  function markWordLogReadAll()   { return markUnreadRead('wordlog'); }
+  function loadUserReportUnread() { return loadUnread('userreports'); }
+  function markUserReportReadAll(){ return markUnreadRead('userreports'); }
 
   // 管理员称号「首次登录」公告：
   // 用 localStorage 记录迁移状态，仅在「从非管理员变为管理员」的那次登录显示一次；
@@ -3267,7 +3326,7 @@
     state.isAdmin = false;
     updateAdminCard();
     stopWordLogUnreadPoller();
-    updateWordLogBadge(0);
+    clearAllUnreadBadges();
     hideModal('admin-panel');
     toast('您的管理员权限已被撤销');
   }
@@ -3407,8 +3466,7 @@
         state.isAdmin = true;
         updateAdminCard();
         startWordLogUnreadPoller();
-        loadWordLogUnread();
-        loadUserReportUnread();
+        loadAllUnread();
         $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         showModal('admin-panel');
         openAdminReports();
@@ -3416,11 +3474,11 @@
       .catch(function () { toast('权限校验失败，请重试'); });
   }
 
-  function openAdminReports() {
-    adminTabCurrent = 'reports';
+  function refreshAdminReportList() {
     var box = $('admin-report-list');
+    if (!box) return Promise.resolve();
     box.innerHTML = '<div class="gm-empty">加载中…</div>';
-    sb.rpc('admin_list_reports')
+    return Promise.resolve(sb.rpc('admin_list_reports'))
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
@@ -3442,6 +3500,12 @@
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  function openAdminReports() {
+    adminTabCurrent = 'reports';
+    markUnreadRead('reports');
+    return refreshAdminReportList();
   }
 
   // 用户手动举报（昵称/信息/视频/图片）→ 管理员 / 开发者管理页展示
@@ -3588,12 +3652,11 @@
   }
 
   // 管理员面板：禁言申诉列表（查看 + 通过/驳回）
-  function openAdminAppeals() {
-    adminTabCurrent = 'appeals';
+  function refreshAdminAppealList() {
     var box = $('admin-appeal-list');
-    if (!box) return;
-    box.innerHTML = '<div class="gm-loading">加载中…</div>';
-    sb.rpc('admin_list_mute_appeals')
+    if (!box) return Promise.resolve();
+    if (!state.adminAppealsAll) box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    return Promise.resolve(sb.rpc('admin_list_mute_appeals'))
       .then(function (r) {
         if (r.error) throw r.error;
         state.adminAppealsAll = r.data || [];
@@ -3604,6 +3667,12 @@
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  function openAdminAppeals() {
+    adminTabCurrent = 'appeals';
+    markUnreadRead('appeals');
+    return refreshAdminAppealList();
   }
 
   function renderAdminAppeals() {
@@ -5836,32 +5905,20 @@
           reloadTitleFor(uid);
         }, 400);
       })
+      // 管理后台四大板块：违禁词 / 用户举报 / 违规周报 / 禁言申诉
+      // 仅管理员/开发者需要实时提示；四张表的 RLS 均已开放管理员可读，否则 realtime 不会推送
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'word_warnings'
-      }, function (payload) {
-        // 仅管理员/开发者需要实时提示；RLS 策略已同步开放管理员可读
-        if (!state.isAdmin) return;
-        var w = payload.new;
-        if (!w) return;
-        // 刷新红点数字，若正打开违禁词记录 tab 则同步刷新列表并标已读
-        loadWordLogUnread();
-        if (adminTabCurrent === 'wordlog') {
-          refreshWordLogList().then(function () { markWordLogReadAll(); });
-        }
-        // toast 统一由 loadWordLogUnread 的未读增量逻辑发出，此处不再重复提示
-      })
+      }, onAdminFeedInsert)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'user_reports'
-      }, function (payload) {
-        if (!state.isAdmin) return;
-        var r = payload.new;
-        if (!r) return;
-        loadUserReportUnread();
-        if (adminTabCurrent === 'userreports') {
-          refreshUserReportList().then(function () { markUserReportReadAll(); });
-        }
-        // toast 统一由 loadUserReportUnread 的未读增量逻辑发出，此处不再重复提示
-      })
+      }, onAdminFeedInsert)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'forbidden_reports'
+      }, onAdminFeedInsert)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'mute_appeals'
+      }, onAdminFeedInsert)
       .subscribe(function (status) {
         // 断线/超时时自动重连，避免实时推送永久失效
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -5914,6 +5971,8 @@
       if (state.active) openChat(state.active);
       loadDisplayTitles().catch(function () {});   // 重新可见时重拉可见用户称号，兜底实时推送丢失
       fillNewMessages();
+      // 管理后台四大板块未读数：锁屏/切后台期间 WebSocket 常已断开，回前台立刻补一次
+      if (state.isAdmin) loadAllUnread();
     }
   });
 })();
