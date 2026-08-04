@@ -3617,8 +3617,10 @@
             var hideInfo = sets.global[rep.id] || sets.my[rep.id] || null;
             var hidden = hideInfo ? hideInfo.kind : null;
             // 方案一：global 隐藏超过 10 分钟后，管理列表不再显示该占位行（记录仍保留，内容仍隐藏）
+            // ignore（个人忽略/删除）直接不显示占位，无需撤销
+            if (hidden === 'ignore') return;
             if (hidden === 'global' && isUndoExpired(hideInfo.created_at)) return;
-            if (hidden) box.appendChild(renderHiddenRow('forbidden_report', rep.id, hidden, hideInfo.created_at));
+            if (hidden === 'global') box.appendChild(renderHiddenRow('forbidden_report', rep.id, hidden, hideInfo.created_at));
             else box.appendChild(renderReportCard(rep, 'admin'));
           });
         });
@@ -3652,8 +3654,10 @@
             var hideInfo = sets.global[rep.id] || sets.my[rep.id] || null;
             var hidden = hideInfo ? hideInfo.kind : null;
             // 方案一：global 隐藏超过 10 分钟后，管理列表不再显示该占位行（记录仍保留，内容仍隐藏）
+            // ignore（个人忽略/删除）直接不显示占位，无需撤销
+            if (hidden === 'ignore') return;
             if (hidden === 'global' && isUndoExpired(hideInfo.created_at)) return;
-            if (hidden) box.appendChild(renderHiddenRow('user_report', rep.id, hidden, hideInfo.created_at));
+            if (hidden === 'global') box.appendChild(renderHiddenRow('user_report', rep.id, hidden, hideInfo.created_at));
             else box.appendChild(renderUserReportCard(rep));
           });
           var saU = $('admin-ur-selectall'); if (saU) saU.checked = false;
@@ -3754,8 +3758,10 @@
             var hideInfo = sets.global[w.id] || sets.my[w.id] || null;
             var hidden = hideInfo ? hideInfo.kind : null;
             // 方案一：global 隐藏超过 10 分钟后，管理列表不再显示该占位行（记录仍保留，内容仍隐藏）
+            // ignore（个人忽略/删除）直接不显示占位，无需撤销
+            if (hidden === 'ignore') return;
             if (hidden === 'global' && isUndoExpired(hideInfo.created_at)) return;
-            if (hidden) box.appendChild(renderHiddenRow('word_warning', w.id, hidden, hideInfo.created_at));
+            if (hidden === 'global') box.appendChild(renderHiddenRow('word_warning', w.id, hidden, hideInfo.created_at));
             else box.appendChild(renderWordLogCard(w, 'admin'));
             shown++;
           });
