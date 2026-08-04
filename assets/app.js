@@ -3123,28 +3123,40 @@
     if (btn) btn.hidden = !state.isAdmin;
   }
 
+  // 统一的小红点渲染：n<=0 隐藏，>99 显示 99+
+  function paintBadge(id, n) {
+    var b = $(id);
+    if (!b) return;
+    if (!n || n <= 0) {
+      b.textContent = '';
+      b.classList.remove('show');
+    } else {
+      b.textContent = n > 99 ? '99+' : String(n);
+      b.classList.add('show');
+    }
+  }
+
+  // 侧边栏「违禁接收」蓝色入口：显示 违禁词记录 + 用户举报 的未读总数
+  function updateSideViolationBadge() {
+    var total = (state.unreadWordLog || 0) + (state.unreadUserReport || 0);
+    paintBadge('admin-violation-badge', total);
+  }
+
   // 「违禁词记录」tab 及侧边栏「违禁接收」入口右上角未读数字提示
   function updateWordLogBadge(n) {
-    var tabBadge = $('admin-tab-wordlog-badge');
-    if (tabBadge) {
-      if (!n || n <= 0) {
-        tabBadge.textContent = '';
-        tabBadge.classList.remove('show');
-      } else {
-        tabBadge.textContent = n > 99 ? '99+' : String(n);
-        tabBadge.classList.add('show');
-      }
-    }
-    var sideBadge = $('admin-violation-badge');
-    if (sideBadge) {
-      if (!n || n <= 0) {
-        sideBadge.textContent = '';
-        sideBadge.classList.remove('show');
-      } else {
-        sideBadge.textContent = n > 99 ? '99+' : String(n);
-        sideBadge.classList.add('show');
-      }
-    }
+    state.unreadWordLog = n || 0;
+    paintBadge('admin-tab-wordlog-badge', n);
+    updateSideViolationBadge();
+  }
+
+  /* 未读数增长即提示：realtime 在老 WebView 上易丢事件，这里由「未读计数变大」统一驱动 toast，
+     realtime 事件只负责立刻触发一次计数刷新，避免两条重复提示。
+     首次拉取只建立基线（prev 为 null），不提示。 */
+  function noticeUnreadGrow(key, n, label) {
+    var prev = state[key];
+    state[key] = n;
+    if (prev === null || prev === undefined) return;
+    if (n > prev) toast('收到 ' + (n - prev) + ' 条新的' + label);
   }
 
   function loadWordLogUnread() {
@@ -3153,6 +3165,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         var n = (r.data === null || r.data === undefined) ? 0 : Number(r.data);
+        noticeUnreadGrow('seenWordLogUnread', n, '违禁词记录');
         updateWordLogBadge(n);
         return n;
       })
@@ -3179,7 +3192,7 @@
           refreshUserReportList().then(function () { markUserReportReadAll(); });
         }
       });
-    }, 30000);
+    }, 8000);
   }
 
   function stopWordLogUnreadPoller() {
@@ -3191,22 +3204,16 @@
 
   function markWordLogReadAll() {
     if (!state.isAdmin) return Promise.resolve();
+    state.seenWordLogUnread = 0;
     return Promise.resolve(sb.rpc('admin_mark_word_log_read_all'))
       .then(function (r) { if (r.error) throw r.error; updateWordLogBadge(0); })
       .catch(function () { updateWordLogBadge(0); });
   }
 
   function updateUserReportBadge(n) {
-    var tabBadge = $('admin-tab-userreports-badge');
-    if (tabBadge) {
-      if (!n || n <= 0) {
-        tabBadge.textContent = '';
-        tabBadge.classList.remove('show');
-      } else {
-        tabBadge.textContent = n > 99 ? '99+' : String(n);
-        tabBadge.classList.add('show');
-      }
-    }
+    state.unreadUserReport = n || 0;
+    paintBadge('admin-tab-userreports-badge', n);
+    updateSideViolationBadge();
   }
 
   function loadUserReportUnread() {
@@ -3215,6 +3222,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         var n = (r.data === null || r.data === undefined) ? 0 : Number(r.data);
+        noticeUnreadGrow('seenUserReportUnread', n, '用户举报');
         updateUserReportBadge(n);
         return n;
       })
@@ -3226,6 +3234,7 @@
 
   function markUserReportReadAll() {
     if (!state.isAdmin) return Promise.resolve();
+    state.seenUserReportUnread = 0;
     updateUserReportBadge(0);
     return Promise.resolve(sb.rpc('admin_mark_user_report_read_all'))
       .then(function (r) { if (r.error) throw r.error; updateUserReportBadge(0); })
@@ -5839,8 +5848,7 @@
         if (adminTabCurrent === 'wordlog') {
           refreshWordLogList().then(function () { markWordLogReadAll(); });
         }
-        // 瞬时 toast 提示
-        toast('收到新的违禁词记录：' + (w.word || '未知'));
+        // toast 统一由 loadWordLogUnread 的未读增量逻辑发出，此处不再重复提示
       })
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'user_reports'
@@ -5852,7 +5860,7 @@
         if (adminTabCurrent === 'userreports') {
           refreshUserReportList().then(function () { markUserReportReadAll(); });
         }
-        toast('收到新的用户举报');
+        // toast 统一由 loadUserReportUnread 的未读增量逻辑发出，此处不再重复提示
       })
       .subscribe(function (status) {
         // 断线/超时时自动重连，避免实时推送永久失效
