@@ -3593,11 +3593,11 @@
         state.isAdmin = true;
         updateAdminCard();
         startWordLogUnreadPoller();
-        loadAllUnread();
-        $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         state.adminPanelOpen = true;
         showModal('admin-panel');
+        $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         openAdminReports();
+        loadAllUnread();
       })
       .catch(function () { toast('权限校验失败，请重试'); });
   }
