@@ -3206,7 +3206,8 @@
   }
 
   // 禁言操作行（天/时/分 + 禁言 + 解除禁言）；禁言后全网隐藏
-  function buildMuteRow(type, id, offenderUid) {
+  // content：被举报的消息内容（仅 type==='user_report' 时传入），禁言后同时登记到违禁词库与违禁词记录
+  function buildMuteRow(type, id, offenderUid, content) {
     var muteRow = el('div', 'gm-mute-row');
     var durLabel = el('span', 'gm-mute-label', '禁言：');
     var inpD = el('input', 'gm-dur-input'); inpD.type = 'number'; inpD.min = '0'; inpD.max = '20'; inpD.value = '1'; inpD.placeholder = '天';
@@ -3221,7 +3222,19 @@
       if (total > 28800) { toast('管理员禁言上限为 20 天'); return; }
       sb.rpc('admin_mute_user', { p_user_id: offenderUid, p_days: d, p_hours: h, p_minutes: m })
         .then(function (r) { if (r.error) throw r.error; return sb.rpc('set_content_hide', { p_target_type: type, p_target_id: id, p_kind: 'global' }); })
-        .then(function () { toast('已对该用户禁言 ' + muteLenText(d, h, m) + '，并隐藏该内容'); rerenderCurrentAdminTab(); })
+        .then(function () {
+          // 举报禁言联动：把被举报消息加入违禁词库 + 登记违禁词记录（仅用户举报场景）
+          if (type === 'user_report' && content) {
+            var word = (content || '').trim();
+            return sb.rpc('admin_add_forbidden_word', { p_word: word, p_note: '来自举报禁言' })
+              .catch(function () { /* 词库已存在则忽略 */ })
+              .then(function () {
+                return sb.rpc('admin_add_word_warning', { p_user_id: offenderUid, p_word: word, p_content: content, p_peer_id: null });
+              })
+              .then(function () { loadForbiddenWords(); }); // 立即刷新客户端词库缓存，使新词即时生效
+          }
+        })
+        .then(function () { toast('已对该用户禁言 ' + muteLenText(d, h, m) + '，并隐藏该内容、加入违禁词'); rerenderCurrentAdminTab(); })
         .catch(function (e) { var msg = (e && (e.message || '')) || ''; if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked(); else toast('禁言失败：' + friendlyError(e)); });
     };
     var unmuteBtn = el('button', 'btn-mini gm-danger', '解除禁言');
@@ -3384,7 +3397,7 @@
     card.appendChild(btn);
 
     // —— 处置：禁言（全网隐藏）/ 不禁言（全网隐藏）/ 忽略（仅自己隐藏）——
-    card.appendChild(buildMuteRow('user_report', rep.id, rep.reported_id));
+    card.appendChild(buildMuteRow('user_report', rep.id, rep.reported_id, rep.target_ref));
     var acts = el('div', 'gm-report-acts');
     acts.appendChild(noMuteBtn('user_report', rep.id));
     acts.appendChild(ignoreBtn('user_report', rep.id));
