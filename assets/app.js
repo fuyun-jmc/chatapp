@@ -4508,7 +4508,7 @@
     this.value = '';
     if (!file) return;
     if (!state.active || !state.active.iAmOwner) { toast('只有群主可以修改群图标'); return; }
-    if (file.size > 2 * 1024 * 1024) { toast('群图标请小于 2 MB'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast('群图标请小于 10 MB'); return; }
 
     var ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
     var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
