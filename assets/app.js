@@ -1461,6 +1461,7 @@
     if (state.heartbeat) { clearInterval(state.heartbeat); state.heartbeat = null; }
     if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
     if (state.onlineTimer) { clearInterval(state.onlineTimer); state.onlineTimer = null; }
+    if (state.wordLogUnreadTimer) { clearInterval(state.wordLogUnreadTimer); state.wordLogUnreadTimer = null; }
     if (state.channel) { sb.removeChannel(state.channel); state.channel = null; }
     if (state.kickChannel) { try { sb.removeChannel(state.kickChannel); } catch (e) {} state.kickChannel = null; }
     if (state.presenceChannel) {
@@ -2996,6 +2997,9 @@
         // 「管理员」称号专属标记（公告/撤销规则只针对「管理员」称号，不含纯开发者）
         state.hasAdminTitle = names.indexOf('管理员') >= 0;
         updateAdminCard();
+        // 启动「违禁词记录」未读数轮询（右上角数字提示）
+        if (state.isAdmin) { startWordLogUnreadPoller(); loadWordLogUnread(); }
+        else { stopWordLogUnreadPoller(); updateWordLogBadge(0); }
 
         // 兜底回填自己的强制称号槽位，保证右上角一定能看到徽标
         function pick(n) {
@@ -3119,6 +3123,56 @@
     if (btn) btn.hidden = !state.isAdmin;
   }
 
+  // 「违禁词记录」tab 右上角未读数字提示
+  function updateWordLogBadge(n) {
+    var badge = $('admin-tab-wordlog-badge');
+    if (!badge) return;
+    if (!n || n <= 0) {
+      badge.textContent = '';
+      badge.classList.remove('show');
+    } else {
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.classList.add('show');
+    }
+  }
+
+  function loadWordLogUnread() {
+    if (!state.isAdmin) return Promise.resolve();
+    return Promise.resolve(sb.rpc('admin_count_word_log_unread'))
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var n = (r.data === null || r.data === undefined) ? 0 : Number(r.data);
+        updateWordLogBadge(n);
+        return n;
+      })
+      .catch(function (e) {
+        // 后端 RPC 未部署时不影响主流程
+        updateWordLogBadge(0);
+        return 0;
+      });
+  }
+
+  function startWordLogUnreadPoller() {
+    if (state.wordLogUnreadTimer) return;
+    state.wordLogUnreadTimer = setInterval(function () {
+      if (state.isAdmin) loadWordLogUnread();
+    }, 30000);
+  }
+
+  function stopWordLogUnreadPoller() {
+    if (state.wordLogUnreadTimer) {
+      clearInterval(state.wordLogUnreadTimer);
+      state.wordLogUnreadTimer = null;
+    }
+  }
+
+  function markWordLogReadAll() {
+    if (!state.isAdmin) return Promise.resolve();
+    return Promise.resolve(sb.rpc('admin_mark_word_log_read_all'))
+      .then(function (r) { if (r.error) throw r.error; updateWordLogBadge(0); })
+      .catch(function () { updateWordLogBadge(0); });
+  }
+
   // 管理员称号「首次登录」公告：
   // 用 localStorage 记录迁移状态，仅在「从非管理员变为管理员」的那次登录显示一次；
   // 若称号被撤销后重新获得，会再次提示。纯开发者（无管理员称号）不触发。
@@ -3144,6 +3198,8 @@
   function onAdminRevoked() {
     state.isAdmin = false;
     updateAdminCard();
+    stopWordLogUnreadPoller();
+    updateWordLogBadge(0);
     hideModal('admin-panel');
     toast('您的管理员权限已被撤销');
   }
@@ -3282,6 +3338,8 @@
         if (!ok) { onAdminRevoked(); return; }
         state.isAdmin = true;
         updateAdminCard();
+        startWordLogUnreadPoller();
+        loadWordLogUnread();
         $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         showModal('admin-panel');
         openAdminReports();
@@ -3412,6 +3470,8 @@
   // 管理员面板：违禁词记录（任意检测，不限于好友）
   function openAdminWordLog() {
     adminTabCurrent = 'wordlog';
+    // 打开 tab 即视为已读，先清零数字提示再拉数据
+    markWordLogReadAll();
     var box = $('admin-word-log-list');
     if (!box) return;
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
@@ -5564,11 +5624,29 @@
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'messages'
       }, function (payload) {
-        if (payload.eventType === 'DELETE') return;
+        var box = $('messages');
+
+        // 历史消息被违禁词全局隐藏（hidden_forbidden=true）后，RLS 会转为 DELETE 事件；
+        // 群解散 / 账号删除级联删除消息也会触发 DELETE。统一从 DOM 移除节点。
+        if (payload.eventType === 'DELETE') {
+          var oldId = payload.old && payload.old.id;
+          if (oldId) {
+            var delNode = box.querySelector('[data-id="' + oldId + '"]');
+            if (delNode) domRemove(delNode);
+          }
+          return;
+        }
+
         var m = payload.new;
         if (!m) return;
 
-        var box = $('messages');
+        // 被违禁词全局隐藏的历史消息：若 UPDATE 事件仍被推送，直接移除 DOM 节点
+        if (m.hidden_forbidden) {
+          var hiddenNode = box.querySelector('[data-id="' + m.id + '"]');
+          if (hiddenNode) domRemove(hiddenNode);
+          return;
+        }
+
         var existing = box.querySelector('[data-id="' + m.id + '"]');
 
         // 只有 INSERT 才是「真·新消息」。UPDATE 代表历史消息的状态变更
