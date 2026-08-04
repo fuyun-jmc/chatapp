@@ -628,7 +628,8 @@
       <div class="gm-tabs">
         <button class="gm-tab active" id="gm-tab-users" type="button">用户管理</button>
         <button class="gm-tab" id="gm-tab-groups" type="button">群聊管理</button>
-        <button class="gm-tab" id="gm-tab-reports" type="button">违规上报</button>
+        <button class="gm-tab" id="gm-tab-reports" type="button">周报</button>
+        <button class="gm-tab" id="gm-tab-userreports" type="button">用户举报</button>
         <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
         <button class="gm-tab" id="gm-tab-appeals" type="button">禁言申诉</button>
         <button class="gm-tab" id="gm-tab-feedback" type="button">问题反馈</button>
@@ -667,9 +668,22 @@
       <div class="gm-title-list" id="gm-title-list"><div class="gm-empty">加载中…</div></div>
     </div>
 
-    <!-- 违规上报模式 -->
+    <!-- 周报模式 -->
     <div class="gm-reports" id="gm-reports" hidden>
+      <div class="gm-board-search">
+        <input id="gm-report-search" type="text" placeholder="搜索昵称 / 手机号 / 内容" autocomplete="off" />
+        <button class="btn-mini" id="gm-report-refresh" type="button">刷新</button>
+      </div>
       <div class="gm-report-list" id="gm-report-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 用户举报模式 -->
+    <div class="gm-userreports" id="gm-userreports" hidden>
+      <div class="gm-board-search">
+        <input id="gm-userreport-search" type="text" placeholder="搜索举报人 / 被举报人 / 内容" autocomplete="off" />
+        <button class="btn-mini" id="gm-userreport-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-report-list" id="gm-userreport-list"><div class="gm-empty">加载中…</div></div>
     </div>
 
     <!-- 禁言申诉模式 -->
@@ -683,14 +697,11 @@
       <div class="gm-empty">加载中…</div>
     </div>
 
-    <!-- 违禁词记录模式（任意检测，不限于好友） -->
+    <!-- 违禁词记录模式（任意检测，不限于好友；GM 后台留存、不可删除、可搜索） -->
     <div class="gm-word-log" id="gm-word-log" hidden>
-      <div class="gm-subbar">
-        <span class="gm-subbar-tip">系统检测到的全部违禁词（含发给陌生人 / 群聊），按时间倒序</span>
-        <div class="gm-subbar-acts">
-          <button class="btn-mini btn-danger-mini" id="gm-word-log-clear" type="button">清空</button>
-          <button class="btn-mini" id="gm-word-log-refresh" type="button">刷新</button>
-        </div>
+      <div class="gm-board-search">
+        <input id="gm-word-log-search" type="text" placeholder="搜索昵称 / 手机号 / 命中词 / 内容" autocomplete="off" />
+        <button class="btn-mini" id="gm-word-log-refresh" type="button">刷新</button>
       </div>
       <div class="gm-word-log-batch" id="gm-word-log-batch">
         <label class="wl-selall"><input type="checkbox" id="gm-wl-selectall">全选</label>
@@ -699,8 +710,6 @@
         <span class="wl-dur-unit">时</span><input type="number" class="gm-dur-input" id="gm-wl-hours" min="0" max="23" value="0">
         <span class="wl-dur-unit">分</span><input type="number" class="gm-dur-input" id="gm-wl-mins" min="0" max="59" value="0">
         <button class="btn-mini" id="gm-wl-mute" type="button">批量禁言</button>
-        <button class="btn-mini btn-danger-mini" id="gm-wl-nomute" type="button">批量不禁言</button>
-        <button class="btn-mini btn-danger-mini" id="gm-wl-del" type="button">批量删除</button>
         <span class="wl-count" id="gm-wl-count">已选 0 项</span>
       </div>
       <div class="gm-report-list" id="gm-word-log-list"><div class="gm-empty">加载中…</div></div>
@@ -882,7 +891,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.js?v=170"></script>
+<script src="assets/app.js?v=171"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
