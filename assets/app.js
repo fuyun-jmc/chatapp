@@ -65,6 +65,7 @@
     devTitleRow: null,   // 最近一次查到的「开发者」称号行，用于隐藏开关即时切换展示
     profileTitleSig: {}, // uid -> 称号列签名（实时通道过滤用：仅称号变化才刷新）
     titleReloadTimer: {}, // uid -> 节流定时器，避免同一用户高频刷新
+    devHiddenMap: {}     // uid -> boolean，记录每位用户的 hide_dev_title（影响所有 viewer）
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -539,9 +540,35 @@
 
   // 批量获取好友/自己/当前会话对象的展示称号（头像框渲染用）
   // 计算某用户称号列的签名（用于实时通道过滤，判断称号是否真的变化）
+  // 也包含 hide_dev_title，确保某人切换隐藏开关时其他客户端能刷新
   function titleSigFromRow(t) {
-    return [t.title_id, t.title2_id, t.admin_title_id, t.dev_title_id]
+    return [t.title_id, t.title2_id, t.admin_title_id, t.dev_title_id, t.hide_dev_title]
       .map(function (x) { return x == null ? null : x; }).join('|');
+  }
+
+  // 判断某用户是否设置了「隐藏开发者称号」（对任何 viewer 都生效）
+  function isDevHidden(uid) {
+    if (uid === state.uid) return !!state.hideDevTitle;
+    return !!(state.devHiddenMap && state.devHiddenMap[uid]);
+  }
+
+  // 批量拉取指定用户的 hide_dev_title，写入 devHiddenMap（用于非自己用户的前端过滤兜底）
+  function loadDevHiddenFlags(uids) {
+    if (!uids || !uids.length) return Promise.resolve();
+    var need = [];
+    uids.forEach(function (id) { if (id && need.indexOf(id) < 0) need.push(id); });
+    if (!need.length) return Promise.resolve();
+    return sb.from('profiles')
+      .select('id, hide_dev_title')
+      .in('id', need)
+      .then(function (r) {
+        if (r.error) return;
+        if (!state.devHiddenMap) state.devHiddenMap = {};
+        (r.data || []).forEach(function (row) {
+          state.devHiddenMap[row.id] = !!row.hide_dev_title;
+        });
+      })
+      .catch(function () {});
   }
 
   // 他人（或自己）称号变更后，局部重拉该用户称号并重绘其显示
@@ -568,7 +595,7 @@
             titleId: t.dev_title_id, titleName: t.dev_title_name,
             frameColor: t.dev_title_color || '#7c4dff', frameStyle: 'dev'
           } : null;
-          if (uid === state.uid && state.hideDevTitle) {
+          if (isDevHidden(uid)) {
             dev = null;
             if (isDevSlot(primary)) primary = null;
             if (isDevSlot(primary2)) primary2 = null;
@@ -577,7 +604,8 @@
           if (!state.profileTitleSig) state.profileTitleSig = {};
           state.profileTitleSig[uid] = titleSigFromRow(t);
         });
-        refreshTitleUI(uid);
+        // 顺手刷新该用户的 hide_dev_title 缓存，确保即时生效
+        loadDevHiddenFlags([uid]).then(function () { refreshTitleUI(uid); });
       })
       .catch(function () {});
   }
@@ -608,7 +636,7 @@
             titleId: t.dev_title_id, titleName: t.dev_title_name,
             frameColor: t.dev_title_color || '#7c4dff', frameStyle: 'dev'
           } : null;
-          if (t.user_id === state.uid && state.hideDevTitle) {
+          if (isDevHidden(t.user_id)) {
             dev = null;
             if (isDevSlot(primary)) primary = null;
             if (isDevSlot(primary2)) primary2 = null;
@@ -617,6 +645,22 @@
           if (!state.profileTitleSig) state.profileTitleSig = {};
           state.profileTitleSig[t.user_id] = titleSigFromRow(t);
         });
+      })
+      .then(function () {
+        return loadDevHiddenFlags(need);
+      })
+      .then(function () {
+        // 若群资料弹窗正打开，补拉后重绘成员列表
+        if ($('group-info-modal') && $('group-info-modal').classList.contains('open')) {
+          var gid = $('group-info-modal').dataset.gid;
+          var g = null;
+          if (state.groups) {
+            for (var gi = 0; gi < state.groups.length; gi++) {
+              if (state.groups[gi].id === gid) { g = state.groups[gi]; break; }
+            }
+          }
+          if (g) renderMemberList(g);
+        }
       })
       .catch(function () {});
   }
@@ -695,7 +739,7 @@
             frameStyle: 'dev'   // 开发者专属头像框，忽略 frame_style
           } : null;
           // 即便后端 get_profiles_titles 还是旧签名没过滤 hide_dev_title，前端也强制不展示
-          if (t.user_id === state.uid && state.hideDevTitle) {
+          if (isDevHidden(t.user_id)) {
             dev = null;
             // 防止开发者称号被错误戴到自选槽位后仍显示
             if (isDevSlot(primary)) primary = null;
@@ -708,10 +752,14 @@
         // 后端还是旧签名时，恢复自身兜底槽位，避免自己的强制称号消失
         if (selfPrev && state.titlesMap[state.uid]) {
           if (!hasAdminCol && selfPrev.admin) state.titlesMap[state.uid].admin = selfPrev.admin;
-          if (!hasDevCol   && selfPrev.dev && !state.hideDevTitle) state.titlesMap[state.uid].dev = selfPrev.dev;
+          if (!hasDevCol   && selfPrev.dev && !isDevHidden(state.uid)) state.titlesMap[state.uid].dev = selfPrev.dev;
         }
-        // 重新渲染好友列表，让头像框生效
+        return loadDevHiddenFlags(ids);
+      })
+      .then(function () {
+        // 拉取完每个人的 hide_dev_title 后再统一渲染，确保隐藏状态被所有 viewer 尊重
         if (typeof renderConversations === 'function') renderConversations();
+        applySelfTitle();
       })
       .catch(function () {
         // RPC 失败（如函数不存在）时保留已有兜底，不要清空
@@ -752,9 +800,9 @@
       seen[t.titleId] = 1;
       list.push(t);
     });
-    // 最终兜底：开发者本人隐藏称号时，任何情况下都不展示开发者框/徽标
+    // 最终兜底：开发者隐藏称号时，任何 viewer 都不展示开发者框/徽标
     //（按 frameStyle 过滤不够，需同时按 titleId / 名称过滤，防止开发者称号被手动戴到自选槽位后仍显示）
-    if (uid === state.uid && state.hideDevTitle) {
+    if (isDevHidden(uid)) {
       list = list.filter(function (t) { return !isDevSlot(t); });
     }
     return list;
@@ -2989,6 +3037,8 @@
       .then(function (r) {
         if (r.error || !r.data || !r.data.length) return;
         state.hideDevTitle = !!r.data[0].hide_dev_title;
+        if (!state.devHiddenMap) state.devHiddenMap = {};
+        state.devHiddenMap[state.uid] = state.hideDevTitle;
         //  always re-apply，避免其它流程先把 dev 槽位写错
         applyDevSlot();
       })
@@ -2998,6 +3048,8 @@
   // 按当前隐藏开关重算自己的开发者展示槽位并即时重绘（不触碰任何权限字段）
   function applyDevSlot() {
     if (!state.uid) return;
+    if (!state.devHiddenMap) state.devHiddenMap = {};
+    state.devHiddenMap[state.uid] = !!state.hideDevTitle;
     state.titlesMap = state.titlesMap || {};
     var slot = state.titlesMap[state.uid] || { primary: null, primary2: null, admin: null, dev: null };
     var d = state.devTitleRow;
@@ -3023,6 +3075,8 @@
       .then(function (r) {
         if (r.error) throw r.error;
         state.hideDevTitle = !!hide;
+        if (!state.devHiddenMap) state.devHiddenMap = {};
+        state.devHiddenMap[state.uid] = state.hideDevTitle;
         applyDevSlot();
         toast(hide ? '已隐藏「开发者」称号，其他人将看不到（权限不变）'
                    : '已取消隐藏，「开发者」称号重新展示');
@@ -5395,8 +5449,8 @@
         }
         if (!care && state.active && state.active.type === 'friend' && state.active.id === uid) care = true;
         if (!care) return;
-        // 仅当称号相关列发生变化才刷新（last_seen 等心跳直接忽略）
-        var nsig = [nr.display_title_id, nr.display_title_id2, nr.admin_title_id, nr.dev_title_id]
+        // 仅当称号相关列或 hide_dev_title 发生变化才刷新（last_seen 等心跳直接忽略）
+        var nsig = [nr.display_title_id, nr.display_title_id2, nr.admin_title_id, nr.dev_title_id, nr.hide_dev_title]
           .map(function (x) { return x == null ? null : x; }).join('|');
         if (state.profileTitleSig && state.profileTitleSig[uid] === nsig) return;
         if (!state.profileTitleSig) state.profileTitleSig = {};
