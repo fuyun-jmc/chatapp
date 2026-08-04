@@ -3226,10 +3226,10 @@
           // 举报禁言联动：把被举报消息加入违禁词库 + 登记违禁词记录（仅用户举报场景）
           if (type === 'user_report' && content) {
             var word = (content || '').trim();
-            return sb.rpc('admin_add_forbidden_word', { p_word: word, p_note: '来自举报禁言' })
+            return Promise.resolve(sb.rpc('admin_add_forbidden_word', { p_word: word, p_note: '来自举报禁言' }))
               .catch(function () { /* 词库已存在则忽略 */ })
               .then(function () {
-                return sb.rpc('admin_add_word_warning', { p_user_id: offenderUid, p_word: word, p_content: content, p_peer_id: null });
+                return Promise.resolve(sb.rpc('admin_add_word_warning', { p_user_id: offenderUid, p_word: word, p_content: content, p_peer_id: null }));
               })
               .catch(function () { /* 后端 RPC 未部署时不影响禁言主流程 */ })
               .then(function () { loadForbiddenWords(); }); // 立即刷新客户端词库缓存，使新词即时生效
