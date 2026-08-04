@@ -13,7 +13,7 @@
 
   /* 原生 <dialog> 弹窗开关（安全：重复打开/关闭不抛异常） */
   function showModal(id) { var m = $(id); if (m) { m.classList.add('open'); m.removeAttribute('hidden'); } }
-  function hideModal(id) { var m = $(id); if (m) { m.classList.remove('open'); m.setAttribute('hidden', ''); } }
+  function hideModal(id) { var m = $(id); if (m) { m.classList.remove('open'); m.setAttribute('hidden', ''); } if (id === 'admin-panel') state.adminPanelOpen = false; }
 
   /* ---------- 配置检查 ---------- */
   var configured = CFG.SUPABASE_URL && CFG.SUPABASE_URL.indexOf('YOUR_') === -1 &&
@@ -3387,7 +3387,7 @@
       for (var i = 0; i < UNREAD_KINDS.length; i++) {
         (function (key) {
           loadUnread(key).then(function () {
-            if (adminTabCurrent === key) {
+            if (state.adminPanelOpen && adminTabCurrent === key) {
               Promise.resolve(refreshTabList(key)).then(function () { markUnreadRead(key); });
             }
           });
@@ -3416,7 +3416,7 @@
     var k = unreadKindByTable(payload.table);
     if (!k) return;
     loadUnread(k.key);
-    if (adminTabCurrent === k.key) {
+    if (state.adminPanelOpen && adminTabCurrent === k.key) {
       Promise.resolve(refreshTabList(k.key)).then(function () { markUnreadRead(k.key); });
     }
   }
@@ -3595,6 +3595,7 @@
         startWordLogUnreadPoller();
         loadAllUnread();
         $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
+        state.adminPanelOpen = true;
         showModal('admin-panel');
         openAdminReports();
       })
