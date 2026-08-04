@@ -3231,6 +3231,7 @@
               .then(function () {
                 return sb.rpc('admin_add_word_warning', { p_user_id: offenderUid, p_word: word, p_content: content, p_peer_id: null });
               })
+              .catch(function () { /* 后端 RPC 未部署时不影响禁言主流程 */ })
               .then(function () { loadForbiddenWords(); }); // 立即刷新客户端词库缓存，使新词即时生效
           }
         })
