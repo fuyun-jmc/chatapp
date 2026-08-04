@@ -2967,12 +2967,21 @@
         var rows = (r && r.data) || [];
         var global = {}, my = {};
         rows.forEach(function (h) {
-          if (h.hide_kind === 'global') global[h.target_id] = true;
-          else if (h.hide_kind === 'ignore' && h.admin_uid === state.uid) my[h.target_id] = true;
+          var info = { kind: h.hide_kind, created_at: h.created_at };
+          if (h.hide_kind === 'global') global[h.target_id] = info;
+          else if (h.hide_kind === 'ignore' && h.admin_uid === state.uid) my[h.target_id] = info;
         });
         return { global: global, my: my };
       })
       .catch(function () { return { global: {}, my: {} }; });
+  }
+
+  // 判断某条隐藏记录的撤销窗口是否已过期（10 分钟）
+  function isUndoExpired(createdAt) {
+    if (!createdAt) return true;
+    var t = new Date(createdAt).getTime();
+    if (!t || isNaN(t)) return true;
+    return (Date.now() - t) > 10 * 60 * 1000;
   }
 
   function rerenderCurrentAdminTab() {
@@ -2982,19 +2991,27 @@
     else if (adminTabCurrent === 'appeals') openAdminAppeals();
   }
 
-  // 隐藏后的占位行：内容本身不显示，仅留恢复入口
-  function renderHiddenRow(type, id, kind) {
+  // 隐藏后的占位行：内容本身不显示，仅留恢复入口；撤销仅在 10 分钟内有效
+  function renderHiddenRow(type, id, kind, createdAt) {
     var row = el('div', 'gm-hidden-row');
     row.appendChild(el('span', 'gm-hidden-text',
       kind === 'global' ? '已处理隐藏（全员不可见）' : '已忽略（仅你自己不可见）'));
-    var undo = el('button', 'btn-mini', '撤销');
-    undo.type = 'button';
-    undo.onclick = function () {
-      sb.rpc('clear_content_hide', { p_target_type: type, p_target_id: id, p_kind: kind })
-        .then(function (r) { if (r.error) throw r.error; rerenderCurrentAdminTab(); })
-        .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
-    };
-    row.appendChild(undo);
+    if (isUndoExpired(createdAt)) {
+      row.appendChild(el('span', 'gm-hidden-expired', '已超 10 分钟，不可撤销'));
+    } else {
+      var undo = el('button', 'btn-mini', '撤销');
+      undo.type = 'button';
+      undo.onclick = function () {
+        sb.rpc('clear_content_hide', { p_target_type: type, p_target_id: id, p_kind: kind })
+          .then(function (r) { if (r.error) throw r.error; rerenderCurrentAdminTab(); })
+          .catch(function (e) {
+            var m = (e && (e.message || '')) || '';
+            if (/UNDO_WINDOW_EXPIRED/.test(m)) toast('已超过 10 分钟撤销窗口');
+            else toast('撤销失败：' + friendlyError(e));
+          });
+      };
+      row.appendChild(undo);
+    }
     return row;
   }
 
@@ -3077,8 +3094,9 @@
           box.innerHTML = '';
           if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
           rows.forEach(function (rep) {
-            var hidden = sets.global[rep.id] ? 'global' : (sets.my[rep.id] ? 'ignore' : null);
-            if (hidden) box.appendChild(renderHiddenRow('forbidden_report', rep.id, hidden));
+            var hideInfo = sets.global[rep.id] || sets.my[rep.id] || null;
+            var hidden = hideInfo ? hideInfo.kind : null;
+            if (hidden) box.appendChild(renderHiddenRow('forbidden_report', rep.id, hidden, hideInfo.created_at));
             else box.appendChild(renderReportCard(rep, 'admin'));
           });
         });
@@ -3104,8 +3122,9 @@
           box.innerHTML = '';
           if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无用户举报</div>'; return; }
           rows.forEach(function (rep) {
-            var hidden = sets.global[rep.id] ? 'global' : (sets.my[rep.id] ? 'ignore' : null);
-            if (hidden) box.appendChild(renderHiddenRow('user_report', rep.id, hidden));
+            var hideInfo = sets.global[rep.id] || sets.my[rep.id] || null;
+            var hidden = hideInfo ? hideInfo.kind : null;
+            if (hidden) box.appendChild(renderHiddenRow('user_report', rep.id, hidden, hideInfo.created_at));
             else box.appendChild(renderUserReportCard(rep));
           });
         });
@@ -3174,8 +3193,9 @@
           var shown = 0;
           rows.forEach(function (w) {
             if (shown >= CAP) return;
-            var hidden = sets.global[w.id] ? 'global' : (sets.my[w.id] ? 'ignore' : null);
-            if (hidden) box.appendChild(renderHiddenRow('word_warning', w.id, hidden));
+            var hideInfo = sets.global[w.id] || sets.my[w.id] || null;
+            var hidden = hideInfo ? hideInfo.kind : null;
+            if (hidden) box.appendChild(renderHiddenRow('word_warning', w.id, hidden, hideInfo.created_at));
             else box.appendChild(renderWordLogCard(w, 'admin'));
             shown++;
           });
