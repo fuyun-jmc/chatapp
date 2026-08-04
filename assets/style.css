@@ -894,6 +894,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* 会话内「管理员」违禁接收卡片 */
 /* 侧边栏「违禁接收」入口（仅管理员 / 开发者可见，位于搜索框上方） */
 .side-admin-entry {
+  position: relative;
   display: flex; align-items: center; gap: 8px;
   margin: 0 14px; padding: 9px 12px;
   background: linear-gradient(90deg, rgba(79,124,247,.14), rgba(79,124,247,.06));
@@ -904,6 +905,20 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .side-admin-entry .sae-title { font-size: 13px; font-weight: 600; color: var(--brand); }
 .side-admin-entry .sae-sub { font-size: 11px; color: var(--text-2); margin-left: auto; }
 .side-admin-entry:hover { background: rgba(79,124,247,.2); }
+.side-admin-entry .sae-badge {
+  display: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: #ff4d4f;
+  border-radius: 999px;
+  margin-left: -4px;
+}
+.side-admin-entry .sae-badge.show { display: inline-block; }
 
 /* GM 称号管理 */
 .gm-tabs { display: flex; flex-wrap: wrap; margin: 0 8px; }
