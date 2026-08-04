@@ -4957,6 +4957,7 @@
     var list = (state.active.memberIds || []).map(function (uid) {
       return { id: uid, p: state.profilesById[uid] || { nickname: '用户', phone: '' } };
     }).filter(function (it) {
+      if (it.id === state.uid) return false; // 不能举报自己
       if (!q) return true;
       var n = (it.p.nickname || '').toLowerCase();
       var ph = (it.p.phone || '').toLowerCase();
@@ -5007,6 +5008,10 @@
     if (!state.reportTargets || state.reportTargets.length === 0) {
       err.hidden = false; err.textContent = '请选择要举报的' + (REPORT_LABEL[state.reportType] || '对象'); return;
     }
+    // 兜底：禁止举报自己（群聊选中自己、或昵称类型选中自己时拦截）
+    if (state.reportUserId && state.reportUserId === state.uid) {
+      err.hidden = false; err.textContent = '不能举报自己'; return;
+    }
     var isGroup = state.active.type === 'group';
     var reportedId = state.reportUserId || state.active.id;
     var reportedKind = state.reportUserId ? 'user' : (isGroup ? 'group' : 'user');
@@ -5034,7 +5039,11 @@
           if (r.error) throw r.error;
           doOne(idx + 1);
         })
-        .catch(function (e) { toast('举报失败：' + friendlyError(e)); });
+        .catch(function (e) {
+          var msg = (e && (e.message || '')) || '';
+          if (/CANNOT_REPORT_SELF/.test(msg)) { toast('不能举报自己'); return; }
+          toast('举报失败：' + friendlyError(e));
+        });
     }
     doOne(0);
   }
