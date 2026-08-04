@@ -2278,6 +2278,7 @@
   }
 
   function openGmPanel() {
+    state.gmPanelOpen = true;
     $('gm-search-input').value = '';
     $('gm-results').innerHTML = '';
     $('gm-detail').hidden = true;
@@ -2286,7 +2287,7 @@
     try { $('gm-search-input').focus(); } catch (e) {}
   }
 
-  function closeGm() { hideModal('gm-panel'); }
+  function closeGm() { state.gmPanelOpen = false; hideModal('gm-panel'); }
 
   function gmSearch() {
     var q = $('gm-search-input').value.trim();
@@ -2543,6 +2544,93 @@
       .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
   }
 
+  // GM 后台「用户举报」列表（绝对管理员口令鉴权，留存、可搜索、不可删除、只读）
+  function openGmUserReportsTab() {
+    var box = $('gm-userreport-list');
+    if (box) box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('gm_list_user_reports', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.gmUserReportsAll = r.data || [];
+        renderGmUserReports();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        var box2 = $('gm-userreport-list');
+        if (!box2) return;
+        box2.innerHTML = /GM_AUTH_FAIL/.test(m)
+          ? '<div class="gm-empty">口令已失效，请重新进入</div>'
+          : '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  function renderGmUserReports() {
+    var box = $('gm-userreport-list');
+    if (!box) return;
+    var kw = ((($('gm-userreport-search') && $('gm-userreport-search').value) || '').trim().toLowerCase());
+    var rows = state.gmUserReportsAll || [];
+    if (kw) {
+      rows = rows.filter(function (rep) {
+        var fields = [rep.reporter_nickname, rep.reporter_phone, rep.reported_name, rep.reported_kind, rep.target_ref, rep.detail, rep.report_type];
+        return fields.some(function (f) { return (f || '').toLowerCase().indexOf(kw) >= 0; });
+      });
+    }
+    box.innerHTML = '';
+    if (!rows.length) { box.innerHTML = '<div class="gm-empty">' + (kw ? '无匹配结果' : '暂无用户举报') + '</div>'; return; }
+    var CAP = 200;
+    var shown = 0;
+    rows.forEach(function (rep) {
+      if (shown >= CAP) return;
+      box.appendChild(renderUserReportCardGm(rep));
+      shown++;
+    });
+    if (rows.length > CAP) {
+      box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
+    }
+  }
+
+  // 用户举报卡片（GM 后台只读版：展示内容 + 图片预览，无禁言 / 不禁言 / 忽略 / 删除按钮，保证留存）
+  function renderUserReportCardGm(rep) {
+    var card = el('div', 'gm-report');
+    var head = el('div', 'gm-report-head');
+    var name = el('div', 'gm-report-name',
+      (rep.reporter_nickname || '(匿名)') + ' 举报 ' + (rep.reported_name || (rep.reported_kind === 'group' ? '群聊' : '用户')));
+    var badge = el('div', 'gm-report-badge' + (rep.status === 'handled' ? ' done' : ''),
+      rep.status === 'handled' ? '已处理' : '待处理');
+    head.appendChild(name); head.appendChild(badge);
+    card.appendChild(head);
+
+    var typeTxt = { nickname: '昵称', message: '信息', video: '视频', image: '图片', other: '其他' }[rep.report_type] || rep.report_type;
+    card.appendChild(el('div', 'gm-report-sub',
+      '类型：' + typeTxt + ' · 提交时间：' + (rep.created_at ? rep.created_at.replace('T', ' ').slice(0, 16) : '—')));
+
+    if (rep.reporter_phone) card.appendChild(el('div', 'gm-report-sub', '举报人手机号：' + rep.reporter_phone));
+    if (rep.target_ref)   card.appendChild(el('div', 'gm-report-line', '被举报内容：' + rep.target_ref));
+    if (rep.detail)       card.appendChild(el('div', 'gm-report-line', '补充说明：' + rep.detail));
+
+    if (rep.file_path) {
+      var isVid = rep.report_type === 'video' || /\.(mp4|webm|mov|ogg|m4v)$/i.test(rep.file_path || '');
+      var media = el('div', 'gm-report-media');
+      var thumb = document.createElement(isVid ? 'video' : 'img');
+      if (isVid) { thumb.controls = true; thumb.preload = 'metadata'; thumb.playsInline = true; }
+      else { thumb.alt = '举报图片'; thumb.loading = 'lazy'; }
+      thumb.className = 'report-thumb';
+      media.appendChild(thumb);
+      card.appendChild(media);
+      signedUrl(rep.file_path).then(function (u) {
+        if (!u) return;
+        if (isVid) {
+          thumb.src = u;
+          thumb.onclick = function (e) { e.stopPropagation(); openReportPreview(u, true); };
+        } else {
+          thumb.src = u;
+          thumb.onclick = function () { openReportPreview(u, false); };
+        }
+      });
+    }
+    return card;
+  }
+
   // ---------- GM 问题反馈列表 ----------
   function openGmFeedbackTab() {
     var box = $('gm-feedback');
@@ -2591,6 +2679,7 @@
   }
 
   // 违禁词记录：列出「任意」被系统检测出的违禁词（含发给陌生人 / 群聊），不限于好友
+  // GM 后台留存、可搜索、不可删除（仅批量禁言，不隐藏记录）
   function openGmWordLogTab() {
     var box = $('gm-word-log-list');
     if (!box) return;
@@ -2598,23 +2687,37 @@
     sb.rpc('gm_list_word_log', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) return; // 兼容旧部署：函数不存在时静默
-        var rows = r.data || [];
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; return; }
-        box.innerHTML = '';
-        var CAP = 100;
-        var shown = 0;
-        rows.forEach(function (w) {
-          if (shown >= CAP) return;
-          box.appendChild(renderWordLogCard(w));
-          shown++;
-        });
-        if (rows.length > CAP) {
-          box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
-        }
-        var saG = $('gm-wl-selectall'); if (saG) saG.checked = false;
-        updateWlCount('gm');
+        state.gmWordLogAll = r.data || [];
+        renderGmWordLog();
       })
-      .catch(function () { box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; });
+      .catch(function () { var b = $('gm-word-log-list'); if (b) b.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>'; });
+  }
+
+  function renderGmWordLog() {
+    var box = $('gm-word-log-list');
+    if (!box) return;
+    var kw = ((($('gm-word-log-search') && $('gm-word-log-search').value) || '').trim().toLowerCase());
+    var rows = state.gmWordLogAll || [];
+    if (kw) {
+      rows = rows.filter(function (w) {
+        var fields = [w.nickname, w.phone, w.word, w.content, w.peer_name];
+        return fields.some(function (f) { return (f || '').toLowerCase().indexOf(kw) >= 0; });
+      });
+    }
+    box.innerHTML = '';
+    if (!rows.length) { box.innerHTML = '<div class="gm-empty">' + (kw ? '无匹配结果' : '暂无违禁词检测记录') + '</div>'; return; }
+    var CAP = 100;
+    var shown = 0;
+    rows.forEach(function (w) {
+      if (shown >= CAP) return;
+      box.appendChild(renderWordLogCard(w));
+      shown++;
+    });
+    if (rows.length > CAP) {
+      box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
+    }
+    var saG = $('gm-wl-selectall'); if (saG) saG.checked = false;
+    updateWlCount('gm');
   }
 
   // 单条违禁词检测卡片（GM 后台与「管理员」面板共用）
@@ -2732,9 +2835,15 @@
       : function (uid) { return sb.rpc('admin_mute_user', { p_user_id: uid, p_days: d, p_hours: h, p_minutes: m }); };
     var tasks = [];
     sel.uids.forEach(function (uid) { tasks.push(function () { return muteFn(uid); }); });
-    sel.ids.forEach(function (id) { tasks.push(function () { return sb.rpc('set_content_hide', { p_target_type: 'word_warning', p_target_id: id, p_kind: 'global' }); }); });
+    // 仅「管理员」面板隐藏记录；GM 后台为留存日志，禁言但不隐藏，记录始终可见
+    if (panel !== 'gm') {
+      sel.ids.forEach(function (id) { tasks.push(function () { return sb.rpc('set_content_hide', { p_target_type: 'word_warning', p_target_id: id, p_kind: 'global' }); }); });
+    }
     seqRun(tasks,
-      function () { toast('已批量禁言 ' + sel.uids.length + ' 人，并隐藏 ' + sel.ids.length + ' 条记录'); reloadWl(panel); },
+      function () {
+        toast('已批量禁言 ' + sel.uids.length + ' 人' + (panel === 'gm' ? '（记录已留存）' : ('，并隐藏 ' + sel.ids.length + ' 条记录')));
+        reloadWl(panel);
+      },
       function (e) {
         var msg = (e && (e.message || '')) || '';
         if (/GM_AUTH_FAIL/.test(msg)) toast('口令已失效，请重新进入');
@@ -3037,17 +3146,43 @@
 
   // ---------- 称号管理（GM 后台） ----------
   function gmSwitchTab(tab) {
-    var map = { users: 'gm-users', reports: 'gm-reports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback', wordlog: 'gm-word-log' };
-    ['users', 'reports', 'titles', 'groups', 'appeals', 'feedback', 'wordlog'].forEach(function (k) {
+    state.gmCurrentTab = tab;
+    var map = { users: 'gm-users', reports: 'gm-reports', userreports: 'gm-userreports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback', wordlog: 'gm-word-log' };
+    ['users', 'reports', 'userreports', 'titles', 'groups', 'appeals', 'feedback', 'wordlog'].forEach(function (k) {
       var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
     if (tab === 'titles') openTitleTab();
     else if (tab === 'reports') openReportsTab();
+    else if (tab === 'userreports') openGmUserReportsTab();
     else if (tab === 'groups') openGmGroupsTab();
     else if (tab === 'appeals') openGmAppealsTab();
     else if (tab === 'feedback') openGmFeedbackTab();
     else if (tab === 'wordlog') openGmWordLogTab();
+  }
+
+  // 每日 00:00 自动刷新当前打开的 GM 看板（除手动刷新外，每隔一天自动刷新一次）
+  function refreshGmCurrentTab() {
+    if (state.gmPanelOpen !== true) return;
+    var tab = state.gmCurrentTab;
+    if (tab === 'reports') openReportsTab();
+    else if (tab === 'userreports') openGmUserReportsTab();
+    else if (tab === 'wordlog') openGmWordLogTab();
+    else if (tab === 'appeals') openGmAppealsTab();
+  }
+
+  function scheduleDailyRefresh() {
+    if (state.dailyTimer) { clearTimeout(state.dailyTimer); state.dailyTimer = null; }
+    if (state.dailyInterval) { clearInterval(state.dailyInterval); state.dailyInterval = null; }
+    var now = new Date();
+    // 下一个自然日 00:00（today 24:00 = tomorrow 00:00）
+    var next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 24, 0, 0, 0);
+    var ms = next - now;
+    if (ms < 1000) ms = 1000;
+    state.dailyTimer = setTimeout(function () {
+      refreshGmCurrentTab();
+      state.dailyInterval = setInterval(refreshGmCurrentTab, 24 * 3600 * 1000);
+    }, ms);
   }
 
   // 渲染单条违规上报卡片（GM 后台与「管理员」面板共用）
@@ -3096,24 +3231,40 @@
     return card;
   }
 
-  // GM 后台「违规上报」列表
+  // GM 后台「违规上报」列表（留存、可搜索、不可删除）
   function openReportsTab() {
     var box = $('gm-report-list');
-    box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    if (box) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_reports', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
-        var rows = r.data || [];
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无违规上报</div>'; return; }
-        box.innerHTML = '';
-        rows.forEach(function (rep) { box.appendChild(renderReportCard(rep, 'gm')); });
+        state.gmReportsAll = r.data || [];
+        renderGmReports();
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        box.innerHTML = /GM_AUTH_FAIL/.test(m)
+        var box2 = $('gm-report-list');
+        if (!box2) return;
+        box2.innerHTML = /GM_AUTH_FAIL/.test(m)
           ? '<div class="gm-empty">口令已失效，请重新进入</div>'
           : '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  function renderGmReports() {
+    var box = $('gm-report-list');
+    if (!box) return;
+    var kw = ((($('gm-report-search') && $('gm-report-search').value) || '').trim().toLowerCase());
+    var rows = state.gmReportsAll || [];
+    if (kw) {
+      rows = rows.filter(function (rep) {
+        var fields = [rep.nickname, rep.phone, rep.last_content, rep.last_peer_name];
+        return fields.some(function (f) { return (f || '').toLowerCase().indexOf(kw) >= 0; });
+      });
+    }
+    box.innerHTML = '';
+    if (!rows.length) { box.innerHTML = '<div class="gm-empty">' + (kw ? '无匹配结果' : '暂无违规上报') + '</div>'; return; }
+    rows.forEach(function (rep) { box.appendChild(renderReportCard(rep, 'gm')); });
   }
 
   // ============================================================
@@ -4401,25 +4552,22 @@
   $('gm-tab-appeals').addEventListener('click', function () { gmSwitchTab('appeals'); });
   $('gm-tab-feedback').addEventListener('click', function () { gmSwitchTab('feedback'); });
   $('gm-tab-wordlog').addEventListener('click', function () { gmSwitchTab('wordlog'); });
+  $('gm-tab-userreports').addEventListener('click', function () { gmSwitchTab('userreports'); });
+  // 各看板「刷新」按钮（手动刷新）
+  $('gm-report-refresh').addEventListener('click', openReportsTab);
+  $('gm-userreport-refresh').addEventListener('click', openGmUserReportsTab);
   $('gm-word-log-refresh').addEventListener('click', openGmWordLogTab);
-  $('gm-word-log-clear').addEventListener('click', function () {
-    if (!window.confirm('确认清空全部违禁词检测记录？此操作不可恢复。')) return;
-    this.disabled = true;
-    sb.rpc('gm_clear_word_log', { p_pwd: gmPwd })
-      .then(function (r) {
-        if (r.error) throw r.error;
-        var n = (r.data === null || r.data === undefined) ? 0 : (r.data || 0);
-        toast('已清空违禁词记录' + (n ? ('（' + n + ' 条）') : ''));
-        openGmWordLogTab();
-      })
-      .catch(function (e) {
-        var m = (e && (e.message || '')) || '';
-        if (/GM_AUTH_FAIL/.test(m)) toast('口令已失效，请重新进入');
-        else toast('清空失败：' + friendlyError(e));
-      })
-      .then(function () { this.disabled = false; }.bind(this));
-  });
+  $('gm-appeal-refresh').addEventListener('click', openGmAppealsTab);
+  // 各看板搜索框（输入即过滤，模糊匹配）
+  function bindSearch(id, fn) { var e = $(id); if (e) e.addEventListener('input', fn); }
+  bindSearch('gm-report-search', renderGmReports);
+  bindSearch('gm-userreport-search', renderGmUserReports);
+  bindSearch('gm-word-log-search', renderGmWordLog);
+  bindSearch('gm-appeal-search', renderGmAppeals);
+  // 注意：gm-word-log-clear 按钮已从 HTML 移除（GM 后台为留存日志，不可清空/删除）
   bindWlBatch('gm');
+  // 每日 00:00 自动刷新 GM 看板（即使面板当时关闭，定时器也常驻，面板打开时按当前 tab 刷新）
+  scheduleDailyRefresh();
   $('gm-group-search-btn').addEventListener('click', gmSearchGroups);
   $('gm-group-search-input').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') gmSearchGroups(); });
   $('gm-title-new-btn').addEventListener('click', function () { openTitleForm(); });
