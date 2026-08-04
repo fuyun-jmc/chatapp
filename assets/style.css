@@ -239,6 +239,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .online-dot.online { background: var(--ok); }
 .online-dot.offline { background: #c4c9d2; }
+/* 开发者专属头像框把头像切成圆形，状态点仍贴右下角会被裁掉，往里移 */
+.avatar.dev-frame .online-dot { right: 5px; bottom: 5px; }
 .avatar.sm { width: 32px; height: 32px; flex-basis: 32px; border-radius: 9px; font-size: 13px; }
 .avatar.lg { width: 76px; height: 76px; flex-basis: 76px; border-radius: 20px; font-size: 28px; }
 .avatar-img { position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
