@@ -2767,6 +2767,105 @@
     });
   }
 
+  // ---------- 用户举报：多选 + 批量禁言 / 不禁言 / 删除 ----------
+  function collectCheckedUr() {
+    var list = $('admin-userreport-list');
+    var ids = [], uids = [], count = 0;
+    if (list) {
+      var boxes = list.querySelectorAll('.ur-check');
+      for (var i = 0; i < boxes.length; i++) {
+        var b = boxes[i];
+        if (!b.checked) continue;
+        count++;
+        var id = b.getAttribute('data-id'); if (id) ids.push(id);
+        var u = b.getAttribute('data-uid'); if (u && uids.indexOf(u) < 0) uids.push(u);
+      }
+    }
+    return { ids: ids, uids: uids, count: count };
+  }
+
+  function updateUrCount() {
+    var sel = collectCheckedUr();
+    var c = $('admin-ur-count');
+    if (c) c.textContent = '已选 ' + sel.count + ' 项';
+  }
+
+  function bindUrBatch() {
+    var selAll = $('admin-ur-selectall');
+    var list = $('admin-userreport-list');
+    if (selAll) selAll.addEventListener('change', function () {
+      var boxes = list.querySelectorAll('.ur-check');
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = this.checked;
+      updateUrCount();
+    });
+    if (list) list.addEventListener('change', function () { updateUrCount(); });
+    var mute = $('admin-ur-mute');   if (mute)   mute.addEventListener('click', batchUrMute);
+    var nomute = $('admin-ur-nomute'); if (nomute) nomute.addEventListener('click', batchUrNoMute);
+    var del = $('admin-ur-del');     if (del)     del.addEventListener('click', batchUrDelete);
+  }
+
+  // 批量禁言：禁言每个去重后的「被举报用户」（仅 user 类），并把这些举报标记已处理
+  function batchUrMute() {
+    var sel = collectCheckedUr();
+    if (!sel.ids.length) { toast('请先勾选要禁言的举报'); return; }
+    var d = parseInt($('admin-ur-days').value, 10) || 0;
+    var h = parseInt($('admin-ur-hours').value, 10) || 0;
+    var m = parseInt($('admin-ur-mins').value, 10) || 0;
+    var total = d * 1440 + h * 60 + m;
+    if (total < 1) { toast('请至少填写 1 分钟禁言时长'); return; }
+    if (total > 28800) { toast('禁言时长上限为 20 天'); return; }
+    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条举报执行「禁言」？将禁言 ' + sel.uids.length + ' 名被举报用户并标记处理。')) return;
+    var tasks = [];
+    sel.uids.forEach(function (uid) {
+      tasks.push(function () { return sb.rpc('admin_mute_user', { p_user_id: uid, p_days: d, p_hours: h, p_minutes: m }); });
+    });
+    sel.ids.forEach(function (id) {
+      tasks.push(function () { return sb.rpc('resolve_user_report', { p_report_id: id, p_handled: true }); });
+    });
+    seqRun(tasks,
+      function () { toast('已禁言 ' + sel.uids.length + ' 人，并标记 ' + sel.ids.length + ' 条举报为已处理'); openUserReports(); loadAllUnread(); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('批量禁言失败：' + friendlyError(e));
+      });
+  }
+
+  // 批量不禁言：把选中举报标记为已处理（不执行禁言）
+  function batchUrNoMute() {
+    var sel = collectCheckedUr();
+    if (!sel.ids.length) { toast('请先勾选举报'); return; }
+    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条举报标记为「不禁言」（标记已处理，不执行禁言）？')) return;
+    var tasks = [];
+    sel.ids.forEach(function (id) {
+      tasks.push(function () { return sb.rpc('resolve_user_report', { p_report_id: id, p_handled: true }); });
+    });
+    seqRun(tasks,
+      function () { toast('已标记 ' + sel.ids.length + ' 条举报为已处理（不禁言）'); openUserReports(); loadAllUnread(); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('操作失败：' + friendlyError(e));
+      });
+  }
+
+  // 批量删除：按 id 数组删除 user_reports 记录
+  function batchUrDelete() {
+    var sel = collectCheckedUr();
+    if (!sel.ids.length) { toast('请先勾选要删除的举报'); return; }
+    if (!window.confirm('确认删除选中的 ' + sel.ids.length + ' 条用户举报？此操作不可恢复。')) return;
+    sb.rpc('admin_delete_user_report', { p_ids: sel.ids }).then(function (r) {
+      if (r.error) throw r.error;
+      var n = (r.data === null || r.data === undefined) ? sel.ids.length : (r.data || 0);
+      toast('已删除 ' + n + ' 条用户举报');
+      openUserReports(); loadAllUnread();
+    }).catch(function (e) {
+      var msg = (e && (e.message || '')) || '';
+      if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+      else toast('删除失败：' + friendlyError(e));
+    });
+  }
+
   function gmSearchGroups() {
     var q = $('gm-group-search-input').value.trim();
     var box = $('gm-group-results');
@@ -3519,7 +3618,7 @@
         var rows = r.data || [];
         return loadHideSets('user_report').then(function (sets) {
           box.innerHTML = '';
-          if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无用户举报</div>'; return; }
+          if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无用户举报</div>'; var saE = $('admin-ur-selectall'); if (saE) saE.checked = false; updateUrCount(); return; }
           rows.forEach(function (rep) {
             var hideInfo = sets.global[rep.id] || sets.my[rep.id] || null;
             var hidden = hideInfo ? hideInfo.kind : null;
@@ -3528,6 +3627,8 @@
             if (hidden) box.appendChild(renderHiddenRow('user_report', rep.id, hidden, hideInfo.created_at));
             else box.appendChild(renderUserReportCard(rep));
           });
+          var saU = $('admin-ur-selectall'); if (saU) saU.checked = false;
+          updateUrCount();
         });
       })
       .catch(function (e) {
@@ -3545,6 +3646,16 @@
 
   function renderUserReportCard(rep) {
     var card = el('div', 'gm-report');
+    // 多选勾选框（批量禁言 / 不禁言 / 删除用）
+    var selRow = el('div', 'wl-check-row');
+    var cb = el('input');
+    cb.type = 'checkbox';
+    cb.className = 'ur-check';
+    cb.setAttribute('data-id', rep.id || '');
+    if (rep.reported_kind === 'user' && rep.reported_id) cb.setAttribute('data-uid', rep.reported_id);
+    cb.title = '选择此举报';
+    selRow.appendChild(cb);
+    card.appendChild(selRow);
     var head = el('div', 'gm-report-head');
     var name = el('div', 'gm-report-name',
       (rep.reporter_nickname || '(匿名)') + ' 举报 ' + (rep.reported_name || (rep.reported_kind === 'group' ? '群聊' : '用户')));
@@ -4339,6 +4450,7 @@
       .then(function () { this.disabled = false; }.bind(this));
   });
   bindWlBatch('admin');
+  bindUrBatch();
 
   $('settings-avatar-btn').addEventListener('click', function () {
     $('settings-avatar-file').click();
