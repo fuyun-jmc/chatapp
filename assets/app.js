@@ -869,7 +869,7 @@
     var c = t.frameColor || '#ffd700';
     if (t.frameStyle === 'dev') {
       // 开发者专属：内白圈 + 彩色渐变环（多色叠加，普通称号无法配置） + 光晕
-      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px #7c4dff, 0 0 0 8px #22d3ee, 0 0 0 11px #3bff9e, 0 0 14px 5px #b04dff';
+      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 4px #7c4dff, 0 0 0 6px #22d3ee, 0 0 0 8px #3bff9e, 0 0 6px 1px #b04dff';
       if (av.classList) av.classList.add('dev-frame');
     }
     else if (t.frameStyle === 'solid') av.style.boxShadow = '0 0 0 4px ' + c;
