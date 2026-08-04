@@ -4779,13 +4779,34 @@
       return;
     }
     msgs.forEach(function (m) {
+      var isMedia = type === 'image' || type === 'video';
       var preview = m.kind === 'text' ? (m.content || '(空消息)')
                   : (type === 'image' ? '[图片]' : '[视频]') + (m.file_name ? ' ' + m.file_name : '');
       var meta = (m.created_at ? fmtTime(m.created_at) : '') + (m.sender_id === state.uid ? ' · 我' : ' · 对方');
-      var item = el('button', 'report-item', preview);
+      var item = el('button', 'report-item');
       item.type = 'button';
-      var mt = el('span', 'rt-meta', meta);
-      item.appendChild(mt);
+
+      var info = el('div', 'rt-info');
+      info.appendChild(el('div', 'rt-name', preview));
+      info.appendChild(el('span', 'rt-meta', meta));
+
+      if (isMedia && m.file_path) {
+        var previewWrap = el('div', 'rt-preview');
+        var thumb = document.createElement(type === 'video' ? 'video' : 'img');
+        if (type === 'video') { thumb.preload = 'metadata'; thumb.playsInline = true; }
+        previewWrap.appendChild(thumb);
+        previewWrap.onclick = function (e) {
+          e.stopPropagation();
+          signedUrl(m.file_path).then(function (u) {
+            if (!u) { toast('预览地址获取失败'); return; }
+            openReportPreview(u, type === 'video');
+          });
+        };
+        item.appendChild(previewWrap);
+        signedUrl(m.file_path).then(function (u) { if (u) thumb.src = u; });
+      }
+      item.appendChild(info);
+
       if (reportHasMid(m.id)) item.classList.add('sel');
       item.onclick = function () {
         if (reportHasMid(m.id)) {
