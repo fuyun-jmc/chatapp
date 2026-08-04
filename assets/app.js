@@ -695,9 +695,9 @@
     if (uid === state.uid) applySelfTitle();
     if (typeof renderConversations === 'function') renderConversations();
     if (state.active && state.active.type === 'friend' && state.active.id === uid) {
-      var av = $('chat-peer-avatar');
+      var av = $('peer-avatar');
       if (av) applyTitleFrame(av, uid);
-      var nm = $('chat-peer-name');
+      var nm = $('peer-name');
       if (nm) addTitleBadge(nm, uid);
     }
     if ($('group-info-modal') && $('group-info-modal').classList.contains('open')) {
@@ -4666,6 +4666,11 @@
       addOnlineDot(av, peer.id);
       applyTitleFrame(av, peer.id);
       addTitleBadge($('peer-name'), peer.id);
+      // 进入会话时若对方称号尚未加载，主动拉一次并在完成后刷新聊天头，
+      // 避免「初次打开聊天头不显示开发者框 / 称号实时同步后聊天头不更新」
+      if (!state.titlesMap || !state.titlesMap[peer.id]) {
+        reloadTitleFor(peer.id);
+      }
     }
 
     var rb = $('peer-remark-btn');
@@ -4724,6 +4729,9 @@
         // 记录当前会话所有发言者，供「称号实时同步」关心范围使用（群聊成员互相可见对方称号变化）
         rows.forEach(function (m) { if (m.sender_id) state.activeSenderIds[m.sender_id] = 1; });
         scrollBottom();
+        // 消息加载完成、titlesMap 已就绪，再次确认聊天头称号（兜底同步段过早渲染的情况）
+        var ha = $('peer-avatar'); if (ha) applyTitleFrame(ha, peer.id);
+        addTitleBadge($('peer-name'), peer.id);
         // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
         state.lastSeenTs = rows.reduce(function (mx, x) {
           var t = x.created_at ? new Date(x.created_at).getTime() : 0;
