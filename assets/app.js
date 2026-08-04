@@ -4947,7 +4947,7 @@
       updateReportTip();
       return;
     }
-    msgs.forEach(function (m) {
+    msgs.slice().reverse().forEach(function (m) {
       var isMedia = type === 'image' || type === 'video';
       var preview = m.kind === 'text' ? (m.content || '(空消息)')
                   : (type === 'image' ? '[图片]' : '[视频]') + (m.file_name ? ' ' + m.file_name : '');
