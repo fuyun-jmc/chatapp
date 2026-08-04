@@ -3871,6 +3871,14 @@
       renderReportTargets();
     });
   }
+  var rMemberSearch = $('report-member-search');
+  if (rMemberSearch) {
+    rMemberSearch.addEventListener('input', renderReportMemberSearch);
+    rMemberSearch.addEventListener('keyup', renderReportMemberSearch);
+  }
+  var rMemberClear = $('report-member-clear');
+  if (rMemberClear) rMemberClear.addEventListener('click', clearReportMember);
+
   $('mute-notice-appeal').addEventListener('click', function () {
     hideModal('mute-notice-modal');
     $('appeal-reason').value = '';
@@ -4219,7 +4227,7 @@
   }
 
   function loadGroupMemberProfiles(groupId) {
-    sb.from('group_members').select('user_id, profiles(id,nickname,avatar_path,phone)')
+    return sb.from('group_members').select('user_id, profiles(id,nickname,avatar_path,phone)')
       .eq('group_id', groupId)
       .then(function (r) {
         if (r.error) return;
@@ -4788,11 +4796,25 @@
     if (!state.active) return;
     state.reportType = null;
     state.reportTargets = [];
+    state.reportUserId = null;
+    state.reportUserName = '';
     var chips = document.querySelectorAll('#report-types .report-chip');
     for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
     $('report-targets').innerHTML = '<div class="gm-empty">请先选择举报类型</div>';
     $('report-detail').value = '';
     $('report-error').hidden = true;
+    // 群聊：显示“按成员筛选”，可单独举报某成员并只显示其消息
+    var mf = $('report-member-filter');
+    if (state.active.type === 'group') {
+      mf.hidden = false;
+      $('report-member-search').value = '';
+      $('report-member-list').innerHTML = '';
+      $('report-member-sel').hidden = true;
+      $('report-member-sel-name').textContent = '';
+      loadGroupMemberProfiles(state.active.id).then(function () { renderReportMemberSearch(); });
+    } else {
+      mf.hidden = true;
+    }
     showModal('report-modal');
   }
 
@@ -4813,12 +4835,13 @@
     var tip = $('report-target-tip');
     if (!tip) return;
     var n = state.reportTargets.length;
+    var scope = state.reportUserId ? ('（仅「' + state.reportUserName + '」）') : '';
     if (state.reportType === 'nickname') {
       tip.textContent = '点击「举报」即可提交该昵称/群名举报';
     } else if (n > 0) {
-      tip.textContent = '已选择 ' + n + ' 条' + (REPORT_LABEL[state.reportType] || '') + '，可继续勾选多条，点击「举报」一并提交';
+      tip.textContent = '已选择 ' + n + ' 条' + (REPORT_LABEL[state.reportType] || '') + scope + '，可继续勾选多条，点击「举报」一并提交';
     } else {
-      tip.textContent = '选择举报类型后，点击下方对应的聊天记录（可多选）：';
+      tip.textContent = '选择举报类型后，点击下方对应的聊天记录（可多选）' + scope + '：';
     }
   }
 
@@ -4831,7 +4854,12 @@
     state.reportTargets = [];
 
     if (type === 'nickname') {
-      var name = displayName(state.active);
+      var name;
+      if (state.reportUserId) {
+        name = state.reportUserName || (state.profilesById[state.reportUserId] && state.profilesById[state.reportUserId].nickname) || '用户';
+      } else {
+        name = displayName(state.active);
+      }
       var item = el('button', 'report-item sel', '「' + (name || '?') + '」的昵称/群名');
       item.type = 'button';
       state.reportTargets = [{ ref: name || '', meta: '', msgId: null, filePath: null }];
@@ -4842,13 +4870,15 @@
 
     var msgs = (state.activeMessages || []).filter(function (m) {
       if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return false;
+      if (state.reportUserId && m.sender_id !== state.reportUserId) return false; // 群聊按成员筛选
       if (type === 'message') return m.kind === 'text';
       if (type === 'image')  return m.kind === 'image';
       if (type === 'video')  return m.kind === 'video' || isVideoFile(m);
       return false;
     });
     if (!msgs.length) {
-      box.innerHTML = '<div class="gm-empty">当前聊天中没有可举报的' + (REPORT_LABEL[type] || '') + '</div>';
+      var emptyTip = state.reportUserId ? ('「' + state.reportUserName + '」') : '当前';
+      box.innerHTML = '<div class="gm-empty">' + emptyTip + '聊天中没有可举报的' + (REPORT_LABEL[type] || '') + '</div>';
       updateReportTip();
       return;
     }
@@ -4856,7 +4886,10 @@
       var isMedia = type === 'image' || type === 'video';
       var preview = m.kind === 'text' ? (m.content || '(空消息)')
                   : (type === 'image' ? '[图片]' : '[视频]') + (m.file_name ? ' ' + m.file_name : '');
-      var meta = (m.created_at ? fmtTime(m.created_at) : '') + (m.sender_id === state.uid ? ' · 我' : ' · 对方');
+      var senderName = state.active.type === 'group'
+        ? ((state.profilesById[m.sender_id] && state.profilesById[m.sender_id].nickname) || '成员')
+        : (m.sender_id === state.uid ? '我' : '对方');
+      var meta = (m.created_at ? fmtTime(m.created_at) : '') + ' · ' + senderName;
       var item = el('button', 'report-item');
       item.type = 'button';
 
@@ -4897,6 +4930,57 @@
     updateReportTip();
   }
 
+  // 群聊举报：按成员搜索并选中单一用户，选中后仅显示其发送的消息
+  function renderReportMemberSearch() {
+    var box = $('report-member-list');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!state.active || state.active.type !== 'group') return;
+    var q = ($('report-member-search').value || '').trim().toLowerCase();
+    var list = (state.active.memberIds || []).map(function (uid) {
+      return { id: uid, p: state.profilesById[uid] || { nickname: '用户', phone: '' } };
+    }).filter(function (it) {
+      if (!q) return true;
+      var n = (it.p.nickname || '').toLowerCase();
+      var ph = (it.p.phone || '').toLowerCase();
+      return n.indexOf(q) >= 0 || ph.indexOf(q) >= 0;
+    });
+    if (!list.length) {
+      box.appendChild(el('div', 'gm-empty', q ? '未找到匹配成员' : '群暂无成员'));
+      return;
+    }
+    list.forEach(function (it) {
+      var item = el('button', 'report-member-item');
+      item.type = 'button';
+      item.appendChild(el('div', 'rm-name', it.p.nickname || '用户'));
+      if (it.p.phone) item.appendChild(el('div', 'rm-ph', it.p.phone));
+      item.onclick = function () { selectReportMember(it.id, it.p.nickname || '用户'); };
+      box.appendChild(item);
+    });
+  }
+
+  function selectReportMember(uid, name) {
+    state.reportUserId = uid;
+    state.reportUserName = name;
+    $('report-member-search').value = '';
+    $('report-member-list').innerHTML = '';
+    $('report-member-sel').hidden = false;
+    $('report-member-sel-name').textContent = name;
+    state.reportTargets = [];
+    renderReportTargets();
+  }
+
+  function clearReportMember() {
+    state.reportUserId = null;
+    state.reportUserName = '';
+    $('report-member-sel').hidden = true;
+    $('report-member-sel-name').textContent = '';
+    $('report-member-search').value = '';
+    renderReportMemberSearch();
+    state.reportTargets = [];
+    renderReportTargets();
+  }
+
   function submitReport() {
     var err = $('report-error');
     if (!state.active) { err.hidden = false; err.textContent = '未进入任何聊天'; return; }
@@ -4907,6 +4991,8 @@
       err.hidden = false; err.textContent = '请选择要举报的' + (REPORT_LABEL[state.reportType] || '对象'); return;
     }
     var isGroup = state.active.type === 'group';
+    var reportedId = state.reportUserId || state.active.id;
+    var reportedKind = state.reportUserId ? 'user' : (isGroup ? 'group' : 'user');
     var detail = ($('report-detail').value || '').trim();
     var total = state.reportTargets.length;
 
@@ -4919,8 +5005,8 @@
       }
       var t = state.reportTargets[idx];
       var payload = {
-        p_reported_id: state.active.id,
-        p_reported_kind: isGroup ? 'group' : 'user',
+        p_reported_id: reportedId,
+        p_reported_kind: reportedKind,
         p_report_type: state.reportType,
         p_target_ref: t.ref + (t.meta ? '  (' + t.meta + ')' : ''),
         p_file_path: t.filePath || null,
