@@ -2998,8 +2998,8 @@
         state.hasAdminTitle = names.indexOf('管理员') >= 0;
         updateAdminCard();
         // 启动「违禁词记录」未读数轮询（右上角数字提示）
-        if (state.isAdmin) { startWordLogUnreadPoller(); loadWordLogUnread(); }
-        else { stopWordLogUnreadPoller(); updateWordLogBadge(0); }
+        if (state.isAdmin) { startWordLogUnreadPoller(); loadWordLogUnread(); loadUserReportUnread(); }
+        else { stopWordLogUnreadPoller(); updateWordLogBadge(0); updateUserReportBadge(0); }
 
         // 兜底回填自己的强制称号槽位，保证右上角一定能看到徽标
         function pick(n) {
@@ -3173,6 +3173,12 @@
           refreshWordLogList().then(function () { markWordLogReadAll(); });
         }
       });
+      loadUserReportUnread().then(function () {
+        // 正在查看「用户举报」tab 时，实时刷新列表内容
+        if (adminTabCurrent === 'userreports') {
+          refreshUserReportList().then(function () { markUserReportReadAll(); });
+        }
+      });
     }, 30000);
   }
 
@@ -3188,6 +3194,42 @@
     return Promise.resolve(sb.rpc('admin_mark_word_log_read_all'))
       .then(function (r) { if (r.error) throw r.error; updateWordLogBadge(0); })
       .catch(function () { updateWordLogBadge(0); });
+  }
+
+  function updateUserReportBadge(n) {
+    var tabBadge = $('admin-tab-userreports-badge');
+    if (tabBadge) {
+      if (!n || n <= 0) {
+        tabBadge.textContent = '';
+        tabBadge.classList.remove('show');
+      } else {
+        tabBadge.textContent = n > 99 ? '99+' : String(n);
+        tabBadge.classList.add('show');
+      }
+    }
+  }
+
+  function loadUserReportUnread() {
+    if (!state.isAdmin) return Promise.resolve();
+    return Promise.resolve(sb.rpc('admin_count_user_report_unread'))
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var n = (r.data === null || r.data === undefined) ? 0 : Number(r.data);
+        updateUserReportBadge(n);
+        return n;
+      })
+      .catch(function () {
+        updateUserReportBadge(0);
+        return 0;
+      });
+  }
+
+  function markUserReportReadAll() {
+    if (!state.isAdmin) return Promise.resolve();
+    updateUserReportBadge(0);
+    return Promise.resolve(sb.rpc('admin_mark_user_report_read_all'))
+      .then(function (r) { if (r.error) throw r.error; updateUserReportBadge(0); })
+      .catch(function () { updateUserReportBadge(0); });
   }
 
   // 管理员称号「首次登录」公告：
@@ -3357,6 +3399,7 @@
         updateAdminCard();
         startWordLogUnreadPoller();
         loadWordLogUnread();
+        loadUserReportUnread();
         $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         showModal('admin-panel');
         openAdminReports();
@@ -3393,12 +3436,11 @@
   }
 
   // 用户手动举报（昵称/信息/视频/图片）→ 管理员 / 开发者管理页展示
-  function openUserReports() {
-    adminTabCurrent = 'userreports';
+  function refreshUserReportList() {
     var box = $('admin-userreport-list');
-    if (!box) return;
+    if (!box) return Promise.resolve();
     box.innerHTML = '<div class="gm-empty">加载中…</div>';
-    sb.rpc('list_user_reports')
+    return Promise.resolve(sb.rpc('list_user_reports'))
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
@@ -3420,6 +3462,12 @@
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  function openUserReports() {
+    adminTabCurrent = 'userreports';
+    markUserReportReadAll();
+    refreshUserReportList();
   }
 
   function renderUserReportCard(rep) {
@@ -5793,6 +5841,18 @@
         }
         // 瞬时 toast 提示
         toast('收到新的违禁词记录：' + (w.word || '未知'));
+      })
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'user_reports'
+      }, function (payload) {
+        if (!state.isAdmin) return;
+        var r = payload.new;
+        if (!r) return;
+        loadUserReportUnread();
+        if (adminTabCurrent === 'userreports') {
+          refreshUserReportList().then(function () { markUserReportReadAll(); });
+        }
+        toast('收到新的用户举报');
       })
       .subscribe(function (status) {
         // 断线/超时时自动重连，避免实时推送永久失效
