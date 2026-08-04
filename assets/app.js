@@ -65,7 +65,8 @@
     devTitleRow: null,   // 最近一次查到的「开发者」称号行，用于隐藏开关即时切换展示
     profileTitleSig: {}, // uid -> 称号列签名（实时通道过滤用：仅称号变化才刷新）
     titleReloadTimer: {}, // uid -> 节流定时器，避免同一用户高频刷新
-    devHiddenMap: {}     // uid -> boolean，记录每位用户的 hide_dev_title（影响所有 viewer）
+    devHiddenMap: {},    // uid -> boolean，记录每位用户的 hide_dev_title（影响所有 viewer）
+    activeSenderIds: {}  // uid -> 1：当前会话（群聊含发言者）/ 群资料成员，称号变化需实时同步的人
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -599,6 +600,10 @@
         if (r.error) return;
         (r.data || []).forEach(function (t) {
           if (t.user_id !== uid) return;
+          // 用本次 RPC 返回的权威 hide_dev_title 更新缓存（在 isDevHidden 判断之前），
+          // 避免用旧缓存误把「取消隐藏」后的开发者框清空
+          if (!state.devHiddenMap) state.devHiddenMap = {};
+          state.devHiddenMap[uid] = !!t.hide_dev_title;
           var primary = t.title_id ? {
             titleId: t.title_id, titleName: t.title_name,
             frameColor: t.frame_color || '#ffd700', frameStyle: t.frame_style || 'ring'
@@ -656,7 +661,7 @@
             titleId: t.dev_title_id, titleName: t.dev_title_name,
             frameColor: t.dev_title_color || '#7c4dff', frameStyle: 'dev'
           } : null;
-          if (isDevHidden(t.user_id)) {
+          if (!!t.hide_dev_title) {
             dev = null;
             if (isDevSlot(primary)) primary = null;
             if (isDevSlot(primary2)) primary2 = null;
@@ -759,7 +764,7 @@
             frameStyle: 'dev'   // 开发者专属头像框，忽略 frame_style
           } : null;
           // 即便后端 get_profiles_titles 还是旧签名没过滤 hide_dev_title，前端也强制不展示
-          if (isDevHidden(t.user_id)) {
+          if (!!t.hide_dev_title) {
             dev = null;
             // 防止开发者称号被错误戴到自选槽位后仍显示
             if (isDevSlot(primary)) primary = null;
@@ -4342,6 +4347,7 @@
     list.innerHTML = '';
     $('group-member-count').textContent = g.memberIds.length;
     g.memberIds.forEach(function (uid) {
+      if (uid !== state.uid) state.activeSenderIds[uid] = 1;   // 群资料成员称号变化也实时同步
       var p = state.profilesById[uid] || { nickname: '用户', phone: '' };
       var li = el('li', 'member-item'); li.dataset.uid = uid;
       var av = el('div', 'avatar sm');
@@ -4633,6 +4639,7 @@
   function openChat(peer) {
     var isGroup = peer.type === 'group';
     state.active = peer;
+    state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
     // 注意：仅“收到消息”或“发送消息”才把会话前置（见下方发送处与实时接收处），
@@ -4714,6 +4721,8 @@
         state.activeMessages = rows.filter(function (m) {
           return !(m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0);
         });
+        // 记录当前会话所有发言者，供「称号实时同步」关心范围使用（群聊成员互相可见对方称号变化）
+        rows.forEach(function (m) { if (m.sender_id) state.activeSenderIds[m.sender_id] = 1; });
         scrollBottom();
         // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
         state.lastSeenTs = rows.reduce(function (mx, x) {
@@ -5033,6 +5042,7 @@
         if (state.activeMessages[i] && state.activeMessages[i].id === m.id) { dup = true; break; }
       }
       if (!dup) state.activeMessages.push(m);
+      if (m.sender_id) state.activeSenderIds[m.sender_id] = 1;
     }
     // 必须先渲染再动 DOM：本端已删除的消息返回 null，
     // 若先把空态提示删掉再 return，聊天区会变成彻底空白（一键清空后最易触发）
@@ -5561,6 +5571,8 @@
           }
         }
         if (!care && state.active && state.active.type === 'friend' && state.active.id === uid) care = true;
+        // 群聊 / 群资料里出现过的成员：其称号（含隐藏开关）变化也要实时同步给其他用户
+        if (!care && state.activeSenderIds && state.activeSenderIds[uid]) care = true;
         if (!care) return;
         // 仅当称号相关列或 hide_dev_title 发生变化才刷新（last_seen 等心跳直接忽略）
         var nsig = [nr.display_title_id, nr.display_title_id2, nr.admin_title_id, nr.dev_title_id, nr.hide_dev_title]
@@ -5626,6 +5638,7 @@
       // 群资料（群名 / 群图标 / 成员数）由群主单方修改，这里补拉一次让其他成员同步到
       loadGroups().catch(function () {});
       if (state.active) openChat(state.active);
+      loadDisplayTitles().catch(function () {});   // 重新可见时重拉可见用户称号，兜底实时推送丢失
       fillNewMessages();
     }
   });
