@@ -407,7 +407,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .member-item { display: flex; align-items: center; padding: 7px 4px; }
 .member-item .avatar { margin-right: 9px; }
 .member-item .info { flex: 1; min-width: 0; padding-left: 0; }
-.member-item .nm { font-size: 14px; font-weight: 500; }
+.member-item .nm { font-size: 14px; font-weight: 500; display: flex; flex-wrap: wrap; align-items: center; }
+.member-item .nm .title-badge { margin-top: 2px; margin-bottom: 2px; }
 .member-item .mini-ok, .member-item .mini-no { flex: 0 0 auto; margin-left: 6px; }
 .member-item .online-status { font-size: 12px; margin-top: 1px; }
 .member-item .online-status.on  { color: var(--ok); }
