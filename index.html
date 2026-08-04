@@ -728,6 +728,17 @@
       <div class="gm-report-list" id="admin-report-list"><div class="gm-empty">加载中…</div></div>
     </div>
     <div class="gm-userreports" id="admin-userreports" hidden>
+      <div class="gm-word-log-batch" id="admin-ur-batch">
+        <label class="wl-selall"><input type="checkbox" id="admin-ur-selectall">全选</label>
+        <span class="wl-dur-label">禁言时长</span>
+        <span class="wl-dur-unit">天</span><input type="number" class="gm-dur-input" id="admin-ur-days" min="0" max="20" value="1">
+        <span class="wl-dur-unit">时</span><input type="number" class="gm-dur-input" id="admin-ur-hours" min="0" max="23" value="0">
+        <span class="wl-dur-unit">分</span><input type="number" class="gm-dur-input" id="admin-ur-mins" min="0" max="59" value="0">
+        <button class="btn-mini" id="admin-ur-mute" type="button">批量禁言</button>
+        <button class="btn-mini btn-danger-mini" id="admin-ur-nomute" type="button">批量不禁言</button>
+        <button class="btn-mini btn-danger-mini" id="admin-ur-del" type="button">批量删除</button>
+        <span class="wl-count" id="admin-ur-count">已选 0 项</span>
+      </div>
       <div class="gm-report-list" id="admin-userreport-list"><div class="gm-empty">加载中…</div></div>
     </div>
     <div class="gm-word-log" id="admin-word-log" hidden>
@@ -870,7 +881,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.js?v=160"></script>
+<script src="assets/app.js?v=161"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
