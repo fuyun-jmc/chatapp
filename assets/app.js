@@ -122,27 +122,47 @@
     opts = opts || {};
     var name = opts.nickname || opts.phone || '?';
     var seed = opts.phone || name;
-    node.textContent = '';
+    // 保留右下角在线状态点：清空头像内容时跳过 .online-dot，
+    // 否则（尤其带图片头像）图片加载完成或重渲染会把状态点连带删掉，
+    // 表现为「隐藏称号后列表头像不显示在线状态圆点」
+    var dot = node.querySelector('.online-dot');
+    removeChildrenExcept(node, dot);
     node.style.background = colorOf(seed);
-    var old = node.querySelector('img');
-    domRemove(old);
     if (opts.avatarPath) {
       signedUrl(opts.avatarPath).then(function (url) {
-        if (!url) { node.textContent = initialOf(name); return; }
+        if (!url) { setAvatarText(node, dot, initialOf(name)); return; }
         var im = new Image();
         im.className = 'avatar-img';
         im.alt = name;
         im.onload = function () {
-          node.textContent = '';
+          var cur = node.querySelector('.online-dot');
+          removeChildrenExcept(node, cur);
           node.style.background = 'transparent';
-          node.appendChild(im);
+          if (cur && cur.parentNode === node) node.insertBefore(im, cur);
+          else node.appendChild(im);
+          if (cur && cur.parentNode !== node) node.appendChild(cur);
         };
-        im.onerror = function () { node.textContent = initialOf(name); };
+        im.onerror = function () { setAvatarText(node, node.querySelector('.online-dot'), initialOf(name)); };
         im.src = url;
       });
     } else {
-      node.textContent = initialOf(name);
+      setAvatarText(node, dot, initialOf(name));
     }
+  }
+
+  // 清空 node 的全部子节点，但保留 except（在线状态点）；若 except 被提前摘下则放回
+  function removeChildrenExcept(node, except) {
+    var c = node.childNodes, i;
+    for (i = c.length - 1; i >= 0; i--) {
+      if (c[i] === except) continue;
+      node.removeChild(c[i]);
+    }
+    if (except && except.parentNode !== node) node.appendChild(except);
+  }
+  function setAvatarText(node, dot, txt) {
+    removeChildrenExcept(node, dot);
+    node.appendChild(document.createTextNode(txt));
+    if (dot && dot.parentNode !== node) node.appendChild(dot);
   }
 
   // 群聊图标：有自定义图标则显示图片，否则回退到「群名首字 + 紫底」
