@@ -2701,7 +2701,7 @@
     if (c) c.textContent = '已选 ' + sel.count + ' 项';
   }
 
-  // 批量禁言：禁言每个去重后的违规用户，并把这些记录标记为「全局隐藏」
+  // 批量禁言：禁言每个去重后的违规用户，并把这些记录标记为「仅自己隐藏」（个人端，其他用户不变）
   function batchWlMute(panel) {
     var sel = collectCheckedWl(panel);
     if (!sel.ids.length) { toast('请先勾选要禁言的记录'); return; }
@@ -2712,7 +2712,7 @@
     var total = d * 1440 + h * 60 + m;
     if (total < 1) { toast('请至少填写 1 分钟禁言时长'); return; }
     if (total > 28800) { toast('禁言时长上限为 20 天'); return; }
-    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条记录执行「禁言」？将禁言 ' + sel.uids.length + ' 名用户并隐藏这些记录。')) return;
+    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条记录执行「禁言」？将禁言 ' + sel.uids.length + ' 名用户，并对所有管理员/开发者隐藏这些记录。')) return;
     var muteFn = (panel === 'gm')
       ? function (uid) { return sb.rpc('gm_mute_user', { p_pwd: gmPwd, p_user_id: uid, p_days: d, p_hours: h, p_minutes: m }); }
       : function (uid) { return sb.rpc('admin_mute_user', { p_user_id: uid, p_days: d, p_hours: h, p_minutes: m }); };
@@ -2729,11 +2729,11 @@
       });
   }
 
-  // 批量不禁言：把选中记录标记为「全局隐藏」（不再提示，等价于逐条点「不禁言」）
+  // 批量不禁言：把选中记录标记为「全局隐藏」（所有管理员都不可见，禁言动作对全员生效）
   function batchWlNoMute(panel) {
     var sel = collectCheckedWl(panel);
     if (!sel.ids.length) { toast('请先勾选记录'); return; }
-    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条记录标记为「不禁言」（隐藏且不再提示）？')) return;
+    if (!window.confirm('确认对选中的 ' + sel.ids.length + ' 条记录标记为「不禁言」？将对所有管理员/开发者隐藏这些记录。')) return;
     var tasks = [];
     sel.ids.forEach(function (id) { tasks.push(function () { return sb.rpc('set_content_hide', { p_target_type: 'word_warning', p_target_id: id, p_kind: 'global' }); }); });
     seqRun(tasks,
@@ -2746,25 +2746,22 @@
       });
   }
 
-  // 批量删除：按 id 数组删除 word_warnings 记录（并清理对应 content_hides）
+  // 批量删除：个人端隐藏（仅自己不可见，其他用户不变），不再硬删
   function batchWlDelete(panel) {
     var sel = collectCheckedWl(panel);
-    if (!sel.ids.length) { toast('请先勾选要删除的记录'); return; }
-    if (!window.confirm('确认删除选中的 ' + sel.ids.length + ' 条违禁词记录？此操作不可恢复。')) return;
-    var call = (panel === 'gm')
-      ? sb.rpc('gm_delete_word_log', { p_pwd: gmPwd, p_ids: sel.ids })
-      : sb.rpc('admin_delete_word_log', { p_ids: sel.ids });
-    call.then(function (r) {
-      if (r.error) throw r.error;
-      var n = (r.data === null || r.data === undefined) ? sel.ids.length : (r.data || 0);
-      toast('已删除 ' + n + ' 条违禁词记录');
-      reloadWl(panel);
-    }).catch(function (e) {
-      var msg = (e && (e.message || '')) || '';
-      if (/GM_AUTH_FAIL/.test(msg)) toast('口令已失效');
-      else if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
-      else toast('删除失败：' + friendlyError(e));
+    if (!sel.ids.length) { toast('请先勾选要隐藏的记录'); return; }
+    if (!window.confirm('确认隐藏选中的 ' + sel.ids.length + ' 条违禁词记录？仅你自己不再显示，其他人仍可见。')) return;
+    var tasks = sel.ids.map(function (id) {
+      return function () { return sb.rpc('set_content_hide', { p_target_type: 'word_warning', p_target_id: id, p_kind: 'ignore' }); };
     });
+    seqRun(tasks,
+      function () { toast('已隐藏 ' + sel.ids.length + ' 条违禁词记录（仅你自己不可见）'); reloadWl(panel); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(msg)) toast('口令已失效');
+        else if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('操作失败：' + friendlyError(e));
+      });
   }
 
   // ---------- 用户举报：多选 + 批量禁言 / 不禁言 / 删除 ----------
@@ -2850,41 +2847,51 @@
       });
   }
 
-  // 批量删除：按 id 数组删除 user_reports 记录
+  // 批量删除：个人端隐藏，仅自己不可见，其他用户不变
   function batchUrDelete() {
     var sel = collectCheckedUr();
-    if (!sel.ids.length) { toast('请先勾选要删除的举报'); return; }
-    if (!window.confirm('确认删除选中的 ' + sel.ids.length + ' 条用户举报？此操作不可恢复。')) return;
-    sb.rpc('admin_delete_user_report', { p_ids: sel.ids }).then(function (r) {
-      if (r.error) throw r.error;
-      var n = (r.data === null || r.data === undefined) ? sel.ids.length : (r.data || 0);
-      toast('已删除 ' + n + ' 条用户举报');
-      openUserReports(); loadAllUnread();
-    }).catch(function (e) {
-      var msg = (e && (e.message || '')) || '';
-      if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
-      else toast('删除失败：' + friendlyError(e));
+    if (!sel.ids.length) { toast('请先勾选要隐藏的举报'); return; }
+    if (!window.confirm('确认隐藏选中的 ' + sel.ids.length + ' 条用户举报？仅你自己不再显示，其他人仍可见。')) return;
+    var tasks = sel.ids.map(function (id) {
+      return function () { return sb.rpc('set_content_hide', { p_target_type: 'user_report', p_target_id: id, p_kind: 'ignore' }); };
     });
+    seqRun(tasks,
+      function () { toast('已隐藏 ' + sel.ids.length + ' 条用户举报（仅你自己不可见）'); openUserReports(); loadAllUnread(); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('删除失败：' + friendlyError(e));
+      });
   }
 
-  // 清空全部：删除所有用户举报（极危险，需二次确认）
+  // 清空全部：个人端隐藏所有用户举报（仅自己不可见，其他人仍可见）
   function clearAllUserReports() {
-    if (!window.confirm('⚠️ 确认清空【全部】用户举报？\n此操作将删除所有举报记录，不可恢复！')) return;
-    if (!window.confirm('再次确认：真的要清空全部用户举报吗？此操作不可撤销。')) return;
+    var list = $('admin-userreport-list');
+    var ids = [];
+    if (list) {
+      var boxes = list.querySelectorAll('.ur-check');
+      for (var i = 0; i < boxes.length; i++) {
+        var id = boxes[i].getAttribute('data-id');
+        if (id) ids.push(id);
+      }
+    }
+    if (!ids.length) { toast('当前没有可隐藏的举报'); return; }
+    if (!window.confirm('⚠️ 确认隐藏【全部】用户举报（共 ' + ids.length + ' 条）？\n仅你本人不再显示，其他人仍可见，且 10 分钟内可恢复。')) return;
+    if (!window.confirm('再次确认：仅对自己隐藏全部用户举报？此操作不影响其他管理员/开发者。')) return;
     var btn = $('admin-ur-clear');
     if (btn) { btn.disabled = true; btn.textContent = '清空中…'; }
-    sb.rpc('admin_clear_user_reports').then(function (r) {
-      if (r.error) throw r.error;
-      var n = (r.data === null || r.data === undefined) ? 0 : (r.data || 0);
-      toast('已清空全部用户举报（共 ' + n + ' 条）');
-      openUserReports(); loadAllUnread();
-    }).catch(function (e) {
-      var msg = (e && (e.message || '')) || '';
-      if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
-      else toast('清空失败：' + friendlyError(e));
-    }).then(function () {
-      if (btn) { btn.disabled = false; btn.textContent = '清空全部'; }
+    var tasks = ids.map(function (id) {
+      return function () { return sb.rpc('set_content_hide', { p_target_type: 'user_report', p_target_id: id, p_kind: 'ignore' }); };
     });
+    seqRun(tasks,
+      function () { toast('已隐藏全部用户举报（' + ids.length + ' 条，仅你自己不可见）'); openUserReports(); loadAllUnread(); },
+      function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/ADMIN_FORBIDDEN/.test(msg)) onAdminRevoked();
+        else toast('清空失败：' + friendlyError(e));
+      }).then(function () {
+        if (btn) { btn.disabled = false; btn.textContent = '清空全部'; }
+      });
   }
 
   function gmSearchGroups() {
