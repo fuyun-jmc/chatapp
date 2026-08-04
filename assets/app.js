@@ -3123,16 +3123,27 @@
     if (btn) btn.hidden = !state.isAdmin;
   }
 
-  // 「违禁词记录」tab 右上角未读数字提示
+  // 「违禁词记录」tab 及侧边栏「违禁接收」入口右上角未读数字提示
   function updateWordLogBadge(n) {
-    var badge = $('admin-tab-wordlog-badge');
-    if (!badge) return;
-    if (!n || n <= 0) {
-      badge.textContent = '';
-      badge.classList.remove('show');
-    } else {
-      badge.textContent = n > 99 ? '99+' : String(n);
-      badge.classList.add('show');
+    var tabBadge = $('admin-tab-wordlog-badge');
+    if (tabBadge) {
+      if (!n || n <= 0) {
+        tabBadge.textContent = '';
+        tabBadge.classList.remove('show');
+      } else {
+        tabBadge.textContent = n > 99 ? '99+' : String(n);
+        tabBadge.classList.add('show');
+      }
+    }
+    var sideBadge = $('admin-violation-badge');
+    if (sideBadge) {
+      if (!n || n <= 0) {
+        sideBadge.textContent = '';
+        sideBadge.classList.remove('show');
+      } else {
+        sideBadge.textContent = n > 99 ? '99+' : String(n);
+        sideBadge.classList.add('show');
+      }
     }
   }
 
