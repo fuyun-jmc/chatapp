@@ -242,14 +242,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* 开发者专属头像框把头像切成圆形，状态点仍贴右下角会被裁掉。
    用 left/top 重新定位到圆形内切圆右下角 45° 附近，避免老 WebView 对 right/bottom 覆盖失效。 */
 .avatar.dev-frame .online-dot {
-  left: 18px; top: 18px; right: auto; bottom: auto;
+  left: 20px; top: 20px; right: auto; bottom: auto;
 }
 .avatar.dev-frame.sm .online-dot,
 .avatar.sm.dev-frame .online-dot {
-  left: 13px; top: 13px; right: auto; bottom: auto;
+  left: 15px; top: 15px; right: auto; bottom: auto;
 }
 .avatar.lg.dev-frame .online-dot {
-  left: 50px; top: 50px; right: auto; bottom: auto;
+  left: 52px; top: 52px; right: auto; bottom: auto;
 }
 .avatar.sm { width: 32px; height: 32px; flex-basis: 32px; border-radius: 9px; font-size: 13px; }
 .avatar.lg { width: 76px; height: 76px; flex-basis: 76px; border-radius: 20px; font-size: 28px; }
