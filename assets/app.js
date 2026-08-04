@@ -4938,6 +4938,7 @@
 
     var msgs = (state.activeMessages || []).filter(function (m) {
       if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return false;
+      if (m.sender_id === state.uid) return false; // 不能举报自己发的消息
       if (state.reportUserId && m.sender_id !== state.reportUserId) return false; // 群聊按成员筛选
       if (type === 'message') return m.kind === 'text';
       if (type === 'image')  return m.kind === 'image';
