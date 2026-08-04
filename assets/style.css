@@ -933,12 +933,20 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .report-chip.active { background: var(--brand); border-color: var(--brand); color: #fff; }
 .report-targets { max-height: 240px; overflow-y: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
-.report-targets > .report-item { display: block; width: 100%; text-align: left; border: 0; background: transparent;
+.report-targets > .report-item { display: flex; align-items: center; width: 100%; text-align: left; border: 0; background: transparent;
   color: var(--text); padding: 10px 10px; border-radius: 8px; font-size: 14px; cursor: pointer; word-break: break-word; }
 .report-targets > .report-item + .report-item { margin-top: 4px; }
 .report-targets > .report-item:active { background: var(--line); }
 .report-targets > .report-item.sel { background: rgba(245,81,30,.12); box-shadow: inset 0 0 0 1px var(--brand); }
 .report-targets > .report-item .rt-meta { display: block; color: var(--text-2); font-size: 12px; margin-top: 2px; }
+.report-targets > .report-item .rt-preview {
+  flex: 0 0 auto; width: 56px; height: 56px; margin-right: 10px; overflow: hidden; border-radius: 6px;
+  background: var(--bg-2); position: relative;
+}
+.report-targets > .report-item .rt-preview img,
+.report-targets > .report-item .rt-preview video { width: 100%; height: 100%; display: block; object-fit: cover; }
+.report-targets > .report-item .rt-info { flex: 1; min-width: 0; }
+.report-targets > .report-item .rt-name { font-size: 14px; word-break: break-word; }
 /* GM 后台：禁言申诉 / 问题反馈 列表容器（与 gm-reports 一致） */
 .gm-appeals, .gm-feedback { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-appeals { overflow-y: auto; -webkit-overflow-scrolling: touch; }
