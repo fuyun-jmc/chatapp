@@ -3166,7 +3166,13 @@
   function startWordLogUnreadPoller() {
     if (state.wordLogUnreadTimer) return;
     state.wordLogUnreadTimer = setInterval(function () {
-      if (state.isAdmin) loadWordLogUnread();
+      if (!state.isAdmin) return;
+      loadWordLogUnread().then(function () {
+        // 正在查看「违禁词记录」tab 时，实时刷新列表内容，无需手动刷新页面
+        if (adminTabCurrent === 'wordlog') {
+          refreshWordLogList().then(function () { markWordLogReadAll(); });
+        }
+      });
     }, 30000);
   }
 
@@ -3479,14 +3485,12 @@
   }
 
   // 管理员面板：违禁词记录（任意检测，不限于好友）
-  function openAdminWordLog() {
-    adminTabCurrent = 'wordlog';
-    // 打开 tab 即视为已读，先清零数字提示再拉数据
-    markWordLogReadAll();
+  // 只刷新「违禁词记录」列表内容（不含标已读逻辑），供打开 tab 与轮询实时刷新共用
+  function refreshWordLogList() {
     var box = $('admin-word-log-list');
-    if (!box) return;
+    if (!box) return Promise.resolve();
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
-    sb.rpc('admin_list_word_log')
+    return Promise.resolve(sb.rpc('admin_list_word_log'))
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
@@ -3517,6 +3521,13 @@
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
         box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>';
       });
+  }
+
+  function openAdminWordLog() {
+    adminTabCurrent = 'wordlog';
+    // 打开 tab 即视为已读，先清零数字提示再拉数据
+    markWordLogReadAll();
+    return refreshWordLogList();
   }
 
   // 管理员面板：禁言申诉列表（查看 + 通过/驳回）
