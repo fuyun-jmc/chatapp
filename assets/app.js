@@ -582,7 +582,46 @@
       .catch(function () {});
   }
 
-  // 重绘某个用户的称号显示：侧边栏好友列表 + 自己 + 当前聊天头
+  // 打开群资料时，把群成员（含非好友）的称号补拉到本地，再重绘成员列表
+  function loadTitlesForGroupMembers(ids) {
+    if (!ids || !ids.length) return Promise.resolve();
+    var need = [];
+    ids.forEach(function (id) { if (need.indexOf(id) < 0) need.push(id); });
+    if (!need.length) return Promise.resolve();
+    return sb.rpc('get_profiles_titles', { p_ids: need })
+      .then(function (r) {
+        if (r.error) return;
+        (r.data || []).forEach(function (t) {
+          var primary = t.title_id ? {
+            titleId: t.title_id, titleName: t.title_name,
+            frameColor: t.frame_color || '#ffd700', frameStyle: t.frame_style || 'ring'
+          } : null;
+          var primary2 = t.title2_id ? {
+            titleId: t.title2_id, titleName: t.title2_name,
+            frameColor: t.title2_color || '#ffd700', frameStyle: t.title2_frame || 'ring'
+          } : null;
+          var admin = t.admin_title_id ? {
+            titleId: t.admin_title_id, titleName: t.admin_title_name,
+            frameColor: t.admin_title_color || '#ffd700', frameStyle: t.admin_title_frame || 'ring'
+          } : null;
+          var dev = t.dev_title_id ? {
+            titleId: t.dev_title_id, titleName: t.dev_title_name,
+            frameColor: t.dev_title_color || '#7c4dff', frameStyle: 'dev'
+          } : null;
+          if (t.user_id === state.uid && state.hideDevTitle) {
+            dev = null;
+            if (isDevSlot(primary)) primary = null;
+            if (isDevSlot(primary2)) primary2 = null;
+          }
+          state.titlesMap[t.user_id] = { primary: primary, primary2: primary2, admin: admin, dev: dev };
+          if (!state.profileTitleSig) state.profileTitleSig = {};
+          state.profileTitleSig[t.user_id] = titleSigFromRow(t);
+        });
+      })
+      .catch(function () {});
+  }
+
+  // 重绘某个用户的称号显示：侧边栏好友列表 + 自己 + 当前聊天头 + 群资料成员列表
   function refreshTitleUI(uid) {
     if (uid === state.uid) applySelfTitle();
     if (typeof renderConversations === 'function') renderConversations();
@@ -592,6 +631,18 @@
       var nm = $('chat-peer-name');
       if (nm) addTitleBadge(nm, uid);
     }
+    if ($('group-info-modal') && $('group-info-modal').classList.contains('open')) {
+      var li = document.querySelector('.member-item[data-uid="' + uid + '"]');
+      if (li) applyMemberItemTitles(li, uid);
+    }
+  }
+
+  function applyMemberItemTitles(li, uid) {
+    if (!li) return;
+    var av = li.querySelector('.avatar');
+    if (av) applyTitleFrame(av, uid);
+    var nm = li.querySelector('.nm');
+    if (nm) addTitleBadge(nm, uid);
   }
 
   function loadDisplayTitles() {
@@ -4178,6 +4229,11 @@
     $('group-info-leave').hidden = g.iAmOwner;
     renderMemberList(g);
     refreshGroupMembersOnline(g);
+    loadTitlesForGroupMembers(g.memberIds).then(function () {
+      if ($('group-info-modal') && $('group-info-modal').classList.contains('open')) {
+        renderMemberList(g);
+      }
+    });
     showModal('group-info-modal');
   }
 
@@ -4210,9 +4266,13 @@
       av.textContent = (p.nickname || '?').charAt(0);
       av.style.background = colorOf(p.phone || uid);
       addOnlineDot(av, uid);
+      applyTitleFrame(av, uid);
       var info = el('div', 'info');
       var tag = (uid === g.ownerId) ? '（群主）' : (uid === state.uid ? '（我）' : '');
-      info.appendChild(el('div', 'nm', (p.nickname || '用户') + tag));
+      var nm = el('div', 'nm');
+      nm.appendChild(el('span', '', (p.nickname || '用户') + tag));
+      info.appendChild(nm);
+      addTitleBadge(nm, uid);
       var on = isOnline(uid);
       info.appendChild(el('div', 'online-status ' + (on ? 'on' : 'off'), on ? '在线' : '离线'));
       li.appendChild(av); li.appendChild(info);
