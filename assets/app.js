@@ -3938,7 +3938,9 @@
             else box.appendChild(renderWordLogCard(w, 'admin'));
             shown++;
           });
-          if (rows.length > CAP) {
+          if (shown === 0) {
+            box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>';
+          } else if (rows.length > CAP) {
             box.appendChild(el('div', 'gm-empty', '仅显示最近 ' + CAP + ' 条（共 ' + rows.length + ' 条）'));
           }
           var saA = $('admin-wl-selectall'); if (saA) saA.checked = false;
@@ -4627,7 +4629,7 @@
   if (admAs) admAs.addEventListener('input', renderAdminAppeals);
   $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
   $('admin-word-log-clear').addEventListener('click', function () {
-    if (!window.confirm('确认清空全部违禁词检测记录？此操作不可恢复。')) return;
+    if (!window.confirm('确认清空全部违禁词检测记录？\n仅对你本人隐藏，其他管理员/开发者与 GM 后台均不受影响，且 GM 记录永不删除。')) return;
     this.disabled = true;
     sb.rpc('admin_clear_word_log')
       .then(function (r) {
