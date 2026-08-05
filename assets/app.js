@@ -5205,7 +5205,8 @@
    *  会话与消息
    * ============================================================ */
   /* 从数据库计算离线 / 跨设备未读：登录与实时重连时调用。
-     把各会话未读数（来自 get_my_unread，按已读游标计算）写入 state.unread 并重绘。 */
+     把各会话未读数（来自 get_my_unread，按已读游标计算）写入 state.unread 并重绘。
+     注意：若当前正打开某个聊天，强制跳过该会话，避免 mark 尚未持久化完成时又被刷回红点。 */
   function loadUnreadFromDb() {
     if (!state.uid) return Promise.resolve();
     return sb.rpc('get_my_unread').then(function (r) {
@@ -5214,6 +5215,8 @@
       (r.data || []).forEach(function (row) {
         if (row.cnt > 0) map[row.peer_id] = Number(row.cnt);
       });
+      // 当前已打开的会话：不应被 get_my_unread 重新标记为未读
+      if (state.active && state.active.id) delete map[state.active.id];
       state.unread = map;
       renderConversations();
     }).catch(function () {});
@@ -5225,11 +5228,16 @@
     state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
-    // 把已读游标推到 now()：服务端据此不再把该会话旧消息算作未读，跨设备同步生效
-    // 延迟到下一事件循环并包 try/catch：绝不能因 RPC 失败阻塞打开聊天页
+    // 把已读游标推到 now()：服务端据此不再把该会话旧消息算作未读，跨设备同步生效。
+    // mark 成功后再清一次红点并渲染，保证即使 loadUnreadFromDb 在 mark 完成前跑过，
+    // 也能在游标持久化后正确去掉红点。
     setTimeout(function () {
       try {
-        sb.rpc('mark_conversation_read', { p_peer: peer.id, p_is_group: isGroup }).catch(function () {});
+        sb.rpc('mark_conversation_read', { p_peer: peer.id, p_is_group: isGroup })
+          .then(function () {
+            delete state.unread[peer.id];
+            if (isGroup) renderGroups(); else renderFriends();
+          }).catch(function () {});
       } catch (e) {}
     }, 0);
     // 注意：仅“收到消息”或“发送消息”才把会话前置（见下方发送处与实时接收处），
