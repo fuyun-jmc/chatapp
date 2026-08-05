@@ -234,6 +234,10 @@
         <span>我的群备注</span>
         <input type="text" id="group-remark" maxlength="20" autocomplete="off" placeholder="给自己看的群备注名（仅自己可见）">
       </label>
+      <label class="field" id="group-nickname-field">
+        <span>我的群昵称</span>
+        <input type="text" id="group-nickname" maxlength="20" autocomplete="off" placeholder="设置后群内成员可见（留空则显示本名）">
+      </label>
       <div class="side-title" style="margin-top:4px; display:flex; justify-content:space-between; align-items:center">
         成员 <span><span class="count" id="group-member-count">0</span> <button class="mini-add" id="group-info-add" type="button" hidden title="添加成员">＋</button></span>
       </div>
@@ -242,6 +246,7 @@
     <footer class="modal-foot">
       <button class="btn-ghost" id="group-info-leave" type="button">退出群聊</button>
       <button class="btn-primary" id="group-remark-save" type="button">保存备注</button>
+      <button class="btn-primary" id="group-nickname-save" type="button">保存群昵称</button>
       <button class="btn-danger" id="group-info-dissolve" type="button" hidden>解散群聊</button>
       <button class="btn-primary" id="group-info-save" type="button">保存</button>
     </footer>
@@ -894,7 +899,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.js?v=182"></script>
+<script src="assets/app.js?v=183"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
