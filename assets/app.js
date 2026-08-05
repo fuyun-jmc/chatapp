@@ -1505,6 +1505,7 @@
       .then(applySelfTitle)
       .then(refreshAdminStatus)
       .then(loadForbiddenWords)
+      .then(loadUnreadFromDb)        // 登录即按 DB 计算离线/跨设备未读
       .then(function () {
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
         // —— subscribeRealtime 没有 return，会返回 undefined，导致 .then(startPoll) 抛错、
@@ -5203,12 +5204,29 @@
   /* ============================================================
    *  会话与消息
    * ============================================================ */
+  /* 从数据库计算离线 / 跨设备未读：登录与实时重连时调用。
+     把各会话未读数（来自 get_my_unread，按已读游标计算）写入 state.unread 并重绘。 */
+  function loadUnreadFromDb() {
+    if (!state.uid) return Promise.resolve();
+    return sb.rpc('get_my_unread').then(function (r) {
+      if (r.error) return;
+      var map = {};
+      (r.data || []).forEach(function (row) {
+        if (row.cnt > 0) map[row.peer_id] = Number(row.cnt);
+      });
+      state.unread = map;
+      renderConversations();
+    }).catch(function () {});
+  }
+
   function openChat(peer) {
     var isGroup = peer.type === 'group';
     state.active = peer;
     state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
+    // 把已读游标推到 now()：服务端据此不再把该会话旧消息算作未读，跨设备同步生效
+    sb.rpc('mark_conversation_read', { p_peer: peer.id, p_is_group: isGroup }).catch(function () {});
     // 注意：仅“收到消息”或“发送消息”才把会话前置（见下方发送处与实时接收处），
     // 点击打开查看不再触发前置，避免一进对话框就打乱列表顺序。
     if (isGroup) renderGroups(); else renderFriends();
@@ -6231,6 +6249,8 @@
         event: 'INSERT', schema: 'public', table: 'mute_appeals'
       }, onAdminFeedInsert)
       .subscribe(function (status) {
+        // 实时通道（重）连上后，用 DB 已读游标重新校准未读，避免离线期间漏算
+        if (status === 'SUBSCRIBED') { loadUnreadFromDb(); return; }
         // 断线/超时时自动重连，避免实时推送永久失效
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           setTimeout(function () { if (state.uid) subscribeRealtime(); }, 1500);
