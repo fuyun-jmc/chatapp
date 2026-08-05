@@ -5226,7 +5226,12 @@
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
     // 把已读游标推到 now()：服务端据此不再把该会话旧消息算作未读，跨设备同步生效
-    sb.rpc('mark_conversation_read', { p_peer: peer.id, p_is_group: isGroup }).catch(function () {});
+    // 延迟到下一事件循环并包 try/catch：绝不能因 RPC 失败阻塞打开聊天页
+    setTimeout(function () {
+      try {
+        sb.rpc('mark_conversation_read', { p_peer: peer.id, p_is_group: isGroup }).catch(function () {});
+      } catch (e) {}
+    }, 0);
     // 注意：仅“收到消息”或“发送消息”才把会话前置（见下方发送处与实时接收处），
     // 点击打开查看不再触发前置，避免一进对话框就打乱列表顺序。
     if (isGroup) renderGroups(); else renderFriends();
