@@ -5010,13 +5010,12 @@
     $('group-member-count').textContent = g.memberIds.length;
     g.memberIds.forEach(function (uid) {
       if (uid !== state.uid) state.activeSenderIds[uid] = 1;   // 群资料成员称号变化也实时同步
-      var p = state.profilesById[uid] || { nickname: '用户', phone: '' };
+      var p = state.profilesById[uid] || { nickname: '用户', phone: '', avatar_path: '' };
       var disp = groupNicknameOf(g.id, uid) || p.nickname || '用户';
       var li = el('li', 'member-item'); li.dataset.uid = uid;
       var av = el('div', 'avatar sm');
-      av.textContent = (disp || '?').charAt(0);
-      av.style.background = colorOf(p.phone || uid);
       addOnlineDot(av, uid);
+      setAvatar(av, { nickname: disp, phone: p.phone, avatarPath: p.avatar_path });
       applyTitleFrame(av, uid);
       var info = el('div', 'info');
       var tag = (uid === g.ownerId) ? '（群主）' : (uid === state.uid ? '（我）' : '');
