@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#4f7cf7">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>轻聊 · 在线聊天</title>
+<link rel="stylesheet" href="assets/style.css?v=131">
+</head>
+<body>
+
+<div id="boot" class="boot">
+  <div class="boot-spinner"></div>
+  <div class="boot-text">正在登录…</div>
+</div>
+
+
+<div id="config-warning" class="config-warning" hidden>
+  <strong>还没配置后端</strong>
+  <span>请打开 <code>assets/config.js</code>，填入你的 Supabase 项目地址和 anon key。详见 README.md。</span>
+</div>
+
+<!-- ==================== 登录 / 注册 ==================== -->
+<section id="auth-view" class="auth-view" hidden>
+  <div class="auth-card">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <h1>轻聊</h1>
+    </div>
+    <p class="brand-sub">用手机号注册，凭手机号加好友</p>
+
+    <div class="tabs">
+      <button class="tab is-active" data-tab="login" type="button">登录</button>
+      <button class="tab" data-tab="register" type="button">注册</button>
+    </div>
+
+    <form id="login-form" class="auth-form" autocomplete="on">
+      <div class="account-list" id="account-list" hidden></div>
+      <label class="field">
+        <span>手机号</span>
+        <input type="tel" id="login-phone" inputmode="numeric" maxlength="11" placeholder="11 位手机号" autocomplete="username" required>
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" id="login-password" placeholder="至少 6 位" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="login-error" hidden></p>
+      <button class="btn-primary" type="submit" id="login-submit">登录</button>
+      <button class="link-btn" type="button" id="recovery-btn">忘记密码 / 找回账号</button>
+    </form>
+
+    <form id="register-form" class="auth-form" autocomplete="on" hidden>
+      <label class="field">
+        <span>手机号</span>
+        <input type="tel" id="reg-phone" inputmode="numeric" maxlength="11" placeholder="11 位手机号，作为你的账号" autocomplete="username" required>
+      </label>
+      <label class="field">
+        <span>昵称</span>
+        <input type="text" id="reg-nickname" maxlength="20" placeholder="好友看到的名字" required>
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" id="reg-password" placeholder="至少 6 位" autocomplete="new-password" required>
+      </label>
+      <p class="form-hint">不发送短信验证码，手机号仅作为账号与加好友的凭据。</p>
+      <p class="form-error" id="reg-error" hidden></p>
+      <button class="btn-primary" type="submit" id="reg-submit">注册并登录</button>
+    </form>
+  </div>
+</section>
+
+<!-- ==================== 主界面 ==================== -->
+<section id="app-view" class="app-view" hidden>
+
+  <aside class="sidebar" id="sidebar">
+    <header class="side-head">
+      <div class="avatar" id="me-avatar">我</div>
+      <div class="side-me">
+        <div class="side-name" id="me-name">—</div>
+        <div class="side-phone" id="me-phone">—</div>
+      </div>
+      <button class="icon-btn" id="settings-btn" type="button" title="个人设置" aria-label="个人设置">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="icon-btn" id="logout-btn" type="button" title="退出登录" aria-label="退出登录">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+      </button>
+    </header>
+
+    <!-- 管理员 / 开发者：侧边栏「违禁接收」入口（无口令进入管理面板） -->
+    <button class="side-admin-entry" id="admin-violation-open" type="button" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span class="sae-title">违禁接收</span>
+      <span class="sae-badge" id="admin-violation-badge"></span>
+      <span class="sae-sub">查看违禁词违规详情</span>
+    </button>
+
+    <div class="unified-search">
+      <div class="friend-search" id="search-wrap">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="search-box" placeholder="搜索好友 / 群聊，或输入手机号添加" autocomplete="off">
+      </div>
+      <div class="search-result" id="search-result" hidden></div>
+    </div>
+
+    <div class="side-scroll">
+      <div class="side-section" id="requests-section" hidden>
+        <div class="side-title">新的好友 <span class="count" id="requests-count">0</span></div>
+        <ul class="request-list" id="request-list"></ul>
+      </div>
+
+      <div class="side-section">
+        <button class="new-group-bar" id="new-group-btn" type="button">
+          <span class="ng-plus">＋</span> 新建群聊
+        </button>
+        <div class="side-title">会话</div>
+        <ul class="friend-list" id="chat-list"></ul>
+        <p class="empty-tip" id="chat-empty-tip">还没有会话，用上方搜索框添加好友或建群。</p>
+      </div>
+    </div>
+  </aside>
+
+  <main class="chat" id="chat-panel">
+    <div class="chat-empty" id="chat-empty">
+      <div class="chat-empty-mark"></div>
+      <p>选择一位好友开始聊天</p>
+    </div>
+
+    <div class="chat-room" id="chat-room" hidden>
+      <header class="chat-head">
+        <button class="icon-btn back-btn" id="back-btn" type="button" aria-label="返回">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="avatar" id="peer-avatar">友</div>
+        <div class="chat-peer-info">
+          <div class="chat-name" id="peer-name">—</div>
+          <div class="chat-phone" id="peer-phone">—</div>
+        </div>
+        <button class="icon-btn group-info-btn" id="group-info-btn" type="button" hidden title="群资料">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+        <button class="peer-report-btn" id="peer-report-btn" type="button" hidden>举报</button>
+        <button class="peer-remark-btn" id="peer-remark-btn" type="button" hidden>备注</button>
+        <button class="icon-btn peer-clear-btn" id="peer-clear-btn" type="button" hidden title="清空聊天记录" aria-label="清空聊天记录">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+        <button class="peer-del-btn" id="peer-del-btn" type="button" hidden>删除好友</button>
+      </header>
+
+      <div class="messages" id="messages"></div>
+
+      <div class="upload-bar" id="upload-bar" hidden>
+        <span id="upload-text">上传中…</span>
+      </div>
+
+      <form class="composer" id="composer">
+        <div class="attach-group">
+          <button class="attach-btn" type="button" id="pick-image" title="发送图片" aria-label="发送图片">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </button>
+          <button class="attach-btn" type="button" id="pick-video" title="发送视频" aria-label="发送视频">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="M16 10l6-3v10l-6-3z"/></svg>
+          </button>
+          <button class="attach-btn" type="button" id="pick-file" title="发送文件" aria-label="发送文件">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.5L12.5 21a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10.4 19.1a2 2 0 0 1-2.8-2.8l8-8"/></svg>
+          </button>
+        </div>
+        <textarea id="msg-input" rows="1" placeholder="说点什么…" maxlength="2000"></textarea>
+        <button class="send-btn" type="submit" id="send-btn" aria-label="发送">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </form>
+    </div>
+  </main>
+</section>
+
+<input type="file" id="file-image" accept="image/*" hidden>
+<input type="file" id="file-video" accept="video/*" hidden>
+<input type="file" id="file-any" hidden>
+
+<div class="toast" id="toast" hidden></div>
+
+<!-- ==================== 创建群聊 ==================== -->
+<div class="modal" id="new-group-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>创建群聊</h3>
+      <button class="icon-btn" id="new-group-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <label class="field">
+        <span>群名称</span>
+        <input type="text" id="new-group-name" maxlength="20" placeholder="例如：周末爬山群" autocomplete="off">
+      </label>
+      <div class="side-title" style="margin-top:4px">选择好友</div>
+      <div class="friend-picker" id="group-friend-picker"></div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="new-group-cancel" type="button">取消</button>
+      <button class="btn-primary" id="new-group-create" type="button">创建</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 群资料 / 管理 ==================== -->
+<div class="modal" id="group-info-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>群资料</h3>
+      <button class="icon-btn" id="group-info-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <div class="avatar-edit">
+        <div class="avatar lg" id="group-info-avatar">群</div>
+        <div class="group-avatar-btns">
+          <button class="btn-mini" id="group-avatar-btn" type="button" hidden>更换群图标</button>
+          <button class="btn-mini btn-outline" id="group-avatar-clear" type="button" hidden>恢复默认</button>
+        </div>
+        <input type="file" id="group-avatar-file" accept="image/*" hidden>
+      </div>
+
+      <label class="field" id="group-name-field">
+        <span>群名称</span>
+        <input type="text" id="group-info-name" maxlength="20" autocomplete="off">
+      </label>
+      <label class="field" id="group-remark-field">
+        <span>我的群备注</span>
+        <input type="text" id="group-remark" maxlength="20" autocomplete="off" placeholder="给自己看的群备注名（仅自己可见）">
+      </label>
+      <div class="side-title" style="margin-top:4px; display:flex; justify-content:space-between; align-items:center">
+        成员 <span><span class="count" id="group-member-count">0</span> <button class="mini-add" id="group-info-add" type="button" hidden title="添加成员">＋</button></span>
+      </div>
+      <ul class="member-list" id="group-member-list"></ul>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="group-info-leave" type="button">退出群聊</button>
+      <button class="btn-primary" id="group-remark-save" type="button">保存备注</button>
+      <button class="btn-danger" id="group-info-dissolve" type="button" hidden>解散群聊</button>
+      <button class="btn-primary" id="group-info-save" type="button">保存</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 添加成员 ==================== -->
+<div class="modal" id="add-member-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>添加成员</h3>
+      <button class="icon-btn" id="add-member-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <div class="friend-picker" id="add-member-picker"></div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="add-member-cancel" type="button">取消</button>
+      <button class="btn-primary" id="add-member-confirm" type="button">添加</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 个人设置 ==================== -->
+<div class="modal" id="settings-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>个人设置</h3>
+      <button class="icon-btn" id="settings-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="settings-body">
+      <div class="force-pwd-banner" id="force-pwd-banner" hidden>
+        账号通过好友验证找回，出于安全请<strong>立即修改密码</strong>（关闭按钮已禁用，改完密码后方可关闭）。
+      </div>
+      <div class="avatar-edit">
+        <div class="avatar lg" id="settings-avatar">我</div>
+        <button class="btn-mini" id="settings-avatar-btn" type="button">更换头像</button>
+        <input type="file" id="settings-avatar-file" accept="image/*" hidden>
+      </div>
+
+      <label class="field">
+        <span>名称</span>
+        <input type="text" id="settings-name" maxlength="20" placeholder="你的昵称" autocomplete="off">
+      </label>
+      <p class="form-hint">名称会显示给你的好友，可随时修改。</p>
+
+      <div class="divider"></div>
+
+      <div class="title-section" id="my-titles-section">
+        <div class="section-title">我的称号</div>
+        <p class="form-hint">最多可同时佩戴 2 个自选称号，将显示在头像框上；管理员 / 开发者称号强制展示，不占用名额。</p>
+        <div class="title-list" id="my-titles-list"></div>
+        <p class="title-empty" id="my-titles-empty" hidden>暂无称号，达成条件或等待管理员授予后即可佩戴。</p>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="pwd-section">
+        <div class="section-title">修改登录密码</div>
+        <label class="field">
+          <span>新密码</span>
+          <input type="password" id="settings-newpwd" placeholder="至少 6 位" autocomplete="new-password">
+        </label>
+        <label class="field">
+          <span>确认新密码</span>
+          <input type="password" id="settings-confirm-pwd" placeholder="再次输入新密码" autocomplete="new-password">
+        </label>
+        <p class="form-error" id="change-pwd-error" hidden></p>
+        <button class="btn-primary" id="change-pwd-btn" type="button">更新密码</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="device-section">
+        <div class="section-title">登录设备</div>
+        <p class="form-hint">查看当前账号登录过的设备，可逐个注销或一键登出其他设备。</p>
+        <ul class="friend-list" id="device-list"></ul>
+        <button class="btn-ghost" id="logout-other-devices" type="button">登出其他所有设备</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="account-section">
+        <div class="section-title">账号</div>
+        <p class="form-hint">退出当前账号并返回登录页，以便切换到其他账号。</p>
+        <button class="btn-ghost" id="switch-account-settings" type="button">切换账号</button>
+        <button class="btn-ghost gm-open-btn" id="gm-open-btn" type="button">进入 GM 后台</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="appeal-section" id="appeal-section">
+        <div class="section-title">禁言申诉</div>
+        <p class="form-hint" id="appeal-status-hint">你当前未被禁言。</p>
+        <button class="btn-primary" id="appeal-open-btn" type="button" hidden>我要申诉</button>
+      </div>
+
+      <div class="appeal-section" id="feedback-section">
+        <div class="section-title">问题反馈</div>
+        <p class="form-hint">使用过程中遇到问题或有改进建议？向开发者反馈。</p>
+        <button class="btn-primary" id="feedback-open-btn" type="button">我要反馈</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="danger-zone">
+        <div class="section-title danger-title">危险操作</div>
+        <p class="form-hint">注销账号将永久删除你的资料、好友关系、聊天记录、群组等全部数据，且无法恢复。</p>
+        <button class="btn-danger" id="delete-account-btn" type="button">注销账号</button>
+      </div>
+    </div>
+
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="settings-cancel" type="button">取消</button>
+      <button class="btn-primary" id="settings-save" type="button">保存</button>
+    </footer>
+
+  </div>
+</div>
+
+<!-- ==================== 禁言提示（发送被拦截） ==================== -->
+<div class="modal" id="mute-notice-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>无法发送消息</h3>
+      <button class="icon-btn" id="mute-notice-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="mute-notice-text" id="mute-notice-text"></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="mute-notice-ok" type="button">知道了</button>
+      <button class="btn-primary" id="mute-notice-appeal" type="button">去申诉</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 管理员称号公告 ==================== -->
+<div class="modal" id="admin-announce-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>管理员公告</h3>
+      <button class="icon-btn" id="admin-announce-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="mute-notice-text">你已成为管理员，拥有专属称号，可对违禁用户进行禁言。<span class="warn-line">注意！如果发送过违禁词超过三次将会撤销该称号！</span></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-primary" id="admin-announce-ok" type="button">我知道了</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 举报 ==================== -->
+<div class="modal" id="report-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>举报</h3>
+      <button class="icon-btn" id="report-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <div class="report-member-filter" id="report-member-filter" hidden>
+        <p class="form-hint">按成员筛选（群聊可选；选后可单独举报该成员，并只显示其发送的消息）：</p>
+        <input class="report-member-search" id="report-member-search" type="search" placeholder="搜索成员昵称 / 手机号" />
+        <div class="report-member-list" id="report-member-list"></div>
+        <div class="report-member-sel" id="report-member-sel" hidden>
+          <span>已选择成员：<b id="report-member-sel-name"></b></span>
+          <button class="report-member-clear" id="report-member-clear" type="button">清除</button>
+        </div>
+      </div>
+      <p class="form-hint">请选择举报类型：</p>
+      <div class="report-types" id="report-types">
+        <button class="report-chip" data-type="nickname" type="button">昵称</button>
+        <button class="report-chip" data-type="message" type="button">信息</button>
+        <button class="report-chip" data-type="video" type="button">视频</button>
+        <button class="report-chip" data-type="image" type="button">图片</button>
+      </div>
+      <p class="form-hint" id="report-target-tip">选择举报类型后，点击下方对应的聊天记录：</p>
+      <div class="report-targets" id="report-targets"><div class="gm-empty">请先选择举报类型</div></div>
+      <label class="field">
+        <span>补充说明（选填）</span>
+        <textarea id="report-detail" rows="3" maxlength="200" placeholder="可描述具体原因"></textarea>
+      </label>
+      <p class="form-error" id="report-error" hidden></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="report-cancel" type="button">取消</button>
+      <button class="btn-primary" id="report-submit" type="button">举报</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 禁言申诉 ==================== -->
+<div class="modal" id="appeal-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>禁言申诉</h3>
+      <button class="icon-btn" id="appeal-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="form-hint">请说明你认为禁言有误的理由，提交后由管理员审核。</p>
+      <label class="field">
+        <span>申诉理由</span>
+        <textarea id="appeal-reason" rows="4" maxlength="300" placeholder="至少 5 个字，例如：我没有违规，可能是误判"></textarea>
+      </label>
+      <p class="form-error" id="appeal-error" hidden></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="appeal-cancel" type="button">取消</button>
+      <button class="btn-primary" id="appeal-submit" type="button">提交申诉</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 问题反馈 ==================== -->
+<div class="modal" id="feedback-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>问题反馈</h3>
+      <button class="icon-btn" id="feedback-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <label class="field"><span>问题描述</span>
+        <textarea id="feedback-content" rows="5" maxlength="500" placeholder="至少 5 个字，例如：群聊消息偶尔不刷新"></textarea></label>
+      <label class="field"><span>联系方式（选填）</span>
+        <input id="feedback-contact" maxlength="50" placeholder="手机号 / 微信，便于回访" autocomplete="off"></label>
+      <p class="form-error" id="feedback-error" hidden></p>
+      <footer class="modal-foot">
+        <button class="btn-ghost" id="feedback-cancel" type="button">取消</button>
+        <button class="btn-primary" id="feedback-submit" type="button">提交反馈</button>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 删除好友确认 ==================== -->
+<div class="modal" id="del-friend-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>删除好友</h3>
+      <button class="icon-btn" id="del-friend-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="confirm-text" id="del-friend-text"></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="del-friend-cancel" type="button">取消</button>
+      <button class="btn-danger" id="del-friend-confirm" type="button">删除</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 清空与某好友的全部聊天记录 ==================== -->
+<div class="modal" id="clear-msgs-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>清空聊天记录</h3>
+      <button class="icon-btn" id="clear-msgs-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="confirm-text" id="clear-msgs-text"></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="clear-msgs-cancel" type="button">取消</button>
+      <button class="btn-danger" id="clear-msgs-confirm" type="button">清空</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 注销账号：步骤1 确认要注销吗 ==================== -->
+<div class="modal" id="del-account-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>注销账号</h3>
+      <button class="icon-btn" id="del-account-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="confirm-text">确认要注销吗？注销后你的账号及所有聊天记录、好友关系、群组等数据将被<strong>永久删除，且无法恢复</strong>。</p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="del-account-cancel" type="button">取消</button>
+      <button class="btn-danger" id="del-account-confirm" type="button">确认注销</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 注销账号：步骤2 输入手机号 + 密码 ==================== -->
+<div class="modal" id="del-account-verify">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>验证身份</h3>
+      <button class="icon-btn" id="del-account-verify-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="form-hint">请输入本账号的手机号与密码，以验证身份。</p>
+      <label class="field">
+        <span>手机号</span>
+        <input type="tel" id="del-account-phone" inputmode="numeric" maxlength="11" placeholder="11 位手机号" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" id="del-account-pwd" placeholder="至少 6 位" autocomplete="current-password">
+      </label>
+      <p class="form-error" id="del-account-verify-error" hidden></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="del-account-verify-cancel" type="button">取消</button>
+      <button class="btn-primary" id="del-account-verify-btn" type="button">确认</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 注销账号：步骤3 再次确认 ==================== -->
+<div class="modal" id="del-account-final">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>注销账号</h3>
+      <button class="icon-btn" id="del-account-final-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="confirm-text">你正在注销账号 <strong id="del-account-final-phone"></strong>，此操作<strong>不可恢复</strong>。确定要注销吗？</p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="del-account-final-cancel" type="button">取消</button>
+      <button class="btn-danger" id="del-account-final-btn" type="button">确认注销</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 绝对管理员：口令验证 ==================== -->
+<div class="modal" id="gm-pwd-modal">
+  <div class="modal-card gm-pwd-card">
+    <header class="modal-head">
+      <h3>验证</h3>
+      <button class="icon-btn" id="gm-pwd-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <p class="form-hint">请输入管理员口令以进入 GM 后台。</p>
+      <label class="field">
+        <span>口令</span>
+        <input type="password" id="gm-pwd-input" placeholder="管理员口令" autocomplete="off">
+      </label>
+      <p class="form-error" id="gm-pwd-error" hidden></p>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="gm-pwd-cancel" type="button">取消</button>
+      <button class="btn-primary" id="gm-pwd-confirm" type="button">进入</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 绝对管理员：后台（页面内覆盖层，不新开网页） ==================== -->
+<div class="modal gm-panel" id="gm-panel">
+  <div class="gm-inner">
+    <header class="gm-head">
+      <span class="gm-title">GM 后台 · 绝对管理员</span>
+      <div class="gm-tabs">
+        <button class="gm-tab active" id="gm-tab-users" type="button">用户管理</button>
+        <button class="gm-tab" id="gm-tab-groups" type="button">群聊管理</button>
+        <button class="gm-tab" id="gm-tab-reports" type="button">周报</button>
+        <button class="gm-tab" id="gm-tab-userreports" type="button">用户举报</button>
+        <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
+        <button class="gm-tab" id="gm-tab-appeals" type="button">禁言申诉</button>
+        <button class="gm-tab" id="gm-tab-feedback" type="button">问题反馈</button>
+        <button class="gm-tab" id="gm-tab-wordlog" type="button">违禁词记录</button>
+      </div>
+      <button class="icon-btn" id="gm-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <!-- 用户管理模式 -->
+    <div class="gm-users" id="gm-users">
+      <div class="gm-search">
+        <input id="gm-search-input" placeholder="搜索手机号 / 昵称" autocomplete="off">
+        <button class="btn-primary" id="gm-search-btn" type="button">搜索</button>
+      </div>
+      <div class="gm-results" id="gm-results"></div>
+      <div class="gm-detail" id="gm-detail" hidden></div>
+    </div>
+
+    <!-- 群聊管理模式 -->
+    <div class="gm-groups" id="gm-groups" hidden>
+      <div class="gm-search">
+        <input id="gm-group-search-input" placeholder="搜索群名称 / 群主昵称" autocomplete="off">
+        <button class="btn-primary" id="gm-group-search-btn" type="button">搜索</button>
+      </div>
+      <div class="gm-results" id="gm-group-results"></div>
+      <div class="gm-detail" id="gm-group-detail" hidden></div>
+    </div>
+
+    <!-- 称号管理模式 -->
+    <div class="gm-titles" id="gm-titles" hidden>
+      <div class="gm-titles-bar">
+        <button class="btn-mini" id="gm-title-new-btn" type="button">+ 新建称号</button>
+      </div>
+      <div class="gm-title-list" id="gm-title-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 周报模式 -->
+    <div class="gm-reports" id="gm-reports" hidden>
+      <div class="gm-board-search">
+        <input id="gm-report-search" type="text" placeholder="搜索昵称 / 手机号 / 内容" autocomplete="off" />
+        <button class="btn-mini" id="gm-report-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-report-list" id="gm-report-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 用户举报模式 -->
+    <div class="gm-userreports" id="gm-userreports" hidden>
+      <div class="gm-board-search">
+        <input id="gm-userreport-search" type="text" placeholder="搜索举报人 / 被举报人 / 内容" autocomplete="off" />
+        <button class="btn-mini" id="gm-userreport-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-report-list" id="gm-userreport-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 禁言申诉模式 -->
+    <div class="gm-appeals" id="gm-appeals" hidden>
+      <div class="gm-board-search">
+        <input id="gm-appeal-search" type="text" placeholder="搜索昵称 / 手机号" autocomplete="off" />
+        <button class="btn-mini" id="gm-appeal-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-report-list" id="gm-appeal-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+    <!-- 问题反馈模式 -->
+    <div class="gm-feedback" id="gm-feedback" hidden>
+      <div class="gm-empty">加载中…</div>
+    </div>
+
+    <!-- 违禁词记录模式（任意检测，不限于好友；GM 后台留存、不可删除、可搜索） -->
+    <div class="gm-word-log" id="gm-word-log" hidden>
+      <div class="gm-board-search">
+        <input id="gm-word-log-search" type="text" placeholder="搜索昵称 / 手机号 / 命中词 / 内容" autocomplete="off" />
+        <button class="btn-mini" id="gm-word-log-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-word-log-batch" id="gm-word-log-batch">
+        <label class="wl-selall"><input type="checkbox" id="gm-wl-selectall">全选</label>
+        <span class="wl-dur-label">禁言时长</span>
+        <span class="wl-dur-unit">天</span><input type="number" class="gm-dur-input" id="gm-wl-days" min="0" max="20" value="1">
+        <span class="wl-dur-unit">时</span><input type="number" class="gm-dur-input" id="gm-wl-hours" min="0" max="23" value="0">
+        <span class="wl-dur-unit">分</span><input type="number" class="gm-dur-input" id="gm-wl-mins" min="0" max="59" value="0">
+        <button class="btn-mini" id="gm-wl-mute" type="button">批量禁言</button>
+        <span class="wl-count" id="gm-wl-count">已选 0 项</span>
+      </div>
+      <div class="gm-report-list" id="gm-word-log-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==================== 管理员称号：违规管理面板（无口令，按「管理员」称号鉴权） ==================== -->
+<div class="modal gm-panel admin-panel" id="admin-panel">
+  <div class="gm-inner">
+    <header class="gm-head">
+      <span class="gm-title">违规管理 · 管理员</span>
+      <button class="icon-btn" id="admin-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="gm-report-tabs">
+      <button class="gm-tab active" id="admin-tab-reports" type="button">周报<span class="gm-tab-badge" id="admin-tab-reports-badge"></span></button>
+      <button class="gm-tab" id="admin-tab-wordlog" type="button">违禁词记录<span class="gm-tab-badge" id="admin-tab-wordlog-badge"></span></button>
+      <button class="gm-tab" id="admin-tab-userreports" type="button">用户举报<span class="gm-tab-badge" id="admin-tab-userreports-badge"></span></button>
+      <button class="gm-tab" id="admin-tab-appeals" type="button">禁言申诉<span class="gm-tab-badge" id="admin-tab-appeals-badge"></span></button>
+    </div>
+    <div class="gm-reports" id="admin-reports">
+      <div class="gm-report-list" id="admin-report-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+    <div class="gm-userreports" id="admin-userreports" hidden>
+      <div class="gm-word-log-batch" id="admin-ur-batch">
+        <label class="wl-selall"><input type="checkbox" id="admin-ur-selectall">全选</label>
+        <span class="wl-dur-label">禁言时长</span>
+        <span class="wl-dur-unit">天</span><input type="number" class="gm-dur-input" id="admin-ur-days" min="0" max="20" value="1">
+        <span class="wl-dur-unit">时</span><input type="number" class="gm-dur-input" id="admin-ur-hours" min="0" max="23" value="0">
+        <span class="wl-dur-unit">分</span><input type="number" class="gm-dur-input" id="admin-ur-mins" min="0" max="59" value="0">
+        <button class="btn-mini" id="admin-ur-mute" type="button">批量禁言</button>
+        <button class="btn-mini btn-danger-mini" id="admin-ur-nomute" type="button">批量不禁言</button>
+        <button class="btn-mini btn-danger-mini" id="admin-ur-del" type="button">批量删除</button>
+        <button class="btn-mini btn-danger-mini" id="admin-ur-clear" type="button">清空全部</button>
+        <span class="wl-count" id="admin-ur-count">已选 0 项</span>
+      </div>
+      <div class="gm-report-list" id="admin-userreport-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+    <div class="gm-word-log" id="admin-word-log" hidden>
+      <div class="gm-subbar">
+        <span class="gm-subbar-tip">系统检测到的全部违禁词（含发给陌生人 / 群聊），按时间倒序</span>
+        <div class="gm-subbar-acts">
+          <button class="btn-mini btn-danger-mini" id="admin-word-log-clear" type="button">清空</button>
+          <button class="btn-mini" id="admin-word-log-refresh" type="button">刷新</button>
+        </div>
+      </div>
+      <div class="gm-word-log-batch" id="admin-word-log-batch">
+        <label class="wl-selall"><input type="checkbox" id="admin-wl-selectall">全选</label>
+        <span class="wl-dur-label">禁言时长</span>
+        <span class="wl-dur-unit">天</span><input type="number" class="gm-dur-input" id="admin-wl-days" min="0" max="20" value="1">
+        <span class="wl-dur-unit">时</span><input type="number" class="gm-dur-input" id="admin-wl-hours" min="0" max="23" value="0">
+        <span class="wl-dur-unit">分</span><input type="number" class="gm-dur-input" id="admin-wl-mins" min="0" max="59" value="0">
+        <button class="btn-mini" id="admin-wl-mute" type="button">批量禁言</button>
+        <button class="btn-mini btn-danger-mini" id="admin-wl-nomute" type="button">批量不禁言</button>
+        <button class="btn-mini btn-danger-mini" id="admin-wl-del" type="button">批量删除</button>
+        <span class="wl-count" id="admin-wl-count">已选 0 项</span>
+      </div>
+      <div class="gm-report-list" id="admin-word-log-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+    <div class="gm-appeals" id="admin-appeals" hidden>
+      <div class="gm-appeal-search"><input id="admin-appeal-search" type="text" placeholder="搜索昵称 / 手机号" /></div>
+      <div class="gm-report-list" id="admin-appeal-list"><div class="gm-empty">加载中…</div></div>
+    </div>
+  </div>
+</div>
+
+    <!-- 新建称号表单（独立顶层 modal，避免嵌套在 gm-panel 内被 overflow 裁剪 / 定位异常） -->
+    <div class="modal gm-title-modal" id="gm-title-modal" hidden>
+      <div class="gm-title-card">
+        <header class="modal-head">
+          <h3 id="gm-title-modal-title">新建称号</h3>
+          <button class="icon-btn" id="gm-title-close" type="button" aria-label="关闭">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+        <div class="settings-body">
+          <label class="field"><span>称号名称</span>
+            <input id="gm-title-name" maxlength="20" placeholder="例如：持之以恒" autocomplete="off"></label>
+          <label class="field"><span>描述</span>
+            <input id="gm-title-desc" maxlength="60" placeholder="例如：连续登录 7 天获得" autocomplete="off"></label>
+          <label class="field"><span>边框颜色</span>
+            <input type="color" id="gm-title-color" value="#ffd700"></label>
+          <label class="field"><span>边框样式</span>
+            <select id="gm-title-style">
+              <option value="ring">描边环</option>
+              <option value="glow">发光</option>
+              <option value="solid">加粗环</option>
+            </select></label>
+          <label class="field"><span>获取方式</span>
+            <select id="gm-title-cond">
+              <option value="manual">仅 GM 手动授予</option>
+              <option value="streak">连续登录 N 天自动获得</option>
+              <option value="total_login">累计登录 N 天自动获得</option>
+              <option value="clean_streak">连续 N 天未触发违禁词警告自动获得</option>
+            </select></label>
+          <label class="field" id="gm-title-days-wrap" hidden><span id="gm-title-days-label">连续天数</span>
+            <input type="number" id="gm-title-days" min="1" max="365" value="7"></label>
+          <p class="form-error" id="gm-title-error" hidden></p>
+          <footer class="modal-foot">
+            <button class="btn-ghost" id="gm-title-cancel" type="button">取消</button>
+            <button class="btn-primary" id="gm-title-create" type="button">创建</button>
+          </footer>
+        </div>
+      </div>
+    </div>
+
+<div class="modal" id="recovery-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>找回账号</h3>
+      <button class="icon-btn" id="recovery-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <div class="settings-body">
+      <p class="form-hint" id="recovery-tip">
+        输入你的手机号，系统生成 6 位验证码。把它私下告诉至少 2 位好友，让好友在聊天里把这个 6 位数发给你；收到后回来输入验证码即可登录（登录后会强制修改密码）。
+      </p>
+
+      <!-- 步骤 1：输入手机号生成验证码 -->
+      <div id="rec-step1">
+        <label class="field">
+          <span>手机号</span>
+          <input type="tel" id="rec-phone" inputmode="numeric" maxlength="11" placeholder="11 位手机号" autocomplete="off">
+        </label>
+        <button class="btn-primary" id="rec-gen-btn" type="button">生成验证码</button>
+      </div>
+
+      <!-- 步骤 2：展示验证码 + 输入好友发来的码验证 -->
+      <div id="rec-step2" hidden>
+        <div class="rec-code-box">
+          <div class="rec-code-label">把此验证码告诉至少 2 位好友：</div>
+          <div class="rec-code" id="rec-code-display">------</div>
+          <div class="rec-code-sub">验证码 30 分钟内有效，让好友在聊天中把它原样发给你。</div>
+        </div>
+        <label class="field">
+          <span>好友发给你的验证码</span>
+          <input type="text" id="rec-code-input" inputmode="numeric" maxlength="6" placeholder="6 位数字" autocomplete="off">
+        </label>
+        <button class="btn-primary" id="rec-verify-btn" type="button">验证并登录</button>
+      </div>
+
+      <p class="form-error" id="rec-error" hidden></p>
+    </div>
+
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="rec-reset-btn" type="button">重新输入手机号</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 个人主页（在聊天页点击好友头像打开） -->
+<div class="modal" id="profile-modal">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h3>个人主页</h3>
+      <button class="icon-btn" id="profile-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="settings-body profile-body">
+      <div class="profile-hero">
+        <div class="avatar lg" id="profile-avatar">友</div>
+        <div class="profile-name" id="profile-name">—</div>
+        <div class="profile-phone" id="profile-phone">—</div>
+      </div>
+      <div class="divider"></div>
+      <div class="section-title">拥有称号</div>
+      <div id="profile-titles" class="profile-titles">
+        <div class="title-loading">加载中…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/config.js?v=112"></script>
+<script src="assets/app.js?v=177"></script>
+
+<div class="lightbox" id="lightbox">
+  <img id="lightbox-img" alt="图片预览" hidden>
+  <video id="lightbox-video" controls playsInline hidden></video>
+</div>
+</body>
+</html>
