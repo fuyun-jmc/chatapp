@@ -892,8 +892,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .gm-mute-row .btn-mini { margin-right: 8px; }
 
-/* GM 违规上报 */
-.gm-reports { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
+/* GM 违规上报 / 用户举报（共用 gm-report-list 滚动容器） */
+.gm-reports, .gm-userreports { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 12px 14px 16px; }
 .gm-report-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; margin: 0 -14px; padding: 0 14px; }
 .gm-report { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .gm-report-head { display: flex; align-items: center; justify-content: space-between; }
