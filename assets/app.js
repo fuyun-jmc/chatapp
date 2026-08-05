@@ -37,6 +37,7 @@
     incoming: [],       // 待我处理的好友申请
     groups: [],         // { id, name, ownerId, memberIds, memberCount, iAmOwner }
     groupRemarks: {},    // { groupId: remark }  我给各群设置的个人备注（仅自己可见）
+    groupNicknames: {},  // { groupId: { userId: nickname } }  群内昵称（对全群成员可见）
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
@@ -116,6 +117,49 @@
         });
       })
       .catch(function () { state.groupRemarks = state.groupRemarks || {}; });
+  }
+
+  /* 取某群内某成员的群昵称（优先），取不到则回退到全局昵称 */
+  function groupNicknameOf(gid, uid) {
+    if (gid && uid && state.groupNicknames[gid] && state.groupNicknames[gid][uid]) {
+      return state.groupNicknames[gid][uid];
+    }
+    var p = state.profilesById[uid];
+    return p ? p.nickname : null;
+  }
+
+  /* 拉取某群所有成员的群昵称（后端 SQL 未执行时静默降级，不影响主流程） */
+  function loadGroupNicknames(gid) {
+    if (!gid) return Promise.resolve();
+    return sb.rpc('get_group_nicknames', { p_group_id: gid })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!state.groupNicknames[gid]) state.groupNicknames[gid] = {};
+        (r.data || []).forEach(function (row) {
+          if (row.user_id && row.nickname != null) state.groupNicknames[gid][row.user_id] = row.nickname;
+        });
+      })
+      .catch(function () { state.groupNicknames[gid] = state.groupNicknames[gid] || {}; });
+  }
+
+  /* 群昵称数据到位后，刷新当前群聊的消息发送者名与（打开的）成员列表 */
+  function refreshGroupNicknameDisplays(gid) {
+    if (!gid) return;
+    var box = $('messages');
+    if (box && state.active && state.active.type === 'group' && state.active.id === gid) {
+      var nodes = box.querySelectorAll('.msg.group-in');
+      Array.prototype.forEach.call(nodes, function (n) {
+        var uid = n.dataset.sender;
+        if (!uid) return;
+        var senderEl = n.querySelector('.msg-sender');
+        var nm = groupNicknameOf(gid, uid) || '成员';
+        if (senderEl) senderEl.textContent = nm;
+      });
+    }
+    var modal = $('group-info-modal');
+    if (modal && modal.classList.contains('open') && state.active && state.active.id === gid) {
+      renderMemberList(state.active);
+    }
   }
 
   /* 统一渲染头像：有自定义头像图则显示图片，否则显示首字母色块 */
@@ -4880,6 +4924,18 @@
     pendingGroupAvatar = null;
     $('group-info-name').value = g.name;
     $('group-remark').value = state.groupRemarks[g.id] || '';
+    // 我的群昵称（对全群成员可见）：优先从已加载的缓存中回填；
+    // 若缓存尚未就绪（极快点击），异步补拉一次并在弹窗仍打开时回填，避免显示成空白
+    var myGrpNick = state.groupNicknames[g.id] && state.groupNicknames[g.id][state.uid];
+    $('group-nickname').value = myGrpNick || '';
+    if (!state.groupNicknames[g.id]) {
+      loadGroupNicknames(g.id).then(function () {
+        if ($('group-info-modal') && $('group-info-modal').classList.contains('open')) {
+          var nk = state.groupNicknames[g.id] && state.groupNicknames[g.id][state.uid];
+          $('group-nickname').value = nk || '';
+        }
+      });
+    }
     $('group-info-name').disabled = !g.iAmOwner;
     $('group-name-field').hidden = !g.iAmOwner;
     $('group-info-save').hidden = !g.iAmOwner;
@@ -4899,6 +4955,35 @@
       }
     });
     showModal('group-info-modal');
+  }
+
+  /* 保存「我的群昵称」：仅改本人在当前群的群昵称，群内成员可见 */
+  function saveMyGroupNickname() {
+    if (!state.active || state.active.type !== 'group') return;
+    var g = state.active;
+    var val = $('group-nickname').value.trim();
+    var btn = $('group-nickname-save');
+    btn.disabled = true; btn.textContent = '保存中…';
+    sb.rpc('set_my_group_nickname', { p_group_id: g.id, p_nickname: val })
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        if (!state.groupNicknames[g.id]) state.groupNicknames[g.id] = {};
+        if (val) state.groupNicknames[g.id][state.uid] = val;
+        else delete state.groupNicknames[g.id][state.uid];
+        // 刷新当前群消息发送者名与成员列表
+        refreshGroupNicknameDisplays(g.id);
+        toast(val ? ('群昵称已改为「' + val + '」') : '已清除群昵称');
+      })
+      .catch(function (e) {
+        var msg = (e && e.message) || '';
+        // 后端 SQL 未执行时，set_my_group_nickname 不存在，给出明确引导
+        if (/set_my_group_nickname|does not exist|PGRST202|function .* does not exist/i.test(msg)) {
+          toast('群昵称功能需要先在 Supabase 执行 20260806_group_member_nickname.sql');
+          return;
+        }
+        toast(friendlyError(e));
+      })
+      .then(function () { btn.disabled = false; btn.textContent = '保存群昵称'; });
   }
 
   function dissolveGroup() {
@@ -4926,16 +5011,17 @@
     g.memberIds.forEach(function (uid) {
       if (uid !== state.uid) state.activeSenderIds[uid] = 1;   // 群资料成员称号变化也实时同步
       var p = state.profilesById[uid] || { nickname: '用户', phone: '' };
+      var disp = groupNicknameOf(g.id, uid) || p.nickname || '用户';
       var li = el('li', 'member-item'); li.dataset.uid = uid;
       var av = el('div', 'avatar sm');
-      av.textContent = (p.nickname || '?').charAt(0);
+      av.textContent = (disp || '?').charAt(0);
       av.style.background = colorOf(p.phone || uid);
       addOnlineDot(av, uid);
       applyTitleFrame(av, uid);
       var info = el('div', 'info');
       var tag = (uid === g.ownerId) ? '（群主）' : (uid === state.uid ? '（我）' : '');
       var nm = el('div', 'nm');
-      nm.appendChild(el('span', '', (p.nickname || '用户') + tag));
+      nm.appendChild(el('span', '', disp + tag));
       info.appendChild(nm);
       addTitleBadge(nm, uid);
       var on = isOnline(uid);
@@ -5140,6 +5226,7 @@
       .then(function () { btn.disabled = false; btn.textContent = '保存'; });
   });
   $('group-info-leave').addEventListener('click', leaveGroup);
+  $('group-nickname-save').addEventListener('click', saveMyGroupNickname);
   $('group-info-dissolve').addEventListener('click', dissolveGroup);
 
   $('group-info-add').addEventListener('click', function () {
@@ -5306,6 +5393,8 @@
     if (isGroup) {
       query = query.eq('group_id', peer.id);
       loadGroupMemberProfiles(peer.id);
+      // 拉取群内昵称（对全群可见），加载完后刷新当前群消息发送者名
+      loadGroupNicknames(peer.id).then(function () { refreshGroupNicknameDisplays(peer.id); });
     } else {
       query = query.or('and(sender_id.eq.' + state.uid + ',receiver_id.eq.' + peer.id + '),' +
                         'and(sender_id.eq.' + peer.id + ',receiver_id.eq.' + state.uid + ')');
@@ -5806,10 +5895,9 @@
 
     var isGroup = !!(state.active && state.active.type === 'group');
     if (!out && isGroup) {
-      var sName = (m.sender && m.sender.nickname) ||
-                  (state.profilesById[m.sender_id] && state.profilesById[m.sender_id].nickname) ||
-                  '成员';
+      var sName = groupNicknameOf(state.active ? state.active.id : null, m.sender_id) || '成员';
       wrap.classList.add('group-in');
+      if (m.sender_id) wrap.dataset.sender = m.sender_id;
       wrap.appendChild(el('div', 'msg-sender', sName));
     }
     wrap.appendChild(bubble);
@@ -6252,6 +6340,18 @@
           state.titleReloadTimer[uid] = null;
           reloadTitleFor(uid);
         }, 400);
+      })
+      // 群昵称变更（自己或群内其他成员）：实时更新缓存并刷新显示
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'group_member_nicknames'
+      }, function (payload) {
+        var row = (payload.new && payload.new.group_id) ? payload.new : payload.old;
+        if (!row || !row.group_id || !row.user_id) return;
+        var gid = row.group_id, uid = row.user_id;
+        if (!state.groupNicknames[gid]) state.groupNicknames[gid] = {};
+        if (payload.eventType === 'DELETE') delete state.groupNicknames[gid][uid];
+        else state.groupNicknames[gid][uid] = (row.nickname != null) ? row.nickname : '';
+        refreshGroupNicknameDisplays(gid);
       })
       // 管理后台四大板块：违禁词 / 用户举报 / 违规周报 / 禁言申诉
       // 仅管理员/开发者需要实时提示；四张表的 RLS 均已开放管理员可读，否则 realtime 不会推送
