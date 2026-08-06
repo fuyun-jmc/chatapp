@@ -6275,6 +6275,11 @@
       return;   // 拦截：不发送、不清空输入，便于修改后重发
     }
 
+    // 发送前立即 flush 草稿 debounce，避免 600ms 后旧内容被重新落库并回写到输入框
+    flushDraft();
+    pendingDraft = null;
+    if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
+
     input.value = '';   // 确认无违禁词后才清空输入框
 
     var payload = {
@@ -6285,17 +6290,24 @@
     if (isGroup) payload.group_id = peerId;
     else payload.receiver_id = peerId;
 
+    var insertSucceeded = false;
     sb.from('messages').insert(payload).select().single()
       .then(function (r) {
         if (r.error) throw r.error;
+        insertSucceeded = true;
         appendMessage(r.data);
         clearDraft(peerId, isGroup);   // 发送成功：清空该会话草稿（本地 + 服务端）
         state.convTs[peerId] = Date.now();
         if (isGroup) renderGroups(); else renderFriends();
       })
       .catch(function (err) {
-        toast(friendlyError(err));
-        input.value = text;
+        // 只有 insert 真正失败才恢复输入框；insert 已成功后渲染/草稿清理失败不再回置
+        if (!insertSucceeded) {
+          toast(friendlyError(err));
+          input.value = text;
+        } else {
+          console.error('send post-process error:', err);
+        }
       });
   });
 
