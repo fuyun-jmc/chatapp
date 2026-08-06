@@ -4312,11 +4312,12 @@
       actions.appendChild(editBtn); actions.appendChild(grantBtn); actions.appendChild(delBtn);
       card.appendChild(actions);
 
-      // 授予子面板（输入手机号查用户）
+      // 授予子面板（可输入手机号或昵称；昵称支持模糊搜索）
       var gbox = el('div', 'gm-grant-box');
       gbox.hidden = true;
       var inp = el('input');
-      inp.type = 'tel'; inp.placeholder = '输入手机号查询用户'; inp.autocomplete = 'off';
+      inp.type = 'text'; inp.placeholder = '输入手机号或昵称（昵称可模糊搜索）'; inp.autocomplete = 'off';
+      inp.setAttribute('inputmode', 'text');
       gbox.appendChild(inp);
       var look = el('button', 'btn-mini', '查询');
       look.type = 'button';
@@ -4338,10 +4339,10 @@
     if (gbox) gbox.hidden = !gbox.hidden;
   }
 
-  function gmGrantLookup(t, phone, resBox) {
+  function gmGrantLookup(t, query, resBox) {
     resBox.innerHTML = '查询中…';
-    if (!phone) { resBox.innerHTML = '请输入手机号'; return; }
-    sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: phone })
+    if (!query) { resBox.innerHTML = '请输入手机号或昵称'; return; }
+    sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
       .then(function (r) {
         if (r.error) throw r.error;
         // 返回的全部匹配用户都展示（后端已按 手机号/昵称/备注 模糊匹配，最多 100 条）
