@@ -38,6 +38,7 @@
     groups: [],         // { id, name, ownerId, memberIds, memberCount, iAmOwner }
     groupRemarks: {},    // { groupId: remark }  我给各群设置的个人备注（仅自己可见）
     groupNicknames: {},  // { groupId: { userId: nickname } }  群内昵称（对全群成员可见）
+    drafts: {},          // { draftKey: { text, ts } }  聊天草稿缓存（服务端为准，跨设备同步）
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
@@ -159,6 +160,102 @@
     var modal = $('group-info-modal');
     if (modal && modal.classList.contains('open') && state.active && state.active.id === gid) {
       renderMemberList(state.active);
+    }
+  }
+
+  /* ============================================================
+   *  聊天草稿：存于服务端，跨设备 / 退出网页不丢失
+   * ============================================================ */
+  function draftKey(peerId, isGroup) { return (isGroup ? 'g:' : 'u:') + peerId; }
+
+  function getDraft(peerId, isGroup) {
+    var d = state.drafts[draftKey(peerId, isGroup)];
+    return (d && d.text) ? d.text : '';
+  }
+
+  function setDraftCache(peerId, isGroup, text) {
+    var k = draftKey(peerId, isGroup);
+    if (text && text.trim()) state.drafts[k] = { text: text, ts: Date.now() };
+    else delete state.drafts[k];
+  }
+
+  /* 拉取我的全部草稿（登录后一次性加载到本地缓存，供列表标记与打开会话恢复） */
+  function loadMyDrafts() {
+    return sb.rpc('get_my_drafts')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.drafts = {};
+        (r.data || []).forEach(function (row) {
+          if (row.peer_id) setDraftCache(row.peer_id, row.is_group, row.text || '');
+        });
+      })
+      .catch(function () { state.drafts = state.drafts || {}; });
+  }
+
+  var pendingDraft = null;   // { peerId, isGroup, text }  等待 debounce 落库的草稿
+  var draftSaveTimer = null;
+
+  function doSaveDraft(peerId, isGroup, text) {
+    if (!peerId) return;
+    var k = draftKey(peerId, isGroup);
+    var existed = !!state.drafts[k];
+    setDraftCache(peerId, isGroup, text);
+    var nowExists = !!state.drafts[k];
+    // 本地先写好，保证离线/断网也即时恢复；再尝试落库
+    sb.rpc('save_my_draft', { p_peer: peerId, p_is_group: isGroup, p_text: text || '' })
+      .catch(function () {});
+    // 仅当“有无草稿”状态变化时才重绘会话列表（避免打字时反复重渲染）
+    if (existed !== nowExists) renderConversations();
+  }
+
+  function scheduleSaveDraft(peerId, isGroup, text) {
+    pendingDraft = { peerId: peerId, isGroup: isGroup, text: text };
+    if (draftSaveTimer) clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(function () {
+      draftSaveTimer = null;
+      if (pendingDraft) {
+        doSaveDraft(pendingDraft.peerId, pendingDraft.isGroup, pendingDraft.text);
+        pendingDraft = null;
+      }
+    }, 600);
+  }
+
+  /* 立即把待保存的草稿落库（切换会话 / 页面隐藏前调用，防止丢失最后一次输入） */
+  function flushDraft() {
+    if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
+    if (pendingDraft) {
+      doSaveDraft(pendingDraft.peerId, pendingDraft.isGroup, pendingDraft.text);
+      pendingDraft = null;
+    }
+  }
+
+  /* 发送成功后清空草稿（本地 + 服务端） */
+  function clearDraft(peerId, isGroup) {
+    if (!peerId) return;
+    var k = draftKey(peerId, isGroup);
+    var existed = !!state.drafts[k];
+    delete state.drafts[k];
+    sb.rpc('save_my_draft', { p_peer: peerId, p_is_group: isGroup, p_text: '' })
+      .catch(function () {});
+    if (existed) renderConversations();
+  }
+
+  /* 其他设备（或本设备回声）的草稿变更：更新缓存并同步到输入框（非编辑态时） */
+  function applyRemoteDraft(row, isDelete) {
+    if (!row || !row.user_id || row.user_id !== state.uid) return;
+    var k = draftKey(row.peer_id, row.is_group);
+    var existed = !!state.drafts[k];
+    setDraftCache(row.peer_id, row.is_group, isDelete ? '' : (row.text || ''));
+    var nowExists = !!state.drafts[k];
+    if (existed !== nowExists) renderConversations();
+    var inp = $('msg-input');
+    if (state.active && state.active.id === row.peer_id &&
+        state.active.type === (row.is_group ? 'group' : 'friend') &&
+        document.activeElement !== inp) {
+      var t = getDraft(row.peer_id, row.is_group);
+      inp.value = t || '';
+      inp.style.height = 'auto';
+      inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
     }
   }
 
@@ -1549,6 +1646,7 @@
       .then(applySelfTitle)
       .then(refreshAdminStatus)
       .then(loadForbiddenWords)
+      .then(loadMyDrafts)            // 登录即拉取我的全部草稿（跨设备/退出网页后仍在）
       .then(loadUnreadFromDb)        // 登录即按 DB 计算离线/跨设备未读
       .then(function () {
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
@@ -1687,6 +1785,15 @@
   function renderFriends() { renderConversations(); }
 
   // 统一会话列表：好友 + 群聊合并渲染到 #chat-list
+  /* 会话列表项里的“草稿”预览（仅在有草稿时显示） */
+  function appendDraftPreview(info, peerId, isGroup) {
+    var d = state.drafts[draftKey(peerId, isGroup)];
+    if (!d || !d.text) return;
+    var prev = d.text.replace(/\s+/g, ' ').trim();
+    if (prev.length > 18) prev = prev.slice(0, 18) + '…';
+    info.appendChild(el('div', 'draft-prev', '草稿：' + prev));
+  }
+
   function renderConversations() {
     var list = $('chat-list');
     if (!list) return;
@@ -1723,6 +1830,7 @@
     var info = el('div', 'info');
     info.appendChild(el('div', 'nm', groupDisplayName(g)));
     info.appendChild(el('div', 'ph', g.memberCount + ' 位成员'));
+    appendDraftPreview(info, g.id, true);
     li.appendChild(av); li.appendChild(info);
 
     var pin = el('button', 'pin-btn', g.pinned ? '已置顶' : '置顶');
@@ -1834,6 +1942,7 @@
     var nm = el('div', 'nm', displayName(f));
     info.appendChild(nm);
     info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
+    appendDraftPreview(info, f.id, false);
     li.appendChild(av); li.appendChild(info);
     addOnlineDot(av, f.id);
     applyTitleFrame(av, f.id);
@@ -5318,9 +5427,20 @@
   }
 
   function openChat(peer) {
+    // 先落库上一个会话可能尚未 debounce 落库的草稿，避免切走后丢失
+    flushDraft();
     var isGroup = peer.type === 'group';
     state.active = peer;
     state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
+    // 恢复“本会话”的草稿到输入框（跨设备 / 退出网页后仍在）
+    var dInp = $('msg-input');
+    if (dInp) {
+      var draftTxt = getDraft(peer.id, isGroup);
+      dInp.value = draftTxt || '';
+      dInp.style.height = 'auto';
+      if (draftTxt) dInp.style.height = Math.min(dInp.scrollHeight, 120) + 'px';
+    }
+
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
     // 把已读游标推到 now()：服务端据此不再把该会话旧消息算作未读，跨设备同步生效。
@@ -6089,6 +6209,10 @@
   input.addEventListener('input', function () {
     this.style.height = 'auto';
     this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    // 边打字边保存草稿（debounce 落库），退出网页 / 切换设备后仍在
+    if (state.active) {
+      scheduleSaveDraft(state.active.id, state.active.type === 'group', this.value);
+    }
   });
 
   input.addEventListener('keydown', function (e) {
@@ -6160,6 +6284,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         appendMessage(r.data);
+        clearDraft(peerId, isGroup);   // 发送成功：清空该会话草稿（本地 + 服务端）
         state.convTs[peerId] = Date.now();
         if (isGroup) renderGroups(); else renderFriends();
       })
@@ -6372,6 +6497,13 @@
         else state.groupNicknames[gid][uid] = (row.nickname != null) ? row.nickname : '';
         refreshGroupNicknameDisplays(gid);
       })
+      // 聊天草稿变更（本人其他设备保存/清空）：实时同步缓存与输入框
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'message_drafts'
+      }, function (payload) {
+        var row = (payload.new && payload.new.user_id) ? payload.new : payload.old;
+        applyRemoteDraft(row, payload.eventType === 'DELETE');
+      })
       // 管理后台四大板块：违禁词 / 用户举报 / 违规周报 / 禁言申诉
       // 仅管理员/开发者需要实时提示；四张表的 RLS 均已开放管理员可读，否则 realtime 不会推送
       .on('postgres_changes', {
@@ -6447,4 +6579,10 @@
       if (state.isAdmin) loadAllUnread();
     }
   });
+
+  // 页面切到后台 / 关闭前，立即把未落库的草稿保存（退出网页后草稿不丢）
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) flushDraft();
+  });
+  window.addEventListener('beforeunload', function () { flushDraft(); });
 })();
