@@ -4321,7 +4321,7 @@
       gbox.appendChild(inp);
       var look = el('button', 'btn-mini', '查询');
       look.type = 'button';
-      look.onclick = function () { gmGrantLookup(t, inp.value.trim(), gres); };
+      look.onclick = function () { gmGrantLookup(t, inp.value.trim(), gres, card); };
       var cancel = el('button', 'btn-mini', '取消');
       cancel.type = 'button';
       cancel.onclick = function () { gbox.hidden = true; };
@@ -4339,42 +4339,71 @@
     if (gbox) gbox.hidden = !gbox.hidden;
   }
 
-  function gmGrantLookup(t, query, resBox) {
+  function gmGrantLookup(t, query, resBox, card) {
     resBox.innerHTML = '查询中…';
     if (!query) { resBox.innerHTML = '请输入手机号或昵称'; return; }
-    sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
+
+    function isRpcMissing(e) {
+      var m = (e && (e.message || e.code || '')) || '';
+      return /PGRST202|Could not find the function|does not exist|schema cache/i.test(String(m));
+    }
+
+    function renderRows(r) {
+      if (r.error) throw r.error;
+      var rows = (r.data || []);
+      if (!rows.length) { resBox.innerHTML = '未找到可授予的用户（可能全部已拥有该称号）'; return; }
+      resBox.innerHTML = '';
+      resBox.appendChild(el('div', 'gm-grant-count', '找到 ' + rows.length + ' 个可授予用户'));
+      rows.forEach(function (u) {
+        var row = el('div', 'gm-grant-user-row');
+        row.setAttribute('data-uid', u.id);
+        var info = el('div', 'gm-grant-user',
+          (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : ''));
+        row.appendChild(info);
+        var ok = el('button', 'btn-mini gm-confirm', '授予');
+        ok.type = 'button';
+        ok.onclick = function () { gmGrantTitle(u.id, t, row, card); };
+        row.appendChild(ok);
+        resBox.appendChild(row);
+      });
+    }
+
+    sb.rpc('gm_search_users_for_title', { p_pwd: gmPwd, p_query: query, p_title_id: t.id })
       .then(function (r) {
-        if (r.error) throw r.error;
-        // 返回的全部匹配用户都展示（后端已按 手机号/昵称/备注 模糊匹配，最多 100 条）
-        var rows = (r.data || []);
-        if (!rows.length) { resBox.innerHTML = '未找到匹配的用户'; return; }
-        resBox.innerHTML = '';
-        resBox.appendChild(el('div', 'gm-grant-count', '找到 ' + rows.length + ' 个匹配用户'));
-        rows.forEach(function (u) {
-          var row = el('div', 'gm-grant-user-row');
-          var info = el('div', 'gm-grant-user',
-            (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : ''));
-          row.appendChild(info);
-          var ok = el('button', 'btn-mini gm-confirm', '授予');
-          ok.type = 'button';
-          ok.onclick = function () { gmGrantTitle(u.id, t); };
-          row.appendChild(ok);
-          resBox.appendChild(row);
-        });
+        if (r.error && isRpcMissing(r.error)) {
+          return sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query }).then(renderRows);
+        }
+        renderRows(r);
       })
       .catch(function (e) {
+        if (isRpcMissing(e)) {
+          sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
+            .then(renderRows)
+            .catch(function (e2) { resBox.innerHTML = '查询失败：' + friendlyError(e2); });
+          return;
+        }
         resBox.innerHTML = '查询失败：' + friendlyError(e);
       });
   }
 
-  function gmGrantTitle(uid, t) {
+  function gmGrantTitle(uid, t, row, card) {
     sb.rpc('gm_grant_title', { p_pwd: gmPwd, p_user_id: uid, p_title_id: t.id })
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已授予「' + t.name + '」');
         // 同步前端头像框；refreshAdminStatus 兜底刷新自身强制称号
         loadDisplayTitles().then(refreshAdminStatus).then(applySelfTitle).then(renderConversations);
-        openTitleTab();
+        // 从搜索结果中移除该用户，避免重复授予
+        if (row && row.parentNode) domRemove(row);
+        // 更新卡片上的“已有 N 人获得”
+        if (card) {
+          var usageEl = card.querySelector('.gm-title-usage');
+          if (usageEl) {
+            t.usage_count = (t.usage_count || 0) + 1;
+            usageEl.textContent = '已有 ' + t.usage_count + ' 人获得';
+          }
+        }
+        // 停留在当前授予页面，不关闭子面板
       })
       .catch(function (e) { toast('授予失败：' + friendlyError(e)); });
   }
