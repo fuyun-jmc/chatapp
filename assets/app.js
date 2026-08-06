@@ -4344,18 +4344,22 @@
     sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: phone })
       .then(function (r) {
         if (r.error) throw r.error;
-        var rows = (r.data || []).filter(function (u) {
-          return (u.phone || '').indexOf(phone) >= 0;
-        });
-        if (!rows.length) { resBox.innerHTML = '未找到该手机号用户'; return; }
-        var u = rows[0];
+        // 返回的全部匹配用户都展示（后端已按 手机号/昵称/备注 模糊匹配，最多 100 条）
+        var rows = (r.data || []);
+        if (!rows.length) { resBox.innerHTML = '未找到匹配的用户'; return; }
         resBox.innerHTML = '';
-        resBox.appendChild(el('div', 'gm-grant-user',
-          (u.nickname || '(无昵称)') + ' · ' + (u.phone || '')));
-        var ok = el('button', 'btn-mini gm-confirm', '确认授予「' + t.name + '」');
-        ok.type = 'button';
-        ok.onclick = function () { gmGrantTitle(u.id, t); };
-        resBox.appendChild(ok);
+        resBox.appendChild(el('div', 'gm-grant-count', '找到 ' + rows.length + ' 个匹配用户'));
+        rows.forEach(function (u) {
+          var row = el('div', 'gm-grant-user-row');
+          var info = el('div', 'gm-grant-user',
+            (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : ''));
+          row.appendChild(info);
+          var ok = el('button', 'btn-mini gm-confirm', '授予');
+          ok.type = 'button';
+          ok.onclick = function () { gmGrantTitle(u.id, t); };
+          row.appendChild(ok);
+          resBox.appendChild(row);
+        });
       })
       .catch(function (e) {
         resBox.innerHTML = '查询失败：' + friendlyError(e);
