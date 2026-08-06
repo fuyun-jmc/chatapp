@@ -6067,6 +6067,22 @@
     return true;
   }
 
+  /* ---------- 发送频率限制（间隔 1 秒） ---------- */
+  var SEND_INTERVAL_MS = 1000;        // 两次发送最小间隔（毫秒）
+  var lastSendTs = 0;                 // 上次成功通过发送闸门的时间戳
+  // 调用即尝试获取发送资格：通过则更新时间戳并返回 true；未到间隔则轻提示并返回 false。
+  // 放在“实际发起发送”之前，仅真实发送才占用间隔（被禁言/违禁词拦截的不占用）。
+  function trySendGate() {
+    var now = Date.now();
+    if (now - lastSendTs < SEND_INTERVAL_MS) {
+      var remain = ((SEND_INTERVAL_MS - (now - lastSendTs)) / 1000).toFixed(1);
+      toast('发送太频繁，请 ' + remain + ' 秒后再试');
+      return false;
+    }
+    lastSendTs = now;
+    return true;
+  }
+
   /* ---------- 发送文字 ---------- */
   var input = $('msg-input');
 
@@ -6092,6 +6108,8 @@
 
     var peerId = state.active.id;
     var isGroup = state.active.type === 'group';
+    // 发送间隔限制：未到 1 秒直接拦截（不清空输入，方便稍后重发）
+    if (!trySendGate()) return;
 
     // 违禁词检测：命中则拦截发送 + 记录一次警告（清零连续清净天数）
     var badWord = matchForbidden(text);
@@ -6166,6 +6184,8 @@
     if (!file || !state.active) return;
     // 禁言检查
     if (!(await ensureNotMuted())) return;
+    // 发送间隔限制：未到 1 秒直接拦截（不占用上传带宽）
+    if (!trySendGate()) return;
 
     var maxMb = kind === 'image' ? (CFG.MAX_IMAGE_MB || 5)
               : kind === 'video' ? (CFG.MAX_VIDEO_MB || 50)
