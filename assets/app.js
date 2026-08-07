@@ -4303,25 +4303,41 @@
       var editBtn = el('button', 'btn-mini', '编辑');
       editBtn.type = 'button';
       editBtn.onclick = function () { openTitleForm(t); };
-      var grantBtn = el('button', 'btn-mini', '授予');
+      var grantBtn = el('button', 'btn-mini gm-confirm', '授予');
       grantBtn.type = 'button';
-      grantBtn.onclick = function () { toggleGrantBox(card, t); };
+      grantBtn.onclick = function () { toggleTitleBox(card, t, 'grant'); };
+      var revokeBtn = el('button', 'btn-mini gm-danger', '撤销');
+      revokeBtn.type = 'button';
+      revokeBtn.onclick = function () { toggleTitleBox(card, t, 'revoke'); };
       var delBtn = el('button', 'btn-mini gm-danger', '删除');
       delBtn.type = 'button';
       delBtn.onclick = function () { gmDeleteTitle(t.id, t.name); };
-      actions.appendChild(editBtn); actions.appendChild(grantBtn); actions.appendChild(delBtn);
+      actions.appendChild(editBtn); actions.appendChild(grantBtn); actions.appendChild(revokeBtn); actions.appendChild(delBtn);
       card.appendChild(actions);
 
-      // 授予子面板（可输入手机号或昵称；昵称支持模糊搜索）
+      // 授予/撤销 子面板（可输入手机号或昵称；昵称支持模糊搜索）
       var gbox = el('div', 'gm-grant-box');
       gbox.hidden = true;
+      gbox.dataset.mode = 'grant';
+
+      // 模式切换：授予 / 撤销
+      var modeRow = el('div', 'gm-mode-row');
+      var mGrant = el('button', 'btn-mini', '授予模式');
+      mGrant.type = 'button';
+      var mRevoke = el('button', 'btn-mini', '撤销模式');
+      mRevoke.type = 'button';
+      mGrant.onclick = function () { setBoxMode(gbox, 'grant'); };
+      mRevoke.onclick = function () { setBoxMode(gbox, 'revoke'); };
+      modeRow.appendChild(mGrant); modeRow.appendChild(mRevoke);
+      gbox.appendChild(modeRow);
+
       var inp = el('input');
       inp.type = 'text'; inp.placeholder = '输入手机号或昵称（昵称可模糊搜索）'; inp.autocomplete = 'off';
       inp.setAttribute('inputmode', 'text');
       gbox.appendChild(inp);
       var look = el('button', 'btn-mini', '查询');
       look.type = 'button';
-      look.onclick = function () { gmGrantLookup(t, inp.value.trim(), gres, card); };
+      look.onclick = function () { gmTitleLookup(t, inp.value.trim(), gres, card); };
       var cancel = el('button', 'btn-mini', '取消');
       cancel.type = 'button';
       cancel.onclick = function () { gbox.hidden = true; };
@@ -4329,17 +4345,34 @@
       var gres = el('div', 'gm-grant-result');
       gbox.appendChild(gres);
       card.appendChild(gbox);
+      setBoxMode(gbox, 'grant');
 
       box.appendChild(card);
     });
   }
 
-  function toggleGrantBox(card, t) {
-    var gbox = card.querySelector('.gm-grant-box');
-    if (gbox) gbox.hidden = !gbox.hidden;
+  function setBoxMode(gbox, mode) {
+    gbox.dataset.mode = mode;
+    var btns = gbox.querySelectorAll('.gm-mode-row button');
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var isGrant = b.textContent.indexOf('授予') >= 0;
+      var active = (mode === 'grant' && isGrant) || (mode === 'revoke' && !isGrant);
+      if (active) b.classList.add('gm-mode-active'); else b.classList.remove('gm-mode-active');
+    }
   }
 
-  function gmGrantLookup(t, query, resBox, card) {
+  function toggleTitleBox(card, t, mode) {
+    var gbox = card.querySelector('.gm-grant-box');
+    if (!gbox) return;
+    gbox.hidden = !gbox.hidden;
+    if (!gbox.hidden) setBoxMode(gbox, mode);
+  }
+
+  // 授予/撤销 统一搜索：mode = 'grant' 仅显示未获得该称号用户；'revoke' 仅显示已获得该称号用户
+  function gmTitleLookup(t, query, resBox, card) {
+    var gbox = resBox.parentNode;
+    var mode = gbox.dataset.mode || 'grant';
     resBox.innerHTML = '查询中…';
     if (!query) { resBox.innerHTML = '请输入手机号或昵称'; return; }
 
@@ -4348,38 +4381,61 @@
       return /PGRST202|Could not find the function|does not exist|schema cache/i.test(String(m));
     }
 
-    function renderRows(r) {
-      if (r.error) throw r.error;
-      var rows = (r.data || []);
-      if (!rows.length) { resBox.innerHTML = '未找到可授予的用户（可能全部已拥有该称号）'; return; }
+    function renderRows(rows) {
+      rows = rows || [];
+      if (!rows.length) {
+        resBox.innerHTML = (mode === 'grant')
+          ? '未找到可授予的用户（可能全部已拥有该称号）'
+          : '未找到已获得该称号的用户（可能搜索词不匹配）';
+        return;
+      }
       resBox.innerHTML = '';
-      resBox.appendChild(el('div', 'gm-grant-count', '找到 ' + rows.length + ' 个可授予用户'));
+      resBox.appendChild(el('div', 'gm-grant-count',
+        (mode === 'grant' ? '找到 ' + rows.length + ' 个可授予用户'
+                           : '找到 ' + rows.length + ' 个已获得该称号的用户')));
       rows.forEach(function (u) {
         var row = el('div', 'gm-grant-user-row');
         row.setAttribute('data-uid', u.id);
         var info = el('div', 'gm-grant-user',
           (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : ''));
         row.appendChild(info);
-        var ok = el('button', 'btn-mini gm-confirm', '授予');
-        ok.type = 'button';
-        ok.onclick = function () { gmGrantTitle(u.id, t, row, card); };
-        row.appendChild(ok);
+        if (mode === 'grant') {
+          var ok = el('button', 'btn-mini gm-confirm', '授予');
+          ok.type = 'button';
+          ok.onclick = function () { gmGrantTitle(u.id, t, row, card); };
+          row.appendChild(ok);
+        } else {
+          var rv = el('button', 'btn-mini gm-danger', '撤销');
+          rv.type = 'button';
+          rv.onclick = function () { gmRevokeTitleFromTab(u.id, t, row, card); };
+          row.appendChild(rv);
+        }
         resBox.appendChild(row);
       });
     }
 
-    sb.rpc('gm_search_users_for_title', { p_pwd: gmPwd, p_query: query, p_title_id: t.id })
+    var rpc = (mode === 'grant') ? 'gm_search_users_for_title' : 'gm_search_users_with_title';
+    sb.rpc(rpc, { p_pwd: gmPwd, p_query: query, p_title_id: t.id })
       .then(function (r) {
         if (r.error && isRpcMissing(r.error)) {
-          return sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query }).then(renderRows);
+          if (mode === 'grant') {
+            // 旧版仅回退到全量搜索（授予幂等，可继续用）
+            return sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query }).then(function (r2) { renderRows(r2.data); });
+          }
+          resBox.innerHTML = '撤销搜索功能需要先执行最新 SQL 迁移（gm_search_users_with_title）';
+          return;
         }
-        renderRows(r);
+        renderRows(r.data);
       })
       .catch(function (e) {
         if (isRpcMissing(e)) {
-          sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
-            .then(renderRows)
-            .catch(function (e2) { resBox.innerHTML = '查询失败：' + friendlyError(e2); });
+          if (mode === 'grant') {
+            sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
+              .then(function (r2) { renderRows(r2.data); })
+              .catch(function (e2) { resBox.innerHTML = '查询失败：' + friendlyError(e2); });
+          } else {
+            resBox.innerHTML = '撤销搜索功能需要先执行最新 SQL 迁移（gm_search_users_with_title）';
+          }
           return;
         }
         resBox.innerHTML = '查询失败：' + friendlyError(e);
@@ -4406,6 +4462,29 @@
         // 停留在当前授予页面，不关闭子面板
       })
       .catch(function (e) { toast('授予失败：' + friendlyError(e)); });
+  }
+
+  // 称号管理界面内的撤销：成功后移除该行并递减计数，停留在当前页面
+  function gmRevokeTitleFromTab(uid, t, row, card) {
+    if (!window.confirm('确认撤销「' + t.name + '」称号？')) return;
+    sb.rpc('gm_revoke_title', { p_pwd: gmPwd, p_user_id: uid, p_title_id: t.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已撤销「' + t.name + '」');
+        loadDisplayTitles().then(refreshAdminStatus).then(applySelfTitle).then(renderConversations);
+        // 从搜索结果中移除该用户，方便继续撤销下一位
+        if (row && row.parentNode) domRemove(row);
+        // 更新卡片上的“已有 N 人获得”
+        if (card) {
+          var usageEl = card.querySelector('.gm-title-usage');
+          if (usageEl) {
+            t.usage_count = Math.max(0, (t.usage_count || 1) - 1);
+            usageEl.textContent = '已有 ' + t.usage_count + ' 人获得';
+          }
+        }
+        // 停留在当前撤销页面，不关闭子面板
+      })
+      .catch(function (e) { toast('撤销失败：' + friendlyError(e)); });
   }
 
   function gmDeleteTitle(id, name) {
