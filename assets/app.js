@@ -6337,6 +6337,7 @@
 
   $('composer').addEventListener('submit', async function (e) {
     e.preventDefault();
+    try {
     var text = input.value.trim();
     if (!text || !state.active) return;
     // 禁言检查（不清空输入，方便解除后重发）
@@ -6409,14 +6410,18 @@
         if (isGroup) renderGroups(); else renderFriends();
       })
       .catch(function (err) {
-        // 只有 insert 真正失败才恢复输入框；insert 已成功后渲染/草稿清理失败不再回置
         if (!insertSucceeded) {
-          toast(friendlyError(err));
+          toast('发送失败：' + friendlyError(err));
           input.value = text;
         } else {
           console.error('send post-process error:', err);
+          toast('消息已发出，但显示异常，正在刷新会话…');
         }
       });
+    } catch (fatal) {
+      console.error('send handler fatal:', fatal);
+      toast('发送异常：' + (fatal && fatal.message ? fatal.message : friendlyError(fatal)));
+    }
   });
 
   /* ---------- 发送文件 ---------- */
