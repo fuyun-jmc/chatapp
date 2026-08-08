@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v203 loaded');
+  console.log('[chatapp] app.js build v204 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3822,7 +3822,6 @@
   function onAdminRevoked() {
     state.isAdmin = false;
     updateAdminCard();
-    stopAdminPoll();
     stopWordLogUnreadPoller();
     clearAllUnreadBadges();
     hideModal('admin-panel');
@@ -3862,23 +3861,7 @@
     else if (adminTabCurrent === 'appeals') openAdminAppeals();
   }
 
-  // 管理员「违禁接收」面板：每 5 秒静默轮询当前 tab，自动刷新列表内容
-  // （不显示加载提示、不打扰标已读、标签页隐藏时跳过、关闭面板即停止）
-  var adminPollTimer = null;
-  function pollAdminTabSilent() {
-    if (!state.adminPanelOpen || document.hidden) return;
-    if (adminTabCurrent === 'reports') refreshAdminReportList(true);
-    else if (adminTabCurrent === 'wordlog') refreshWordLogList(true);
-    else if (adminTabCurrent === 'userreports') refreshUserReportList(true);
-    else if (adminTabCurrent === 'appeals') refreshAdminAppealList(true);
-  }
-  function startAdminPoll() {
-    stopAdminPoll();
-    adminPollTimer = setInterval(pollAdminTabSilent, 5000);
-  }
-  function stopAdminPoll() {
-    if (adminPollTimer) { clearInterval(adminPollTimer); adminPollTimer = null; }
-  }
+  // 管理员「违禁接收」面板：列表不自动轮询，由用户点击「刷新」按钮手动刷新。
 
   // 隐藏后的占位行：内容本身不显示，仅留恢复入口；撤销仅在 10 分钟内有效
   function renderHiddenRow(type, id, kind, createdAt) {
@@ -3984,7 +3967,6 @@
         startWordLogUnreadPoller();
         state.adminPanelOpen = true;
         showModal('admin-panel');
-        startAdminPoll();
         $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         openAdminReports();
         loadAllUnread();
@@ -4925,8 +4907,8 @@
 
   // 管理员（称号）后台：侧边栏「违禁接收」入口 + 免密面板
   $('admin-violation-open').addEventListener('click', openAdminPanel);
-  $('admin-close').addEventListener('click', function () { stopAdminPoll(); state.adminPanelOpen = false; hideModal('admin-panel'); });
-  $('admin-panel').addEventListener('click', function (e) { if (e.target === this) { stopAdminPoll(); state.adminPanelOpen = false; hideModal('admin-panel'); } });
+  $('admin-close').addEventListener('click', function () { state.adminPanelOpen = false; hideModal('admin-panel'); });
+  $('admin-panel').addEventListener('click', function (e) { if (e.target === this) { state.adminPanelOpen = false; hideModal('admin-panel'); } });
   // 管理员面板：子 tab 切换（周报 / 违禁词记录 / 用户举报 / 禁言申诉）
   function setAdminTabActive(name) {
     ['reports','wordlog','userreports','appeals'].forEach(function (k) {
@@ -4961,6 +4943,9 @@
   var admAs = $('admin-appeal-search');
   if (admAs) admAs.addEventListener('input', renderAdminAppeals);
   $('admin-word-log-refresh').addEventListener('click', openAdminWordLog);
+  $('admin-report-refresh').addEventListener('click', openAdminReports);
+  $('admin-userreport-refresh').addEventListener('click', openUserReports);
+  $('admin-appeal-refresh').addEventListener('click', openAdminAppeals);
   $('admin-word-log-clear').addEventListener('click', function () {
     if (!window.confirm('确认清空全部违禁词检测记录？\n仅对你本人隐藏，其他管理员/开发者与 GM 后台均不受影响，且 GM 记录永不删除。')) return;
     this.disabled = true;
