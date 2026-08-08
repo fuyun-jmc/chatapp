@@ -611,11 +611,12 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 .composer {
   display: flex; align-items: flex-end;
+  width: 100%; box-sizing: border-box;
   padding: 10px 14px 12px;
   background: var(--panel); border-top: 1px solid var(--line);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
-.attach-group { display: flex; margin-right: 8px; }
+.attach-group { display: flex; margin-right: 8px; flex: 0 0 auto; }
 .attach-btn {
   border: 0; background: transparent; color: var(--text-3);
   width: 36px; height: 36px; border-radius: 9px;
@@ -624,12 +625,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .attach-btn:hover { background: var(--bg); color: var(--brand); }
 
+.input-wrap {
+  flex: 1; min-width: 120px; display: flex; align-items: flex-end;
+  margin-left: 8px;
+}
 .composer textarea {
-  flex: 1 1 0; min-width: 0; box-sizing: border-box;
+  width: 100%; min-width: 0; box-sizing: border-box;
   resize: none; max-height: 120px; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 11px;
   padding: 8px 12px; outline: none; line-height: 1.5;
-  margin-left: 8px;
 }
 .composer textarea:focus { border-color: var(--brand); }
 
