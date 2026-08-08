@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v202 loaded');
+  console.log('[chatapp] app.js build v203 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3822,6 +3822,7 @@
   function onAdminRevoked() {
     state.isAdmin = false;
     updateAdminCard();
+    stopAdminPoll();
     stopWordLogUnreadPoller();
     clearAllUnreadBadges();
     hideModal('admin-panel');
@@ -3859,6 +3860,24 @@
     else if (adminTabCurrent === 'wordlog') openAdminWordLog();
     else if (adminTabCurrent === 'userreports') openUserReports();
     else if (adminTabCurrent === 'appeals') openAdminAppeals();
+  }
+
+  // 管理员「违禁接收」面板：每 5 秒静默轮询当前 tab，自动刷新列表内容
+  // （不显示加载提示、不打扰标已读、标签页隐藏时跳过、关闭面板即停止）
+  var adminPollTimer = null;
+  function pollAdminTabSilent() {
+    if (!state.adminPanelOpen || document.hidden) return;
+    if (adminTabCurrent === 'reports') refreshAdminReportList(true);
+    else if (adminTabCurrent === 'wordlog') refreshWordLogList(true);
+    else if (adminTabCurrent === 'userreports') refreshUserReportList(true);
+    else if (adminTabCurrent === 'appeals') refreshAdminAppealList(true);
+  }
+  function startAdminPoll() {
+    stopAdminPoll();
+    adminPollTimer = setInterval(pollAdminTabSilent, 5000);
+  }
+  function stopAdminPoll() {
+    if (adminPollTimer) { clearInterval(adminPollTimer); adminPollTimer = null; }
   }
 
   // 隐藏后的占位行：内容本身不显示，仅留恢复入口；撤销仅在 10 分钟内有效
@@ -3965,6 +3984,7 @@
         startWordLogUnreadPoller();
         state.adminPanelOpen = true;
         showModal('admin-panel');
+        startAdminPoll();
         $('admin-report-list').innerHTML = '<div class="gm-empty">加载中…</div>';
         openAdminReports();
         loadAllUnread();
@@ -3972,10 +3992,10 @@
       .catch(function () { toast('权限校验失败，请重试'); });
   }
 
-  function refreshAdminReportList() {
+  function refreshAdminReportList(silent) {
     var box = $('admin-report-list');
     if (!box) return Promise.resolve();
-    box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="gm-empty">加载中…</div>';
     return Promise.resolve(sb.rpc('admin_list_reports'))
       .then(function (r) {
         if (r.error) throw r.error;
@@ -3998,6 +4018,7 @@
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        if (silent) return;
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
   }
@@ -4009,10 +4030,10 @@
   }
 
   // 用户手动举报（昵称/信息/视频/图片）→ 管理员 / 开发者管理页展示
-  function refreshUserReportList() {
+  function refreshUserReportList(silent) {
     var box = $('admin-userreport-list');
     if (!box) return Promise.resolve();
-    box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="gm-empty">加载中…</div>';
     return Promise.resolve(sb.rpc('list_user_reports'))
       .then(function (r) {
         if (r.error) throw r.error;
@@ -4037,6 +4058,7 @@
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        if (silent) return;
         box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
   }
@@ -4110,10 +4132,10 @@
 
   // 管理员面板：违禁词记录（任意检测，不限于好友）
   // 只刷新「违禁词记录」列表内容（不含标已读逻辑），供打开 tab 与轮询实时刷新共用
-  function refreshWordLogList() {
+  function refreshWordLogList(silent) {
     var box = $('admin-word-log-list');
     if (!box) return Promise.resolve();
-    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     return Promise.resolve(sb.rpc('admin_list_word_log'))
       .then(function (r) {
         if (r.error) throw r.error;
@@ -4147,6 +4169,7 @@
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/ADMIN_FORBIDDEN/.test(m)) { onAdminRevoked(); return; }
+        if (silent) return;
         box.innerHTML = '<div class="gm-empty">暂无违禁词检测记录</div>';
       });
   }
@@ -4159,10 +4182,10 @@
   }
 
   // 管理员面板：禁言申诉列表（查看 + 通过/驳回）
-  function refreshAdminAppealList() {
+  function refreshAdminAppealList(silent) {
     var box = $('admin-appeal-list');
     if (!box) return Promise.resolve();
-    if (!state.adminAppealsAll) box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (!silent && !state.adminAppealsAll) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     return Promise.resolve(sb.rpc('admin_list_mute_appeals'))
       .then(function (r) {
         if (r.error) throw r.error;
@@ -4902,8 +4925,8 @@
 
   // 管理员（称号）后台：侧边栏「违禁接收」入口 + 免密面板
   $('admin-violation-open').addEventListener('click', openAdminPanel);
-  $('admin-close').addEventListener('click', function () { hideModal('admin-panel'); });
-  $('admin-panel').addEventListener('click', function (e) { if (e.target === this) hideModal('admin-panel'); });
+  $('admin-close').addEventListener('click', function () { stopAdminPoll(); state.adminPanelOpen = false; hideModal('admin-panel'); });
+  $('admin-panel').addEventListener('click', function (e) { if (e.target === this) { stopAdminPoll(); state.adminPanelOpen = false; hideModal('admin-panel'); } });
   // 管理员面板：子 tab 切换（周报 / 违禁词记录 / 用户举报 / 禁言申诉）
   function setAdminTabActive(name) {
     ['reports','wordlog','userreports','appeals'].forEach(function (k) {
