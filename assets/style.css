@@ -631,7 +631,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .composer textarea {
   width: 100%; min-width: 0; box-sizing: border-box;
-  resize: none; max-height: 120px; overflow-y: auto;
+  resize: none; min-height: 40px; max-height: 120px; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 11px;
   padding: 8px 12px; outline: none; line-height: 1.5;
 }
