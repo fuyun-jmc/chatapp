@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v196 loaded');
+  console.log('[chatapp] app.js build v197 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -27,6 +27,15 @@
   var sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
+
+  // Supabase JS 的 sb.rpc() 在某些环境下返回 thenable 而非完整 Promise，
+  // 直接链式 .catch() 会报 "is not a function"。统一包装成真正 Promise。
+  (function () {
+    var orig = sb.rpc;
+    sb.rpc = function () {
+      return Promise.resolve(orig.apply(sb, arguments));
+    };
+  })();
 
   var BUCKET = CFG.BUCKET || 'chat-files';
   var LIMIT = CFG.HISTORY_LIMIT || 300;
