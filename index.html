@@ -744,9 +744,16 @@
       <button class="gm-tab" id="admin-tab-appeals" type="button">禁言申诉<span class="gm-tab-badge" id="admin-tab-appeals-badge"></span></button>
     </div>
     <div class="gm-reports" id="admin-reports">
+      <div class="gm-board-search">
+        <span class="gm-subbar-tip">本周被举报内容 / 系统检测汇总</span>
+        <button class="btn-mini" id="admin-report-refresh" type="button">刷新</button>
+      </div>
       <div class="gm-report-list" id="admin-report-list"><div class="gm-empty">加载中…</div></div>
     </div>
     <div class="gm-userreports" id="admin-userreports" hidden>
+      <div class="gm-board-search">
+        <button class="btn-mini" id="admin-userreport-refresh" type="button">刷新</button>
+      </div>
       <div class="gm-word-log-batch" id="admin-ur-batch">
         <label class="wl-selall"><input type="checkbox" id="admin-ur-selectall">全选</label>
         <span class="wl-dur-label">禁言时长</span>
@@ -783,7 +790,7 @@
       <div class="gm-report-list" id="admin-word-log-list"><div class="gm-empty">加载中…</div></div>
     </div>
     <div class="gm-appeals" id="admin-appeals" hidden>
-      <div class="gm-appeal-search"><input id="admin-appeal-search" type="text" placeholder="搜索昵称 / 手机号" /></div>
+      <div class="gm-appeal-search"><input id="admin-appeal-search" type="text" placeholder="搜索昵称 / 手机号" autocomplete="off" /><button class="btn-mini" id="admin-appeal-refresh" type="button">刷新</button></div>
       <div class="gm-report-list" id="admin-appeal-list"><div class="gm-empty">加载中…</div></div>
     </div>
   </div>
@@ -901,7 +908,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.v203.js"></script>
+<script src="assets/app.v204.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
