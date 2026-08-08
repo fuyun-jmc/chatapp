@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v201 loaded');
+  console.log('[chatapp] app.js build v202 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -78,7 +78,8 @@
     profileTitleSig: {}, // uid -> 称号列签名（实时通道过滤用：仅称号变化才刷新）
     titleReloadTimer: {}, // uid -> 节流定时器，避免同一用户高频刷新
     devHiddenMap: {},    // uid -> boolean，记录每位用户的 hide_dev_title（影响所有 viewer）
-    activeSenderIds: {}  // uid -> 1：当前会话（群聊含发言者）/ 群资料成员，称号变化需实时同步的人
+    activeSenderIds: {}, // uid -> 1：当前会话（群聊含发言者）/ 群资料成员，称号变化需实时同步的人
+    gmPollTimer: null    // GM 看板轮询定时器
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -2444,7 +2445,7 @@
     try { $('gm-search-input').focus(); } catch (e) {}
   }
 
-  function closeGm() { state.gmPanelOpen = false; hideModal('gm-panel'); }
+  function closeGm() { state.gmPanelOpen = false; stopGmPolling(); hideModal('gm-panel'); }
 
   function gmSearch() {
     var q = $('gm-search-input').value.trim();
@@ -2653,10 +2654,10 @@
     $('gm-group-detail').innerHTML = '';
   }
 
-  function openGmAppealsTab() {
+  function openGmAppealsTab(silent) {
     var box = $('gm-appeal-list');
     if (!box) return;
-    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_mute_appeals', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2702,9 +2703,9 @@
   }
 
   // GM 后台「用户举报」列表（绝对管理员口令鉴权，留存、可搜索、不可删除、只读）
-  function openGmUserReportsTab() {
+  function openGmUserReportsTab(silent) {
     var box = $('gm-userreport-list');
-    if (box) box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (box && !silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_user_reports', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2789,10 +2790,10 @@
   }
 
   // ---------- GM 问题反馈列表 ----------
-  function openGmFeedbackTab() {
+  function openGmFeedbackTab(silent) {
     var box = $('gm-feedback');
     if (!box) return;
-    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_feedback', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2837,10 +2838,10 @@
 
   // 违禁词记录：列出「任意」被系统检测出的违禁词（含发给陌生人 / 群聊），不限于好友
   // GM 后台留存、可搜索、不可删除（仅批量禁言，不隐藏记录）
-  function openGmWordLogTab() {
+  function openGmWordLogTab(silent) {
     var box = $('gm-word-log-list');
     if (!box) return;
-    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_word_log', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) return; // 兼容旧部署：函数不存在时静默
@@ -3318,23 +3319,39 @@
       var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
-    if (tab === 'titles') openTitleTab();
-    else if (tab === 'reports') openReportsTab();
-    else if (tab === 'userreports') openGmUserReportsTab();
-    else if (tab === 'groups') openGmGroupsTab();
-    else if (tab === 'appeals') openGmAppealsTab();
-    else if (tab === 'feedback') openGmFeedbackTab();
-    else if (tab === 'wordlog') openGmWordLogTab();
+    if (tab === 'titles') { stopGmPolling(); openTitleTab(); }
+    else if (tab === 'reports') { openReportsTab(); startGmPolling(); }
+    else if (tab === 'userreports') { openGmUserReportsTab(); startGmPolling(); }
+    else if (tab === 'groups') { stopGmPolling(); openGmGroupsTab(); }
+    else if (tab === 'appeals') { openGmAppealsTab(); startGmPolling(); }
+    else if (tab === 'feedback') { openGmFeedbackTab(); startGmPolling(); }
+    else if (tab === 'wordlog') { openGmWordLogTab(); startGmPolling(); }
+    else { stopGmPolling(); }
   }
 
-  // 每日 00:00 自动刷新当前打开的 GM 看板（除手动刷新外，每隔一天自动刷新一次）
-  function refreshGmCurrentTab() {
+  // 自动刷新当前打开的 GM 看板（轮询 / 每日 00:00 兜底）
+  function refreshGmCurrentTab(silent) {
     if (state.gmPanelOpen !== true) return;
     var tab = state.gmCurrentTab;
-    if (tab === 'reports') openReportsTab();
-    else if (tab === 'userreports') openGmUserReportsTab();
-    else if (tab === 'wordlog') openGmWordLogTab();
-    else if (tab === 'appeals') openGmAppealsTab();
+    if (tab === 'reports') openReportsTab(silent);
+    else if (tab === 'userreports') openGmUserReportsTab(silent);
+    else if (tab === 'wordlog') openGmWordLogTab(silent);
+    else if (tab === 'appeals') openGmAppealsTab(silent);
+    else if (tab === 'feedback') openGmFeedbackTab(silent);
+  }
+
+  // GM 看板轮询：每 5 秒静默刷新当前 tab（页面隐藏时跳过）
+  function startGmPolling() {
+    stopGmPolling();
+    if (state.gmPanelOpen !== true) return;
+    state.gmPollTimer = setInterval(function () {
+      if (document.hidden) return;
+      refreshGmCurrentTab(true);
+    }, 5000);
+  }
+
+  function stopGmPolling() {
+    if (state.gmPollTimer) { clearInterval(state.gmPollTimer); state.gmPollTimer = null; }
   }
 
   function scheduleDailyRefresh() {
@@ -3398,9 +3415,9 @@
   }
 
   // GM 后台「违规上报」列表（留存、可搜索、不可删除）
-  function openReportsTab() {
+  function openReportsTab(silent) {
     var box = $('gm-report-list');
-    if (box) box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    if (box && !silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_reports', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -6722,6 +6739,8 @@
       fillNewMessages();
       // 管理后台四大板块未读数：锁屏/切后台期间 WebSocket 常已断开，回前台立刻补一次
       if (state.isAdmin) loadAllUnread();
+      // GM 看板回前台立即静默刷新当前 tab
+      if (state.gmPanelOpen) refreshGmCurrentTab(true);
     }
   });
 
