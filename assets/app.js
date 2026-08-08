@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v204 loaded');
+  console.log('[chatapp] app.js build v205 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3730,15 +3730,12 @@
      8 秒一轮，四个板块全部刷新计数；正在查看的 tab 顺带刷新列表并标已读。 */
   function startWordLogUnreadPoller() {
     if (state.wordLogUnreadTimer) return;
+    // 仅每 8 秒刷新未读徽章计数；列表内容一律由用户点「刷新」按钮（或切 tab）触发，不做自动刷新
     state.wordLogUnreadTimer = setInterval(function () {
       if (!state.isAdmin) return;
       for (var i = 0; i < UNREAD_KINDS.length; i++) {
         (function (key) {
-          loadUnread(key).then(function () {
-            if (state.adminPanelOpen && adminTabCurrent === key) {
-              Promise.resolve(refreshTabList(key)).then(function () { markUnreadRead(key); });
-            }
-          });
+          loadUnread(key);
         })(UNREAD_KINDS[i].key);
       }
     }, 8000);
@@ -3763,10 +3760,7 @@
     if (!payload || !payload.new) return;
     var k = unreadKindByTable(payload.table);
     if (!k) return;
-    loadUnread(k.key);
-    if (state.adminPanelOpen && adminTabCurrent === k.key) {
-      Promise.resolve(refreshTabList(k.key)).then(function () { markUnreadRead(k.key); });
-    }
+    loadUnread(k.key);   // 仅更新未读徽章；列表不自动刷新，需用户点「刷新」按钮
   }
 
   /* 违禁词记录被清空（DELETE）后，GM 后台与管理员面板若正打开该 tab，自动刷新列表。
