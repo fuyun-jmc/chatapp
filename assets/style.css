@@ -625,7 +625,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .attach-btn:hover { background: var(--bg); color: var(--brand); }
 
 .composer textarea {
-  flex: 1 1 auto; width: 100%; min-width: 0; box-sizing: border-box;
+  flex: 1 1 0; min-width: 0; box-sizing: border-box;
   resize: none; max-height: 120px; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 11px;
   padding: 8px 12px; outline: none; line-height: 1.5;
