@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v197 loaded');
+  console.log('[chatapp] app.js build v201 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -250,6 +250,14 @@
     if (existed) renderConversations();
   }
 
+  /* textarea 自适应高度：空内容保底一行高度，防止 box-sizing 下 scrollHeight 为 0 塌缩 */
+  function fitTextarea(ta) {
+    if (!ta) return;
+    ta.style.height = 'auto';
+    var minH = 40; // 一行 + padding + border 的保底高度
+    ta.style.height = Math.max(minH, Math.min(ta.scrollHeight, 120)) + 'px';
+  }
+
   /* 其他设备（或本设备回声）的草稿变更：更新缓存并同步到输入框（非编辑态时） */
   function applyRemoteDraft(row, isDelete) {
     if (!row || !row.user_id || row.user_id !== state.uid) return;
@@ -264,8 +272,7 @@
         document.activeElement !== inp) {
       var t = getDraft(row.peer_id, row.is_group);
       inp.value = t || '';
-      inp.style.height = 'auto';
-      inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+      fitTextarea(inp);
     }
   }
 
@@ -5560,8 +5567,7 @@
     if (dInp) {
       var draftTxt = getDraft(peer.id, isGroup);
       dInp.value = draftTxt || '';
-      dInp.style.height = 'auto';
-      if (draftTxt) dInp.style.height = Math.min(dInp.scrollHeight, 120) + 'px';
+      fitTextarea(dInp);
     }
 
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
@@ -6330,8 +6336,7 @@
   var input = $('msg-input');
 
   input.addEventListener('input', function () {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    fitTextarea(this);
     // 边打字边保存草稿（debounce 落库），退出网页 / 切换设备后仍在
     if (state.active) {
       scheduleSaveDraft(state.active.id, state.active.type === 'group', this.value);
@@ -6352,7 +6357,6 @@
     if (!text || !state.active) return;
     // 禁言检查（不清空输入，方便解除后重发）
     if (!(await ensureNotMuted())) return;
-    input.style.height = 'auto';
 
     var peerId = state.active.id;
     var isGroup = state.active.type === 'group';
@@ -6400,6 +6404,7 @@
     if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
 
     input.value = '';   // 确认无违禁词后才清空输入框
+    fitTextarea(input); // 重置为单行高度
 
     var payload = {
       sender_id: state.uid,
