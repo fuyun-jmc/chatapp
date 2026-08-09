@@ -913,6 +913,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-report-sub { font-size: 12px; color: var(--text-2); margin-top: 4px; }
 .gm-report .btn-mini { margin-top: 8px; }
 .gm-report-line { font-size: 12px; color: var(--text-2); margin-top: 4px; word-break: break-all; }
+.gm-report-note { font-size: 12px; color: #b8860b; margin-top: 8px; padding: 6px 8px; background: rgba(184,134,11,.10); border-radius: 6px; }
 .gm-report-acts { display: flex; flex-wrap: wrap; margin-top: 8px; }
 .gm-report-acts > .btn-mini { margin: 0 6px 0 0; }
 .gm-hidden-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; opacity: .72; }
