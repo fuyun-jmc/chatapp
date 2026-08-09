@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v206 loaded');
+  console.log('[chatapp] app.js build v207 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -405,6 +405,8 @@
     if (/duplicate key|profiles_phone_key/i.test(m)) return '该手机号已被占用';
     if (/row-level security|violates row-level/i.test(m)) return '没有权限执行该操作（可能还不是好友）';
     if (/rate limit|too many/i.test(m)) return '操作太频繁，请稍后再试';
+    if (/CANNOT_MUTE_SELF/.test(m)) return '不能禁言自己';
+    if (/CANNOT_UNMUTE_SELF/.test(m)) return '不能解除自己的禁言';
     if (/Failed to fetch|NetworkError/i.test(m)) return '网络连接失败，检查网络或 Supabase 地址是否正确';
     return m;
   }
@@ -4046,6 +4048,8 @@
   }
 
   function renderUserReportCard(rep) {
+    // 本人被举报：管理员不可审理自己的内容（后端 admin_mute_user 也会兜底拒绝）
+    var isSelfReport = (rep.reported_kind === 'user' && rep.reported_id && rep.reported_id === state.uid);
     var card = el('div', 'gm-report');
     // 多选勾选框（批量禁言 / 不禁言 / 删除用）
     var selRow = el('div', 'wl-check-row');
@@ -4056,7 +4060,7 @@
     if (rep.reported_kind === 'user' && rep.reported_id) cb.setAttribute('data-uid', rep.reported_id);
     cb.title = '选择此举报';
     selRow.appendChild(cb);
-    card.appendChild(selRow);
+    if (!isSelfReport) card.appendChild(selRow);
     var head = el('div', 'gm-report-head');
     var name = el('div', 'gm-report-name',
       (rep.reporter_nickname || '(匿名)') + ' 举报 ' + (rep.reported_name || (rep.reported_kind === 'group' ? '群聊' : '用户')));
@@ -4095,6 +4099,11 @@
       });
     }
 
+    // 本人被举报：管理员不可审理自己的内容，直接结束（不渲染处置按钮）
+    if (isSelfReport) {
+      card.appendChild(el('div', 'gm-report-note', '本人被举报，无法审理（需由其他管理员 / 开发者处理）'));
+      return card;
+    }
     // —— 处置：禁言（全网隐藏）/ 不禁言（全网隐藏）/ 忽略（仅自己隐藏）——
     // 说明：原卡片上的「标记处理 / 撤销处理」单按钮已移除（v163），统一由批量栏的「批量不禁言」完成标记处理，
     //       单个举报如需处置走下方禁言 / 不禁言 / 忽略按钮。
@@ -4215,20 +4224,25 @@
     card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (a.created_at ? a.created_at.replace('T', ' ').slice(0, 16) : '—')));
     card.appendChild(el('div', 'gm-report-line', '申诉理由：' + (a.reason || '')));
 
+    var isSelfAppeal = (mode === 'admin' && a.user_id && a.user_id === state.uid);
     if (a.status === 'pending') {
-      var acts = el('div', 'gm-row-acts');
-      var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
-      ok.onclick = function () {
-        if (mode === 'gm') gmReviewAppeal(a.id, 'approve', a.nickname);
-        else adminReviewAppeal(a.id, 'approve', a.nickname);
-      };
-      var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
-      no.onclick = function () {
-        if (mode === 'gm') gmReviewAppeal(a.id, 'reject', a.nickname);
-        else adminReviewAppeal(a.id, 'reject', a.nickname);
-      };
-      acts.appendChild(ok); acts.appendChild(no);
-      card.appendChild(acts);
+      if (isSelfAppeal) {
+        card.appendChild(el('div', 'gm-report-note', '本人申诉，无法审核（需由其他管理员 / 开发者处理）'));
+      } else {
+        var acts = el('div', 'gm-row-acts');
+        var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
+        ok.onclick = function () {
+          if (mode === 'gm') gmReviewAppeal(a.id, 'approve', a.nickname);
+          else adminReviewAppeal(a.id, 'approve', a.nickname);
+        };
+        var no = el('button', 'btn-mini gm-danger', '驳回'); no.type = 'button';
+        no.onclick = function () {
+          if (mode === 'gm') gmReviewAppeal(a.id, 'reject', a.nickname);
+          else adminReviewAppeal(a.id, 'reject', a.nickname);
+        };
+        acts.appendChild(ok); acts.appendChild(no);
+        card.appendChild(acts);
+      }
     } else if (mode === 'admin' && !isUndoExpired(a.reviewed_at)) {
       // 普通管理员：处理完成后 10 分钟内可撤销审核决定（GM 后台始终可见全部，不提供撤销）
       var undoActs = el('div', 'gm-row-acts');
