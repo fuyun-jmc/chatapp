@@ -328,6 +328,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 
 /* 本地好友搜索框 */
 .friend-search {
+  position: relative;
   display: flex; align-items: center; gap: 6px;
   margin: 4px 14px 8px; padding: 6px 10px;
   background: var(--bg); border-radius: 8px; color: var(--text-3);
@@ -339,6 +340,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .friend-search input::placeholder { color: var(--text-3); }
 .friend-search:focus-within { box-shadow: 0 0 0 1.5px var(--brand); }
+.friend-search input { padding-right: 24px; }
+.search-clear {
+  position: absolute; right: 8px; top: 50%; margin-top: -9px;
+  width: 18px; height: 18px; border: 0; border-radius: 50%;
+  background: var(--text-3); color: #fff; font-size: 14px; line-height: 18px;
+  padding: 0; cursor: pointer; display: none;
+}
+.search-clear:not([hidden]) { display: block; }
 
 /* 合并后的统一搜索框（顶部） */
 .unified-search { padding: 12px 14px 6px; }
