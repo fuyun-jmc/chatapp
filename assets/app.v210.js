@@ -24,6 +24,19 @@
     return;
   }
 
+  // 兜底：若 supabase 库（本地 vendor 或 CDN）未加载成功，明确报错而非卡在“正在登录…”
+  if (typeof window.supabase === 'undefined' || !window.supabase || !window.supabase.createClient) {
+    var bw = document.getElementById('boot');
+    if (bw) { bw.querySelector('.boot-text').textContent = '前端依赖加载失败：supabase 库未就绪'; }
+    var cw = document.getElementById('config-warning');
+    if (cw) {
+      cw.hidden = false;
+      cw.querySelector('span').textContent = '核心依赖 supabase.js 未能加载，请检查网络或刷新重试（建议硬刷新 Ctrl/Cmd+Shift+R）。';
+    }
+    console.error('[chatapp] supabase global missing — vendor script failed to load');
+    return;
+  }
+
   var sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
   });
