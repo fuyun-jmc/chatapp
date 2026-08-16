@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v208 loaded');
+  console.log('[chatapp] app.js build v209 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1647,6 +1647,8 @@
     $('app-view').hidden = false;
     sb.realtime.setAuth(session.access_token);
 
+    loadConvTs();   // 刷新网页后恢复「会话浮顶时间戳」，避免刚发消息置顶、刷新又回原位
+
     registerDeviceSession();
     startHeartbeat();
     setupKickChannel();
@@ -1882,6 +1884,21 @@
       if (tb !== ta) return tb - ta;                    // 有 ts 的按时间倒序前置
       return (a.__order || 0) - (b.__order || 0);       // 无 ts 保持原始顺序
     });
+  }
+
+  // 会话浮顶时间戳持久化：刷新网页后从 localStorage 恢复，
+  // 避免「刚发消息会话置顶、刷新后又回到原来位置」。
+  function loadConvTs() {
+    if (!state.uid) return;
+    try {
+      var raw = localStorage.getItem('convTs:' + state.uid);
+      if (raw) state.convTs = JSON.parse(raw) || {};
+    } catch (e) { state.convTs = {}; }
+  }
+  function bumpConvTs(id) {
+    if (!id) return;
+    state.convTs[id] = Date.now();
+    try { localStorage.setItem('convTs:' + state.uid, JSON.stringify(state.convTs)); } catch (e) {}
   }
 
   // 把好友按“置顶 / 非置顶”分组渲染进容器；每组内未读优先。clickFn 为点击回调
@@ -5595,7 +5612,7 @@
       // 若不一并置 convTs，就会出现「只多红点、会话却排在后面」。给有未读的会话打上最新浮顶时间戳，
       // 让它们随红点一起浮到最前（已浮动且时间戳更新的会话不受影响）。
       Object.keys(map).forEach(function (pid) {
-        state.convTs[pid] = Date.now();
+        bumpConvTs(pid);
       });
       renderConversations();
     }).catch(function () {});
@@ -6468,7 +6485,7 @@
         insertSucceeded = true;
         appendMessage(r.data);
         clearDraft(peerId, isGroup);   // 发送成功：清空该会话草稿（本地 + 服务端）
-        state.convTs[peerId] = Date.now();
+        bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
       })
       .catch(function (err) {
@@ -6541,7 +6558,7 @@
         if (state.active && state.active.id === target.id) appendMessage(r.data);
         else toast('已发送');
         // 发送文件也会把该会话前置（仅收/发才前置，点击查看不前置）
-        state.convTs[target.id] = Date.now();
+        bumpConvTs(target.id);
         if (target.type === 'group') renderGroups(); else renderFriends();
       })
       .catch(function (e) { toast(friendlyError(e)); })
@@ -6620,7 +6637,7 @@
             appendMessage(m);
           } else {
             state.unread[m.group_id] = (state.unread[m.group_id] || 0) + 1;
-            state.convTs[m.group_id] = Date.now();
+            bumpConvTs(m.group_id);
             renderGroups();
             var g = groupById(m.group_id);
             if (g) toast(g.name + ' 发来一条消息');
@@ -6630,7 +6647,7 @@
             appendMessage(m);
           } else {
             state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
-            state.convTs[m.sender_id] = Date.now();
+            bumpConvTs(m.sender_id);
             renderFriends();
             var from = friendById(m.sender_id);
             if (from) toast(from.nickname + ' 发来一条消息');
