@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v210 loaded');
+  console.log('[chatapp] app.js build v211 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2064,6 +2064,8 @@
 
   function onUnifiedSearch() {
     var kw = $('search-box').value.trim();
+    // 同步“清空”叉按钮：有内容才显示
+    var sc = $('search-clear'); if (sc) sc.hidden = !$('search-box').value;
     var panel = $('search-result');
     var list = $('chat-list');
     if (!kw) {
@@ -5581,6 +5583,12 @@
 
   /* ---------- 统一搜索：搜好友 + 手机号加好友 ---------- */
   $('search-box').addEventListener('input', onUnifiedSearch);
+  // 叉按钮：清空输入框并恢复好友/群列表
+  $('search-clear').addEventListener('click', function () {
+    $('search-box').value = '';
+    onUnifiedSearch();           // 内部按空值重置结果并隐藏叉按钮
+    try { $('search-box').focus(); } catch (e) {}
+  });
 
   function sendRequest(user, btn) {
     if (user.id === state.uid) { toast('不能添加自己为好友'); btn.disabled = false; return; }
