@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v209 loaded');
+  console.log('[chatapp] app.js build v210 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1894,6 +1894,24 @@
       var raw = localStorage.getItem('convTs:' + state.uid);
       if (raw) state.convTs = JSON.parse(raw) || {};
     } catch (e) { state.convTs = {}; }
+    // 跨设备：从 DB 取每个会话最后一条消息时间，与本地值取较大者合并。
+    // 这样换设备 / 换浏览器登录时，列表也能按真实最后活动时间置顶。
+    if (sb && sb.rpc) {
+      sb.rpc('get_my_conv_last_times').then(function (r) {
+        if (r.error || !r.data) return;
+        (r.data || []).forEach(function (row) {
+          if (!row.peer_id || !row.last_ts) return;
+          var ts = new Date(row.last_ts).getTime();
+          if (!isNaN(ts) && ts > (state.convTs[row.peer_id] || 0)) {
+            state.convTs[row.peer_id] = ts;
+          }
+        });
+        // 列表已渲染则重排；否则等待 loadRelations/loadGroups 渲染时自然生效
+        if (state.friends && (state.friends.length || state.groups.length)) {
+          renderConversations();
+        }
+      }).catch(function () {});
+    }
   }
   function bumpConvTs(id) {
     if (!id) return;
