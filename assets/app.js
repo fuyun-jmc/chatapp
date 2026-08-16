@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v207 loaded');
+  console.log('[chatapp] app.js build v208 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -51,6 +51,9 @@
     drafts: {},          // { draftKey: { text, ts } }  聊天草稿缓存（服务端为准，跨设备同步）
     profilesById: {},   // uid -> { nickname, avatar_path, phone }
     active: null,       // 当前会话：好友对象或群组对象（type==='group'）
+    chatVisible: false, // 聊天面板是否真正显示在眼前（openChat 设 true、返回列表/收起设 false）；
+                        // 仅 state.active 不足以判断“正在看”，因为返回列表后 active 仍保留，
+                        // 会导致误判“已打开该会话”而漏记未读 / 不浮顶
     unread: {},         // { peerId: number }  未读消息计数（好友或群）
     convTs: {},          // { convId: number }  会话“浮顶”时间戳；收到新消息或查看后设为 Date.now()，用于排序让它停留前置
     recallTimer: null,  // 定时刷新“撤回/删除”按钮的定时器
@@ -1631,7 +1634,7 @@
       state.presenceChannel = null;
     }
     state.uid = null; state.profile = null; state.friends = [];
-    state.incoming = []; state.active = null; state.unread = {}; state.urlCache = {};
+    state.incoming = []; state.active = null; state.chatVisible = false; state.unread = {}; state.urlCache = {};
     $('app-view').hidden = true;
     $('auth-view').hidden = false;
     document.querySelector('.app-view').classList.remove('show-chat');
@@ -1762,6 +1765,7 @@
         // 当前会话对象被删除好友时收起聊天窗
         if (state.active && !friends.some(function (f) { return f.id === state.active.id; })) {
           state.active = null;
+          state.chatVisible = false;
           $('chat-room').hidden = true;
           $('chat-empty').hidden = false;
         }
@@ -5268,6 +5272,7 @@
         if (r.error) throw r.error;
         hideModal('group-info-modal');
         state.active = null;
+        state.chatVisible = false;
         $('chat-room').hidden = true;
         $('chat-empty').hidden = false;
         return loadGroups();
@@ -5386,6 +5391,7 @@
       .then(function (r) { if (r.error) throw r.error; toast('已退出群聊'); hideModal('group-info-modal'); return loadGroups(); })
       .then(function () {
         state.active = null;
+        state.chatVisible = false;
         $('chat-room').hidden = true;
         $('chat-empty').hidden = false;
         renderGroups();
@@ -5582,9 +5588,15 @@
       (r.data || []).forEach(function (row) {
         if (row.cnt > 0) map[row.peer_id] = Number(row.cnt);
       });
-      // 当前已打开的会话：不应被 get_my_unread 重新标记为未读
-      if (state.active && state.active.id) delete map[state.active.id];
+      // 当前已打开且正在看的会话：不应被 get_my_unread 重新标记为未读
+      if (state.active && state.chatVisible && state.active.id) delete map[state.active.id];
       state.unread = map;
+      // 红点与“浮顶置前”必须同源校准：弱网下实时推送常丢事件，未读靠本次 DB 重连校准，
+      // 若不一并置 convTs，就会出现「只多红点、会话却排在后面」。给有未读的会话打上最新浮顶时间戳，
+      // 让它们随红点一起浮到最前（已浮动且时间戳更新的会话不受影响）。
+      Object.keys(map).forEach(function (pid) {
+        state.convTs[pid] = Date.now();
+      });
       renderConversations();
     }).catch(function () {});
   }
@@ -5623,6 +5635,7 @@
 
     $('chat-empty').hidden = true;
     $('chat-room').hidden = false;
+    state.chatVisible = true;
     document.querySelector('.app-view').classList.add('show-chat');
 
     $('peer-name').textContent = isGroup ? groupDisplayName(peer) : displayName(peer);
@@ -5721,6 +5734,7 @@
   }
 
   $('back-btn').addEventListener('click', function () {
+    state.chatVisible = false;
     document.querySelector('.app-view').classList.remove('show-chat');
   });
 
@@ -6602,7 +6616,7 @@
         if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return;
 
         if (m.group_id) {
-          if (state.active && state.active.type === 'group' && state.active.id === m.group_id) {
+          if (state.chatVisible && state.active && state.active.type === 'group' && state.active.id === m.group_id) {
             appendMessage(m);
           } else {
             state.unread[m.group_id] = (state.unread[m.group_id] || 0) + 1;
@@ -6612,7 +6626,7 @@
             if (g) toast(g.name + ' 发来一条消息');
           }
         } else if (m.receiver_id === state.uid) {
-          if (state.active && state.active.type !== 'group' && state.active.id === m.sender_id) {
+          if (state.chatVisible && state.active && state.active.type !== 'group' && state.active.id === m.sender_id) {
             appendMessage(m);
           } else {
             state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
