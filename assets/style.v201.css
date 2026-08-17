@@ -345,9 +345,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
   position: absolute; right: 8px; top: 50%; margin-top: -9px;
   width: 18px; height: 18px; border: 0; border-radius: 50%;
   background: var(--text-3); color: #fff; font-size: 14px; line-height: 18px;
-  padding: 0; cursor: pointer; display: none;
+  padding: 0; cursor: pointer; display: block;
 }
-.search-clear:not([hidden]) { display: block; }
 
 /* 合并后的统一搜索框（顶部） */
 .unified-search { padding: 12px 14px 6px; }
