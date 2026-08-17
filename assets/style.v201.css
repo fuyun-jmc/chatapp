@@ -343,9 +343,9 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .friend-search input { padding-right: 24px; }
 .search-clear {
   position: absolute; right: 8px; top: 50%; margin-top: -9px;
-  width: 18px; height: 18px; border: 0; border-radius: 50%;
-  background: var(--text-3); color: #fff; font-size: 14px; line-height: 18px;
-  padding: 0; cursor: pointer; display: block;
+  width: 20px; height: 20px; border: 0; border-radius: 50%;
+  background: var(--text-3); color: #fff; font-size: 14px; line-height: 20px;
+  padding: 0; cursor: pointer; display: block; touch-action: manipulation;
 }
 
 /* 合并后的统一搜索框（顶部） */
