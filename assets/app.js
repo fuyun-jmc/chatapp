@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v216 loaded');
+  console.log('[chatapp] app.js build v217 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -423,6 +423,7 @@
     if (/rate limit|too many/i.test(m)) return '操作太频繁，请稍后再试';
     if (/CANNOT_MUTE_SELF/.test(m)) return '不能禁言自己';
     if (/CANNOT_UNMUTE_SELF/.test(m)) return '不能解除自己的禁言';
+    if (/ONLY_DEV_CAN_UNMUTE_ADMIN/.test(m)) return '该用户为管理员，仅开发者可解除其禁言';
     if (/Failed to fetch|NetworkError/i.test(m)) return '网络连接失败，检查网络或 Supabase 地址是否正确';
     return m;
   }
@@ -4507,8 +4508,14 @@
       if (isSelfAppeal) {
         card.appendChild(el('div', 'gm-report-note', '本人申诉，无法审核（需由其他管理员 / 开发者处理）'));
       } else {
+        // 目标为管理员、且当前审核人不是开发者时：仅能驳回，不能解禁
+        var devOnlyTarget = (mode === 'admin' && !state.isDev && a.is_admin);
         var acts = el('div', 'gm-row-acts');
         var ok = el('button', 'btn-mini', '通过并解禁'); ok.type = 'button';
+        if (devOnlyTarget) {
+          ok.disabled = true;
+          ok.title = '该用户为管理员，仅开发者可解除其禁言';
+        }
         ok.onclick = function () {
           if (mode === 'gm') gmReviewAppeal(a.id, 'approve', a.nickname);
           else adminReviewAppeal(a.id, 'approve', a.nickname);
@@ -4520,6 +4527,9 @@
         };
         acts.appendChild(ok); acts.appendChild(no);
         card.appendChild(acts);
+        if (devOnlyTarget) {
+          card.appendChild(el('div', 'gm-report-note', '该用户为管理员，仅开发者可解除其禁言（你可驳回，但不能解禁）'));
+        }
       }
     } else if (mode === 'admin' && !isUndoExpired(a.reviewed_at)) {
       // 普通管理员：处理完成后 10 分钟内可撤销审核决定（GM 后台始终可见全部，不提供撤销）
