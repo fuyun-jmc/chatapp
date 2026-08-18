@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v220 loaded');
+  console.log('[chatapp] app.js build v221 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1694,6 +1694,7 @@
         //    startPoll 永远不执行（一个坑过多次的 thenable 陷阱）。这里顺序调用即可。
         subscribeRealtime();
         startPoll();
+        registerServiceWorker();   // PWA：注册 Service Worker 接收 Web Push（WebView 自动跳过）
         // 账号找回后：资料加载完即强制打开设置改密码
         if (state.forceChangePwd) openSettings();
       })
@@ -5173,6 +5174,21 @@
       });
   });
 
+  // 消息推送开关
+  var pushBtn = $('push-toggle-btn');
+  if (pushBtn) {
+    refreshPushButton();
+    pushBtn.addEventListener('click', function () {
+      if (!pushSupported()) { toast('当前浏览器不支持系统通知'); return; }
+      getSwRegistration().then(function (reg) {
+        if (!reg) { toast('推送服务未就绪，请刷新页面重试'); return; }
+        reg.pushManager.getSubscription().then(function (sub) {
+          if (sub) disablePush(); else initPush();
+        });
+      });
+    });
+  }
+
   // 注销账号：入口与各步骤按钮
   $('delete-account-btn').addEventListener('click', openDeleteAccount);
   $('del-account-close').addEventListener('click', function () { hideModal('del-account-modal'); });
@@ -6803,6 +6819,7 @@
         if (r.error) throw r.error;
         insertSucceeded = true;
         appendMessage(r.data);
+        notifyPush({ isGroup: isGroup, convId: peerId, preview: text });
         clearDraft(peerId, isGroup);   // 发送成功：清空该会话草稿（本地 + 服务端）
         bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
@@ -6876,12 +6893,138 @@
         if (r.error) throw r.error;
         if (state.active && state.active.id === target.id) appendMessage(r.data);
         else toast('已发送');
+        notifyPush({ isGroup: !!(state.active && state.active.type === 'group'), convId: target.id, preview: file.name });
         // 发送文件也会把该会话前置（仅收/发才前置，点击查看不前置）
         bumpConvTs(target.id);
         if (target.type === 'group') renderGroups(); else renderFriends();
       })
       .catch(function (e) { toast(friendlyError(e)); })
       .then(function () { bar.hidden = true; });
+  }
+
+  /* ============================================================
+   *  Web Push（系统通知中心）
+   * ============================================================ */
+  var VAPID_PUBLIC_KEY = 'BKQZOGfokElG3T0vL2jkelS5x_EucYbInilpJqJnTDMu8H5iHakZnYe1cjWRJiTxzZytMLJvwghmtYPCPbzJ-3o';
+  var PUSH_SW_PATH = './sw.js';
+  window.__pushEnabled = false;
+
+  function isWebView() {
+    var ua = navigator.userAgent || '';
+    return /MicroMessenger|QQ\/|Weibo|Alipay|baiduboxapp/i.test(ua);
+  }
+
+  function urlBase64ToUint8Array(b64) {
+    var pad = '='.repeat((4 - (b64.length % 4)) % 4);
+    var s = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    var u = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    return u;
+  }
+
+  function pushSupported() {
+    return !isWebView() && 'serviceWorker' in navigator &&
+           'PushManager' in window && 'Notification' in window &&
+           typeof Notification !== 'undefined';
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return Promise.resolve(false);
+    if (isWebView()) { console.log('[push] WebView 不支持，跳过 SW 注册'); return Promise.resolve(false); }
+    return navigator.serviceWorker.register(PUSH_SW_PATH)
+      .then(function (reg) { console.log('[push] SW 已注册', reg.scope); refreshPushButton(); return true; })
+      .catch(function (e) { console.warn('[push] SW 注册失败', e); return false; });
+  }
+
+  function getSwRegistration() {
+    if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+    return navigator.serviceWorker.getRegistration()
+      .then(function (reg) { return reg || null; })
+      .catch(function () { return null; });
+  }
+
+  // 刷新「开启 / 关闭」按钮状态（页面加载或订阅变化后）
+  function refreshPushButton() {
+    var btn = $('push-toggle-btn'); if (!btn) return;
+    var status = $('push-status');
+    if (!pushSupported()) {
+      btn.disabled = true;
+      btn.textContent = '当前浏览器不支持';
+      if (status) { status.hidden = false; status.textContent = '请用手机系统浏览器（Chrome / Safari）并“添加到主屏幕”后开启；微信 / QQ 内置浏览器不支持系统通知。'; }
+      return;
+    }
+    getSwRegistration().then(function (reg) {
+      if (!reg) { btn.textContent = '开启消息推送'; window.__pushEnabled = false; return; }
+      return reg.pushManager.getSubscription().then(function (sub) {
+        window.__pushEnabled = !!sub;
+        btn.textContent = sub ? '关闭消息推送' : '开启消息推送';
+        if (status && sub) { status.hidden = false; status.textContent = '已开启，锁屏或关闭网页也能在通知中心收到新消息。'; }
+        else if (status) { status.hidden = true; }
+      });
+    });
+  }
+
+  // 开启推送：请求权限 → 订阅 → 存订阅
+  function initPush() {
+    if (!pushSupported()) { toast('当前浏览器不支持系统通知（请用手机系统浏览器并添加到主屏幕）'); return; }
+    Notification.requestPermission().then(function (perm) {
+      if (perm !== 'granted') { toast('需要允许通知权限才能开启推送'); return; }
+      getSwRegistration().then(function (reg) {
+        if (!reg) { toast('推送服务未就绪，请刷新页面重试'); return; }
+        reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        }).then(function (sub) {
+          var j = sub.toJSON();
+          return sb.rpc('upsert_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth })
+            .then(function (r) {
+              if (r.error) throw r.error;
+              window.__pushEnabled = true;
+              refreshPushButton();
+              toast('消息推送已开启');
+            });
+        }).catch(function (e) {
+          toast('开启失败：' + friendlyError(e));
+        });
+      });
+    });
+  }
+
+  // 关闭推送：取当前订阅 → 退订
+  function disablePush() {
+    getSwRegistration().then(function (reg) {
+      if (!reg) { refreshPushButton(); return; }
+      reg.pushManager.getSubscription().then(function (sub) {
+        if (!sub) { refreshPushButton(); return; }
+        var endpoint = sub.endpoint;
+        sub.unsubscribe().catch(function () {});
+        sb.rpc('delete_push_subscription', { p_endpoint: endpoint })
+          .then(function () { window.__pushEnabled = false; refreshPushButton(); toast('已关闭消息推送'); })
+          .catch(function (e) { toast('关闭失败：' + friendlyError(e)); });
+      });
+    });
+  }
+
+  // 发送消息成功后调用：向接收者推送系统通知（仅本端已开启推送时）
+  function notifyPush(opts) {
+    if (!window.__pushEnabled || isWebView()) return;
+    var receivers = [];
+    if (opts.isGroup) {
+      var g = groupById(opts.convId);
+      if (g && g.memberIds) receivers = g.memberIds.filter(function (id) { return id !== state.uid; });
+    } else {
+      receivers = [opts.convId];
+    }
+    if (!receivers.length) return;
+    sb.functions.invoke('notify-push', {
+      body: {
+        receiver_ids: receivers,
+        sender_id: state.uid,
+        sender_name: (state.profile && state.profile.nickname) || '有人',
+        preview: (opts.preview || '').toString().slice(0, 200),
+        url: './'
+      }
+    }).catch(function () {});
   }
 
   /* ============================================================
