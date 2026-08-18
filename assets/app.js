@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v217 loaded');
+  console.log('[chatapp] app.js build v218 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -4716,8 +4716,11 @@
       return /PGRST202|Could not find the function|does not exist|schema cache/i.test(String(m));
     }
 
-    function renderRows(rows) {
+    function renderRows(rows, holderSet) {
       rows = rows || [];
+      if (mode === 'grant' && holderSet) {
+        rows = rows.filter(function (u) { return !holderSet[u.id]; });
+      }
       if (!rows.length) {
         resBox.innerHTML = (mode === 'grant')
           ? '未找到可授予的用户（可能全部已拥有该称号）'
@@ -4731,12 +4734,18 @@
       rows.forEach(function (u) {
         var row = el('div', 'gm-grant-user-row');
         row.setAttribute('data-uid', u.id);
-        var info = el('div', 'gm-grant-user',
-          (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : ''));
+        var infoTxt = (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : '');
+        if (mode === 'grant' && holderSet && holderSet[u.id]) infoTxt += '（已拥有）';
+        var info = el('div', 'gm-grant-user', infoTxt);
         row.appendChild(info);
         if (mode === 'grant') {
           var ok = el('button', 'btn-mini gm-confirm', '授予');
           ok.type = 'button';
+          if (holderSet && holderSet[u.id]) {
+            ok.disabled = true;
+            ok.textContent = '已授予';
+            ok.classList.remove('gm-confirm');
+          }
           ok.onclick = function () { gmGrantTitle(u.id, t, row, card); };
           row.appendChild(ok);
         } else {
@@ -4749,32 +4758,57 @@
       });
     }
 
-    var rpc = (mode === 'grant') ? 'gm_search_users_for_title' : 'gm_search_users_with_title';
-    sb.rpc(rpc, { p_pwd: gmPwd, p_query: query, p_title_id: t.id })
-      .then(function (r) {
-        if (r.error && isRpcMissing(r.error)) {
-          if (mode === 'grant') {
-            // 旧版仅回退到全量搜索（授予幂等，可继续用）
-            return sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query }).then(function (r2) { renderRows(r2.data); });
-          }
-          resBox.innerHTML = '撤销搜索功能需要先执行最新 SQL 迁移（gm_search_users_with_title）';
-          return;
-        }
-        renderRows(r.data);
-      })
-      .catch(function (e) {
-        if (isRpcMissing(e)) {
-          if (mode === 'grant') {
-            sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
-              .then(function (r2) { renderRows(r2.data); })
-              .catch(function (e2) { resBox.innerHTML = '查询失败：' + friendlyError(e2); });
-          } else {
+    function fetchHolders(done) {
+      if (mode !== 'grant') { done({}); return; }
+      sb.rpc('gm_get_title_holders', { p_pwd: gmPwd, p_title_id: t.id })
+        .then(function (r) {
+          if (r.error && isRpcMissing(r.error)) { done(null); return; }
+          var set = {};
+          (r.data || []).forEach(function (h) { if (h.user_id) set[h.user_id] = 1; });
+          done(set);
+        })
+        .catch(function (e) {
+          if (isRpcMissing(e)) { done(null); }
+          else { done({}); }
+        });
+    }
+
+    fetchHolders(function (holderSet) {
+      var rpc = (mode === 'grant') ? 'gm_search_users_for_title' : 'gm_search_users_with_title';
+      sb.rpc(rpc, { p_pwd: gmPwd, p_query: query, p_title_id: t.id })
+        .then(function (r) {
+          if (r.error && isRpcMissing(r.error)) {
+            if (mode === 'grant') {
+              if (holderSet === null) {
+                resBox.innerHTML = '授予搜索需先执行最新 SQL 迁移（gm_search_users_for_title / gm_get_title_holders），否则无法排除已授予用户';
+                return;
+              }
+              return sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
+                .then(function (r2) { renderRows(r2.data, holderSet); });
+            }
             resBox.innerHTML = '撤销搜索功能需要先执行最新 SQL 迁移（gm_search_users_with_title）';
+            return;
           }
-          return;
-        }
-        resBox.innerHTML = '查询失败：' + friendlyError(e);
-      });
+          renderRows(r.data, holderSet);
+        })
+        .catch(function (e) {
+          if (isRpcMissing(e)) {
+            if (mode === 'grant') {
+              if (holderSet === null) {
+                resBox.innerHTML = '授予搜索需先执行最新 SQL 迁移（gm_search_users_for_title / gm_get_title_holders），否则无法排除已授予用户';
+                return;
+              }
+              sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: query })
+                .then(function (r2) { renderRows(r2.data, holderSet); })
+                .catch(function (e2) { resBox.innerHTML = '查询失败：' + friendlyError(e2); });
+            } else {
+              resBox.innerHTML = '撤销搜索功能需要先执行最新 SQL 迁移（gm_search_users_with_title）';
+            }
+            return;
+          }
+          resBox.innerHTML = '查询失败：' + friendlyError(e);
+        });
+    });
   }
 
   function gmGrantTitle(uid, t, row, card) {
