@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v214 loaded');
+  console.log('[chatapp] app.js build v215 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3606,6 +3606,21 @@
     else recentTxt = '未知';
     card.appendChild(el('div', 'gm-report-line', '接收方近期是否触发违禁词：' + recentTxt));
 
+    // —— GM 模式：标记处理 / 撤销处理（翻转 forbidden_reports.handled）——
+    //    admin 模式通过 set_content_hide 隐藏来表达「处理」，此处 GM 用专属 RPC 维护 handled 状态
+    if (mode === 'gm') {
+      var rActs = el('div', 'gm-report-acts');
+      var rBtn = el('button', 'btn-mini' + (rep.handled ? ' gm-danger' : ''), rep.handled ? '撤销处理' : '标记处理');
+      rBtn.type = 'button';
+      rBtn.onclick = function () {
+        sb.rpc('gm_resolve_report', { p_pwd: gmPwd, p_report_id: rep.id, p_handled: !rep.handled })
+          .then(function (r) { if (r.error) throw r.error; rep.handled = !rep.handled; renderGmReports(); })
+          .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+      };
+      rActs.appendChild(rBtn);
+      card.appendChild(rActs);
+    }
+
     // —— 管理员模式：禁言 / 不禁言（选择后全网隐藏）+ 忽略（仅自己隐藏）——
     if (mode === 'admin') {
       card.appendChild(buildMuteRow('forbidden_report', rep.id, rep.user_id));
@@ -3825,7 +3840,7 @@
     { key: 'userreports', badge: 'admin-tab-userreports-badge', table: 'user_reports',
       count: 'admin_count_user_report_unread', mark: 'admin_mark_user_report_read_all', label: '用户举报' },
     { key: 'reports',     badge: 'admin-tab-reports-badge',     table: 'forbidden_reports',
-      count: 'admin_count_report_unread',      mark: 'admin_mark_report_read_all',      label: '违规周报' },
+      count: 'admin_count_report_unread',      mark: 'admin_mark_report_read_all',      label: '违规上报' },
     { key: 'appeals',     badge: 'admin-tab-appeals-badge',     table: 'mute_appeals',
       count: 'admin_count_appeal_unread',      mark: 'admin_mark_appeal_read_all',      label: '禁言申诉' }
   ];
