@@ -40,7 +40,9 @@ $$;
 grant execute on function public.user_has_admin_title(uuid) to authenticated;
 
 -- GM 列表也带上 is_admin 标记（便于前端展示，GM 本身始终可解禁）
-create or replace function public.gm_list_mute_appeals(p_pwd text)
+-- 返回类型变化，需要先 drop 再重建
+drop function if exists public.gm_list_mute_appeals(text) cascade;
+create function public.gm_list_mute_appeals(p_pwd text)
 returns table(
   id uuid, user_id uuid, nickname text, phone text,
   reason text, status text, created_at timestamptz, is_admin boolean
@@ -66,7 +68,9 @@ $$;
 grant execute on function public.gm_list_mute_appeals(text) to authenticated;
 
 -- 管理员列表带上 is_admin 标记
-create or replace function public.admin_list_mute_appeals()
+-- 返回类型变化，需要先 drop 再重建
+drop function if exists public.admin_list_mute_appeals() cascade;
+create function public.admin_list_mute_appeals()
 returns table(
   id uuid, user_id uuid, nickname text, phone text,
   reason text, status text, created_at timestamptz, reviewed_at timestamptz,
