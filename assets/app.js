@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v211 loaded');
+  console.log('[chatapp] app.js build v214 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2064,8 +2064,6 @@
 
   function onUnifiedSearch() {
     var kw = $('search-box').value.trim();
-    // 同步“清空”叉按钮：有内容才显示
-    var sc = $('search-clear'); if (sc) sc.hidden = !$('search-box').value;
     var panel = $('search-result');
     var list = $('chat-list');
     if (!kw) {
@@ -2586,6 +2584,10 @@
       b.type = 'button';
       b.onclick = function () { gmForceDeleteGroup(uid, g.group_id, g.name); };
       row.appendChild(b);
+      var chatBtn = el('button', 'btn-mini', '聊天');
+      chatBtn.type = 'button';
+      chatBtn.onclick = function () { gmOpenGroupChat(g.group_id, g.name, uid); };
+      row.appendChild(chatBtn);
       box.appendChild(row);
     });
 
@@ -2601,6 +2603,10 @@
       b.type = 'button';
       b.onclick = function () { gmForceDeleteFriend(uid, f.other_id, f.other_nickname); };
       row.appendChild(b);
+      var chatBtn = el('button', 'btn-mini', '聊天');
+      chatBtn.type = 'button';
+      chatBtn.onclick = function () { gmOpenDmChat(uid, f.other_id, f.other_nickname); };
+      row.appendChild(chatBtn);
       box.appendChild(row);
     });
 
@@ -3266,7 +3272,10 @@
           var btn = el('button', 'btn-mini', '管理');
           btn.type = 'button';
           btn.onclick = function () { gmLoadGroupDetail(g.group_id, g.name); };
-          card.appendChild(main); card.appendChild(btn);
+          var chatBtn = el('button', 'btn-mini', '聊天');
+          chatBtn.type = 'button';
+          chatBtn.onclick = function () { gmOpenGroupChat(g.group_id, g.name, null); };
+          card.appendChild(main); card.appendChild(btn); card.appendChild(chatBtn);
           box.appendChild(card);
         });
       })
@@ -3304,6 +3313,10 @@
     delBtn.type = 'button';
     delBtn.onclick = function () { gmGmDissolveGroup(gid, gname); };
     head.appendChild(delBtn);
+    var chatBtn = el('button', 'btn-mini', '聊天');
+    chatBtn.type = 'button';
+    chatBtn.onclick = function () { gmOpenGroupChat(gid, gname, null); };
+    head.appendChild(chatBtn);
     box.appendChild(head);
 
     box.appendChild(el('div', 'gm-subtitle', '群成员（' + members.length + '）· 含在线状态'));
@@ -3365,6 +3378,141 @@
         gmSearchGroups();
       })
       .catch(function (e) { toast('解散失败：' + friendlyError(e)); });
+  }
+
+  // ---------- GM 聊天记录查看器 ----------
+  var gmChatReload = null;   // 当前会话重载函数（供「刷新」按钮复用）
+
+  function gmOpenChat(title, loader) {
+    gmChatReload = loader;
+    $('gm-chat-title').textContent = title || '聊天记录';
+    var body = $('gm-chat-body');
+    body.innerHTML = '<div class="gm-empty">加载中…</div>';
+    $('gm-chat-viewer').classList.add('open');
+    loader();
+  }
+
+  function gmCloseChat() {
+    $('gm-chat-viewer').classList.remove('open');
+    gmChatReload = null;
+  }
+
+  // 用已有的 lightbox 看大图 / 播视频（lightbox 为全局已实现弹层，避免重复造轮子）
+  function openGmMedia(url, isVid) {
+    if (typeof openReportPreview === 'function') { openReportPreview(url, isVid); return; }
+    var lb = $('lightbox'), im = $('lightbox-img'), vv = $('lightbox-video');
+    if (!lb) return;
+    if (isVid) { im.hidden = true; vv.hidden = false; vv.src = url; vv.play().catch(function () {}); }
+    else { vv.hidden = true; im.hidden = false; im.src = url; }
+    lb.classList.add('open');
+  }
+
+  // 渲染单条消息（GM 视角：不隐藏撤回/删除/违禁词，仅加标注）
+  function renderGmMessage(m, ctx) {
+    var out = !!(ctx && m.sender_id && m.sender_id === ctx.selfUid);
+    var wrap = el('div', 'gm-msg ' + (out ? 'out' : 'in'));
+
+    // 群聊显示发送者昵称
+    if (ctx && ctx.showSender && m.sender_name) {
+      wrap.appendChild(el('div', 'gm-msg-sender', m.sender_name || '成员'));
+    }
+
+    if (m.recalled) {
+      // 撤回会清空正文，GM 也只能看到「已撤回」标记，但保留该条记录不被隐藏
+      wrap.appendChild(el('div', 'gm-msg-recalled', '（已撤回，正文不可见）'));
+    } else {
+      var bubble;
+      if (m.kind === 'text') {
+        bubble = el('div', 'gm-msg-bubble', m.content || '');
+      } else if (m.kind === 'image') {
+        bubble = el('div', 'gm-msg-bubble gm-msg-media');
+        var img = document.createElement('img');
+        img.alt = m.file_name || '图片';
+        bubble.appendChild(img);
+        signedUrl(m.file_path).then(function (u) {
+          if (!u) return;
+          img.src = u;
+          img.onclick = function () { openGmMedia(u, false); };
+        });
+      } else if (m.kind === 'video' || isVideoFile(m)) {
+        bubble = el('div', 'gm-msg-bubble gm-msg-media');
+        var vid = document.createElement('video');
+        vid.controls = true; vid.preload = 'metadata'; vid.playsInline = true;
+        bubble.appendChild(vid);
+        signedUrl(m.file_path).then(function (u) {
+          if (!u) return;
+          vid.src = u;
+          vid.onclick = function (e) { e.stopPropagation(); };
+          bubble.onclick = function () { openGmMedia(u, true); };
+        });
+      } else {
+        bubble = el('div', 'gm-msg-bubble');
+        var a = document.createElement('a');
+        a.className = 'gm-file-card';
+        a.target = '_blank'; a.rel = 'noopener';
+        var ext = (m.file_name || '').split('.').pop() || 'file';
+        a.appendChild(el('div', 'gm-file-icon', ext.slice(0, 4)));
+        var meta = el('div', 'gm-file-meta');
+        meta.appendChild(el('div', 'gm-file-name', m.file_name || '文件'));
+        meta.appendChild(el('div', 'gm-file-size', fmtSize(m.file_size)));
+        a.appendChild(meta);
+        bubble.appendChild(a);
+        signedUrl(m.file_path).then(function (u) { if (u) { a.href = u; a.download = m.file_name || ''; } });
+      }
+      wrap.appendChild(bubble);
+    }
+
+    // 异常状态标注（被删除本端 / 命中违禁词）——GM 仍可看到正文，仅追加提示
+    if (m.deleted_by && m.deleted_by.length) {
+      wrap.appendChild(el('div', 'gm-chat-note warn', '已被 ' + m.deleted_by.length + ' 人删除（本端删除，GM 仍可见）'));
+    }
+    if (m.hidden_forbidden) {
+      wrap.appendChild(el('div', 'gm-chat-note danger', '命中违禁词（已对普通用户隐藏，GM 仍可见）'));
+    }
+
+    wrap.appendChild(el('div', 'gm-msg-time', fmtTime(m.created_at)));
+    return wrap;
+  }
+
+  function gmRenderChatList(rows, ctx) {
+    var body = $('gm-chat-body');
+    body.innerHTML = '';
+    if (!rows || !rows.length) { body.appendChild(el('div', 'gm-empty', '暂无聊天记录')); return; }
+    rows.forEach(function (m) {
+      var node = renderGmMessage(m, ctx);
+      if (node) body.appendChild(node);
+    });
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // 群聊聊天记录：绕过本端删除 / 撤回 / 违禁词隐藏
+  function gmOpenGroupChat(gid, gname, selfUid) {
+    var ctx = { showSender: true, selfUid: selfUid || null };
+    gmOpenChat((gname || '群聊') + ' · 聊天记录', function () {
+      sb.rpc('gm_get_group_messages', { p_pwd: gmPwd, p_group_id: gid })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          gmRenderChatList(r.data || [], ctx);
+        })
+        .catch(function (e) {
+          $('gm-chat-body').innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+        });
+    });
+  }
+
+  // 两人私聊记录：绕过本端删除 / 撤回 / 违禁词隐藏
+  function gmOpenDmChat(userA, userB, name) {
+    var ctx = { showSender: false, selfUid: userA };
+    gmOpenChat((name || '私聊') + ' · 聊天记录', function () {
+      sb.rpc('gm_get_dm_messages', { p_pwd: gmPwd, p_user_a: userA, p_user_b: userB })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          gmRenderChatList(r.data || [], ctx);
+        })
+        .catch(function (e) {
+          $('gm-chat-body').innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+        });
+    });
   }
 
   // ---------- 称号管理（GM 后台） ----------
@@ -4961,6 +5109,10 @@
   $('gm-title-close').addEventListener('click', function () { hideModal('gm-title-modal'); });
   $('gm-title-cancel').addEventListener('click', function () { hideModal('gm-title-modal'); });
   $('gm-title-create').addEventListener('click', onTitleSubmit);
+  // GM 聊天记录查看器：关闭 / 刷新 / 点背景关闭
+  $('gm-chat-close').addEventListener('click', gmCloseChat);
+  $('gm-chat-refresh').addEventListener('click', function () { if (gmChatReload) gmChatReload(); });
+  $('gm-chat-viewer').addEventListener('click', function (e) { if (e.target === this) gmCloseChat(); });
   $('gm-title-cond').addEventListener('change', function () {
     var isAuto = autoCondTypes().indexOf(this.value) >= 0;
     $('gm-title-days-wrap').hidden = !isAuto;
@@ -5584,11 +5736,19 @@
   /* ---------- 统一搜索：搜好友 + 手机号加好友 ---------- */
   $('search-box').addEventListener('input', onUnifiedSearch);
   // 叉按钮：清空输入框并恢复好友/群列表
-  $('search-clear').addEventListener('click', function () {
+  function clearSearch() {
     $('search-box').value = '';
-    onUnifiedSearch();           // 内部按空值重置结果并隐藏叉按钮
+    onUnifiedSearch();           // 内部按空值重置结果并恢复列表
     try { $('search-box').focus(); } catch (e) {}
-  });
+  }
+  var _scEl = $('search-clear');
+  if (_scEl) {
+    _scEl.addEventListener('click', clearSearch);
+    // 移动端 WebView 兜底：click 常有延迟/被吞，用 touchstart 直接触发
+    _scEl.addEventListener('touchstart', function (e) {
+      e.preventDefault(); clearSearch();
+    }, { passive: false });
+  }
 
   function sendRequest(user, btn) {
     if (user.id === state.uid) { toast('不能添加自己为好友'); btn.disabled = false; return; }
