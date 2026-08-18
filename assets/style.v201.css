@@ -899,6 +899,63 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-danger { color: var(--danger); border-color: var(--danger); }
 .gm-danger:hover { background: rgba(217,75,75,.08); }
 
+/* ---------- GM 聊天记录查看器（顶层弹窗，覆盖在 GM 后台之上） ---------- */
+.gm-chat-viewer.open { padding: 0; align-items: stretch; justify-content: flex-start; }
+.gm-chat-inner {
+  position: relative; width: 100%; max-width: 560px;
+  height: 100%; max-height: 100%;
+  background: var(--panel); display: flex; flex-direction: column; overflow: hidden;
+}
+@media (min-width: 600px) {
+  .gm-chat-viewer.open { padding: 24px 16px; align-items: center; }
+  .gm-chat-inner { height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+}
+/* 手机端：查看器整体可滚动（与 GM 面板保持一致，兼容老 WebView 的 flex 高度约束失效） */
+@media (max-width: 599px) {
+  .gm-chat-viewer .gm-chat-inner { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+}
+.gm-chat-body {
+  flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 12px 14px 16px; min-height: 0; display: flex; flex-direction: column;
+}
+.gm-chat-foot { display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); flex: 0 0 auto; }
+.gm-chat-foot .btn-ghost { flex: 1; justify-content: center; }
+
+/* 单条消息（GM 视角，不隐藏撤回/删除/违禁词，仅加标注） */
+.gm-msg { display: flex; flex-direction: column; margin: 8px 0; max-width: 82%; }
+.gm-msg.out { align-self: flex-end; align-items: flex-end; }
+.gm-msg.in { align-self: flex-start; align-items: flex-start; }
+.gm-msg-sender { font-size: 12px; color: var(--text-3); margin: 0 4px 3px; }
+.gm-msg-bubble {
+  background: var(--bg); color: var(--text);
+  padding: 9px 12px; border-radius: 14px; font-size: 14px; line-height: 1.45;
+  word-break: break-word; white-space: pre-wrap; max-width: 100%;
+}
+.gm-msg.out .gm-msg-bubble { background: var(--brand, #4f7cff); color: #fff; }
+.gm-msg-bubble.gm-msg-media { padding: 4px; background: transparent; }
+.gm-msg-bubble img { display: block; max-width: 220px; max-height: 280px; border-radius: 10px; }
+.gm-msg-bubble video { display: block; max-width: 240px; max-height: 280px; border-radius: 10px; background: #000; }
+.gm-msg-bubble.gm-msg-media img, .gm-msg-bubble.gm-msg-media video { cursor: zoom-in; }
+.gm-file-card {
+  display: flex; align-items: center; gap: 10px; text-decoration: none;
+  background: var(--bg); color: var(--text); padding: 10px 12px; border-radius: 12px; cursor: pointer;
+}
+.gm-msg.out .gm-file-card { background: rgba(255,255,255,.18); color: #fff; }
+.gm-file-icon {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 9px;
+  background: rgba(127,119,221,.18); color: #7f77dd; font-weight: 700; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; text-transform: uppercase;
+}
+.gm-file-meta { min-width: 0; }
+.gm-file-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gm-file-size { font-size: 12px; opacity: .85; }
+.gm-msg-recalled { font-size: 13px; color: var(--text-3); font-style: italic; padding: 6px 10px; }
+.gm-msg-time { font-size: 11px; color: var(--text-3); margin: 2px 4px 0; }
+/* 异常状态标注（被删除本端 / 命中违禁词） */
+.gm-chat-note { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 8px; font-size: 11px; line-height: 1.5; }
+.gm-chat-note.warn { background: rgba(224,160,40,.14); color: #b9801f; }
+.gm-chat-note.danger { background: rgba(217,75,75,.14); color: #d94b4b; }
+
 /* 禁言管理区 */
 .gm-mute-sec { margin-top: 14px; }
 .gm-mute-status { color: var(--text-2); font-size: 14px; margin-bottom: 8px; }
