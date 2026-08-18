@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v215 loaded');
+  console.log('[chatapp] app.js build v216 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1680,6 +1680,7 @@
       .then(loadRelations)
       .then(loadGroupRemarks)
       .then(loadGroups)
+      .then(convTsFallbackIfNeeded)   // RPC 不可用时，群聊加载完再补算会话浮顶时间
       .then(loadDisplayTitles)
       .then(applySelfTitle)
       .then(refreshAdminStatus)
@@ -1899,32 +1900,92 @@
     });
   }
 
-  // 会话浮顶时间戳持久化：刷新网页后从 localStorage 恢复，
-  // 避免「刚发消息会话置顶、刷新后又回到原来位置」。
+  // 会话浮顶时间戳：让「刚发消息的会话」在刷新网页后仍停在列表顶部。
+  // 可靠性分层（避免只依赖 localStorage，WebView 里 localStorage 常被清空）：
+  //   1) 底：本浏览器 localStorage（桌面 / 普通手机浏览器）
+  //   2) 主：get_my_conv_last_times RPC 返回的真实最后消息时间（跨设备/换浏览器都稳）
+  //   3) 兜底：RPC 不可用时直接从 messages 表算每个会话最后时间（无需新 SQL）
+  // 三者按“取较大者”合并，本地 Date.now() 浮顶作为叠加层保留。
   function loadConvTs() {
     if (!state.uid) return;
+    // 1) 先恢复本浏览器 localStorage
     try {
       var raw = localStorage.getItem('convTs:' + state.uid);
       if (raw) state.convTs = JSON.parse(raw) || {};
-    } catch (e) { state.convTs = {}; }
-    // 跨设备：从 DB 取每个会话最后一条消息时间，与本地值取较大者合并。
-    // 这样换设备 / 换浏览器登录时，列表也能按真实最后活动时间置顶。
+      else state.convTs = state.convTs || {};
+    } catch (e) { state.convTs = state.convTs || {}; }
+
+    var applyRows = function (rows) {
+      (rows || []).forEach(function (row) {
+        var pid = row.peer_id || row.peer;
+        if (!pid || !row.last_ts) return;
+        var ts = new Date(row.last_ts).getTime();
+        if (!isNaN(ts) && ts > (state.convTs[pid] || 0)) state.convTs[pid] = ts;
+      });
+      if (state.friends && (state.friends.length || state.groups.length)) renderConversations();
+    };
+
     if (sb && sb.rpc) {
-      sb.rpc('get_my_conv_last_times').then(function (r) {
-        if (r.error || !r.data) return;
-        (r.data || []).forEach(function (row) {
-          if (!row.peer_id || !row.last_ts) return;
-          var ts = new Date(row.last_ts).getTime();
-          if (!isNaN(ts) && ts > (state.convTs[row.peer_id] || 0)) {
-            state.convTs[row.peer_id] = ts;
-          }
+      sb.rpc('get_my_conv_last_times')
+        .then(function (r) {
+          if (r.error || !r.data) throw new Error('conv-ts-rpc-unavailable');
+          applyRows(r.data);
+        })
+        .catch(function () {
+          // 2) RPC 不可用（SQL 未执行等）——标记并降级到直接查 messages
+          state._needConvTsFallback = true;
+          loadConvTsFromMessages();
         });
-        // 列表已渲染则重排；否则等待 loadRelations/loadGroups 渲染时自然生效
-        if (state.friends && (state.friends.length || state.groups.length)) {
-          renderConversations();
-        }
-      }).catch(function () {});
+    } else {
+      state._needConvTsFallback = true;
+      loadConvTsFromMessages();
     }
+  }
+
+  // 兜底：不依赖 get_my_conv_last_times，直接从 messages 表取“我参与”的最近消息，
+  // 在 JS 里算出每个会话（好友 = 对方 id / 群 = group_id）的最后时间，合并进 convTs。
+  // 这样即便用户漏跑 SQL、或 WebView 清了 localStorage，刷新后列表仍能按真实活动置顶。
+  function loadConvTsFromMessages() {
+    if (!sb || !state.uid) return Promise.resolve();
+    var dmQ = sb.from('messages')
+      .select('sender_id,receiver_id,group_id,created_at')
+      .or('sender_id.eq.' + state.uid + ',receiver_id.eq.' + state.uid)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    var gids = (state.groups || []).map(function (g) { return g.id; });
+    var gpQ = gids.length
+      ? sb.from('messages')
+          .select('sender_id,receiver_id,group_id,created_at')
+          .in('group_id', gids)
+          .order('created_at', { ascending: false })
+          .limit(500)
+      : Promise.resolve({ data: [] });
+    return Promise.all([dmQ, gpQ]).then(function (res) {
+      (res[0].data || []).forEach(function (m) {
+        if (m.group_id) return;
+        if (m.recalled || m.hidden_forbidden) return;
+        if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return;
+        var peer = (m.sender_id === state.uid) ? m.receiver_id : m.sender_id;
+        if (!peer || !m.created_at) return;
+        var ts = new Date(m.created_at).getTime();
+        if (!isNaN(ts) && ts > (state.convTs[peer] || 0)) state.convTs[peer] = ts;
+      });
+      (res[1].data || []).forEach(function (m) {
+        if (!m.group_id) return;
+        if (m.recalled || m.hidden_forbidden) return;
+        if (m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0) return;
+        if (!m.created_at) return;
+        var ts = new Date(m.created_at).getTime();
+        if (!isNaN(ts) && ts > (state.convTs[m.group_id] || 0)) state.convTs[m.group_id] = ts;
+      });
+      if (state.friends && (state.friends.length || state.groups.length)) renderConversations();
+    }).catch(function () {});
+  }
+
+  // 加载完群聊后补跑一次兜底（此时 state.groups 才就绪，群聊最后时间才完整）
+  function convTsFallbackIfNeeded() {
+    if (state._needConvTsFallback) return loadConvTsFromMessages();
+    return null;
   }
   function bumpConvTs(id) {
     if (!id) return;
