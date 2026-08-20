@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v229 loaded');
+  console.log('[chatapp] app.js build v230 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -256,15 +256,16 @@
     }
   }
 
-  /* 发送成功后清空草稿（本地 + 服务端） */
+  /* 清空草稿（本地 + 服务端）。返回 Promise，便于发送失败时等待清空完成后再恢复草稿，
+     避免“清空 RPC”与“恢复 RPC”并发导致服务端残留旧草稿。 */
   function clearDraft(peerId, isGroup) {
-    if (!peerId) return;
+    if (!peerId) return Promise.resolve();
     var k = draftKey(peerId, isGroup);
     var existed = !!state.drafts[k];
     delete state.drafts[k];
-    sb.rpc('save_my_draft', { p_peer: peerId, p_is_group: isGroup, p_text: '' })
-      .catch(function () {});
     if (existed) renderConversations();
+    return sb.rpc('save_my_draft', { p_peer: peerId, p_is_group: isGroup, p_text: '' })
+      .catch(function () {});
   }
 
   /* textarea 自适应高度：空内容保底一行高度，防止 box-sizing 下 scrollHeight 为 0 塌缩 */
@@ -6949,12 +6950,15 @@
     // 发送前取消尚未落库的草稿计时：不要把“即将发送的内容”存成草稿
     // （否则 flushDraft 会把它落库，与下方 clearDraft 的清空异步竞态，
     //  可能导致已发消息残留在服务端、跨设备拉取后误显示为草稿）。
-    // 真正没发的输入由 openChat 切走会话时 flushDraft 落库，此处只丢弃待发内容。
     pendingDraft = null;
     if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
 
+    // 关键修复：点击发送即立刻清空输入框并同步清除服务端草稿，
+    // 避免 insert 成功后 clearDraft 异步延迟期间切换设备拉取到旧草稿。
+    // 若发送失败，再恢复输入框并重新写入草稿（等待清空 RPC 完成，防止竞态）。
     input.value = '';   // 确认无违禁词后才清空输入框
     fitTextarea(input); // 重置为单行高度
+    var clearDraftPromise = clearDraft(peerId, isGroup);
 
     var payload = {
       sender_id: state.uid,
@@ -6970,7 +6974,7 @@
         if (r.error) throw r.error;
         insertSucceeded = true;
         appendMessage(r.data);
-        clearDraft(peerId, isGroup);   // 发送成功：清空该会话草稿（本地 + 服务端）
+        // 草稿已在发送前清除；成功后的后处理只刷新会话列表/时间戳
         bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
       })
@@ -6978,6 +6982,13 @@
         if (!insertSucceeded) {
           toast('发送失败：' + friendlyError(err));
           input.value = text;
+          fitTextarea(input);
+          // 等待服务端清空完成后再恢复草稿，避免“恢复”被晚到的“清空”覆盖
+          clearDraftPromise.then(function () {
+            doSaveDraft(peerId, isGroup, text);
+          }).catch(function () {
+            doSaveDraft(peerId, isGroup, text);
+          });
         } else {
           console.error('send post-process error:', err);
           toast('消息已发出，但显示异常，正在刷新会话…');
