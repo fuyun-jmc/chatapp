@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v230 loaded');
+  console.log('[chatapp] app.js build v231 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -280,6 +280,8 @@
   function applyRemoteDraft(row, isDelete) {
     if (!row || !row.user_id || row.user_id !== state.uid) return;
     var k = draftKey(row.peer_id, row.is_group);
+    // 发送消息过程中忽略旧草稿保存事件的回写，避免已清空的输入被 stale save_my_draft 恢复
+    if (state.draftSendLock && state.draftSendLock[k]) return;
     var existed = !!state.drafts[k];
     setDraftCache(row.peer_id, row.is_group, isDelete ? '' : (row.text || ''));
     var nowExists = !!state.drafts[k];
@@ -6956,9 +6958,19 @@
     // 关键修复：点击发送即立刻清空输入框并同步清除服务端草稿，
     // 避免 insert 成功后 clearDraft 异步延迟期间切换设备拉取到旧草稿。
     // 若发送失败，再恢复输入框并重新写入草稿（等待清空 RPC 完成，防止竞态）。
+    // 加 draftSendLock：发送过程中忽略来自本设备/other 设备的旧草稿保存实时事件，
+    // 防止“打字 debounce 已发出去但尚未响应的 save_my_draft”在消息发出后回写旧草稿。
+    var draftK = draftKey(peerId, isGroup);
+    state.draftSendLock = state.draftSendLock || {};
+    state.draftSendLock[draftK] = true;
+
     input.value = '';   // 确认无违禁词后才清空输入框
     fitTextarea(input); // 重置为单行高度
     var clearDraftPromise = clearDraft(peerId, isGroup);
+
+    function releaseDraftSendLock() {
+      if (state.draftSendLock) delete state.draftSendLock[draftK];
+    }
 
     var payload = {
       sender_id: state.uid,
@@ -6977,6 +6989,7 @@
         // 草稿已在发送前清除；成功后的后处理只刷新会话列表/时间戳
         bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
+        releaseDraftSendLock();
       })
       .catch(function (err) {
         if (!insertSucceeded) {
@@ -6988,13 +7001,15 @@
             doSaveDraft(peerId, isGroup, text);
           }).catch(function () {
             doSaveDraft(peerId, isGroup, text);
-          });
+          }).then(releaseDraftSendLock, releaseDraftSendLock);
         } else {
           console.error('send post-process error:', err);
           toast('消息已发出，但显示异常，正在刷新会话…');
+          releaseDraftSendLock();
         }
       });
     } catch (fatal) {
+      releaseDraftSendLock();
       console.error('send handler fatal:', fatal);
       toast('发送异常：' + (fatal && fatal.message ? fatal.message : friendlyError(fatal)));
     }
