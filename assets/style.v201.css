@@ -765,6 +765,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .chat {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg);
     transform: translateX(100%); transition: transform .22s ease;
+    z-index: 5;                       /* 盖住侧边栏会话列表里的 .badge（z-index:2）等绝对定位元素 */
   }
   .app-view.show-chat .chat { transform: translateX(0); }
   .back-btn { display: flex; margin-right: 6px; }
