@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v223 loaded');
+  console.log('[chatapp] app.js build v224 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1701,7 +1701,7 @@
   }
 
   function loadProfile() {
-    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until,hide_dev_title').eq('id', state.uid).maybeSingle()
+    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until,hide_dev_title,user_number').eq('id', state.uid).maybeSingle()
       .then(function (r) {
         if (r.error) throw r.error;
         if (!r.data) {
@@ -1725,8 +1725,10 @@
         state.mutedUntil = p.muted_until || null;
         // 尽早把「隐藏开发者称号」开关读到内存，避免后续 refreshAdminStatus 先用旧值把徽标画出来
         state.hideDevTitle = !!p.hide_dev_title;
+        state.profilesById[state.uid] = Object.assign(state.profilesById[state.uid] || {}, { user_number: p.user_number });
         $('me-name').textContent = p.nickname;
         $('me-phone').textContent = p.phone;
+        $('me-number').textContent = (p.user_number != null) ? ('编号 #' + p.user_number) : '未分配编号';
         setAvatar($('me-avatar'), { nickname: p.nickname, phone: p.phone, avatarPath: p.avatar_path });
       });
   }
@@ -1738,8 +1740,8 @@
     return sb.from('friendships')
       .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,' +
               'pinned_by_requester,pinned_by_addressee,' +
-              'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path),' +
-              'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path)')
+              'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path,user_number),' +
+              'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path,user_number)')
       .or('requester_id.eq.' + state.uid + ',addressee_id.eq.' + state.uid)
       .order('created_at', { ascending: false })
       .then(function (r) {
@@ -1759,6 +1761,7 @@
               nickname: other.nickname,
               avatar: other.avatar_path,
               remark: myRemark,
+              user_number: other.user_number,
               relId: row.id,
               iAmRequester: iAmRequester,
               pinned: !!pinned,
@@ -1773,7 +1776,7 @@
         state.friends = friends;
         state.incoming = incoming;
         friends.forEach(function (f) {
-          state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone };
+          state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone, user_number: f.user_number };
         });
         renderFriends();
         renderRequests();
@@ -2586,11 +2589,12 @@
           info.appendChild(el('div', 'gm-user-phone', u.phone || ''));
           var onNow = onlineFromIso(u.last_active);
           info.appendChild(el('div', 'gm-user-online ' + (onNow ? 'on' : 'off'), onlineText(u.last_active)));
+          if (u.user_number != null) info.appendChild(el('div', 'gm-user-no', '编号 #' + u.user_number));
           if (u.remark) info.appendChild(el('div', 'gm-user-phone', '备注：' + u.remark));
           main.appendChild(av); main.appendChild(info);
           var btn = el('button', 'btn-mini', '管理');
           btn.type = 'button';
-          btn.onclick = function () { gmLoadDetail(u.id, u.nickname, u.phone, u.last_active); };
+          btn.onclick = function () { gmLoadDetail(u.id, u.nickname, u.phone, u.last_active, u.user_number); };
           card.appendChild(main); card.appendChild(btn);
           box.appendChild(card);
         });
@@ -2602,8 +2606,8 @@
       });
   }
 
-  function gmLoadDetail(uid, name, phone, lastActive) {
-    gmCurrent = { uid: uid, name: name, phone: phone };
+  function gmLoadDetail(uid, name, phone, lastActive, userNo) {
+    gmCurrent = { uid: uid, name: name, phone: phone, userNo: userNo };
     var box = $('gm-detail');
     box.hidden = false;
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
@@ -2624,12 +2628,13 @@
       });
   }
 
-  function renderGmDetail(uid, name, phone, groups, friends, lastActive) {
+  function renderGmDetail(uid, name, phone, groups, friends, lastActive, userNo) {
     var box = $('gm-detail');
     box.innerHTML = '';
 
     var head = el('div', 'gm-detail-head');
     head.appendChild(el('div', 'gm-detail-name', (name || '(无昵称)') + '  ·  ' + (phone || '')));
+    if (userNo != null) head.appendChild(el('div', 'gm-detail-no', '编号 #' + userNo));
     if (lastActive) {
       var onNow = onlineFromIso(lastActive);
       head.appendChild(el('div', 'gm-detail-online ' + (onNow ? 'on' : 'off'), onlineText(lastActive)));
@@ -2745,7 +2750,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已强制删除群聊：' + (gname || ''));
-        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone);
+        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone, gmCurrent.userNo);
       })
       .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
   }
@@ -2756,7 +2761,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已删除好友关系：' + (otherName || ''));
-        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone);
+        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone, gmCurrent.userNo);
       })
       .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
   }
@@ -3649,7 +3654,7 @@
     if (mode === 'gm') {
       name.style.cursor = 'pointer';
       name.title = '点击查看该用户';
-      name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone); };
+      name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone, rep.user_number); };
     }
     var badge = el('div', 'gm-report-badge' + (rep.handled ? ' done' : ''), rep.handled ? '已处理' : '待处理');
     head.appendChild(name); head.appendChild(badge);
@@ -4740,7 +4745,7 @@
       rows.forEach(function (u) {
         var row = el('div', 'gm-grant-user-row');
         row.setAttribute('data-uid', u.id);
-        var infoTxt = (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.remark ? ' · ' + u.remark : '');
+        var infoTxt = (u.nickname || '(无昵称)') + ' · ' + (u.phone || '') + (u.user_number != null ? ' · #' + u.user_number : '') + (u.remark ? ' · ' + u.remark : '');
         if (mode === 'grant' && holderSet && holderSet[u.id]) infoTxt += '（已拥有）';
         var info = el('div', 'gm-grant-user', infoTxt);
         row.appendChild(info);
@@ -5457,13 +5462,13 @@
   }
 
   function loadGroupMemberProfiles(groupId) {
-    return sb.from('group_members').select('user_id, profiles(id,nickname,avatar_path,phone)')
+    return sb.from('group_members').select('user_id, profiles(id,nickname,avatar_path,phone,user_number)')
       .eq('group_id', groupId)
       .then(function (r) {
         if (r.error) return;
         (r.data || []).forEach(function (m) {
           var p = m.profiles;
-          if (p) state.profilesById[p.id] = { nickname: p.nickname, avatar_path: p.avatar_path, phone: p.phone };
+          if (p) state.profilesById[p.id] = { nickname: p.nickname, avatar_path: p.avatar_path, phone: p.phone, user_number: p.user_number };
         });
       });
   }
@@ -6093,6 +6098,10 @@
     applyTitleFrame(av, peer.id);
     $('profile-name').textContent = displayName(peer);
     $('profile-phone').textContent = peer.phone || '未绑定手机号';
+
+    var _uno = (peer.user_number != null) ? peer.user_number
+             : (state.profilesById[peer.id] && state.profilesById[peer.id].user_number);
+    $('profile-no').textContent = (_uno != null) ? ('用户编号 #' + _uno) : '未分配编号';
 
     showModal('profile-modal');
 
