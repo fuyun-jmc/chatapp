@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v225 loaded');
+  console.log('[chatapp] app.js build v226 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1738,7 +1738,7 @@
    * ============================================================ */
   function loadRelations() {
     return sb.from('friendships')
-      .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,' +
+      .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,request_note,request_images,' +
               'pinned_by_requester,pinned_by_addressee,' +
               'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path,user_number),' +
               'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path,user_number)')
@@ -1768,7 +1768,12 @@
               type: 'friend'
             });
           } else if (row.status === 'pending' && !iAmRequester) {
-            incoming.push({ rowId: row.id, user: other });
+            incoming.push({
+              rowId: row.id,
+              user: other,
+              note: row.request_note || '',
+              images: (row.request_images && Array.isArray(row.request_images)) ? row.request_images : []
+            });
           }
         });
         // 置顶的好友排到最前；其余保持原有（创建时间倒序）顺序
@@ -1806,6 +1811,27 @@
       var info = el('div', 'info');
       info.appendChild(el('div', 'nm', req.user.nickname));
       info.appendChild(el('div', 'ph', maskPhone(req.user.phone)));
+      // 好友申请信息：留言 + 图片（点击缩略图放大）
+      if (req.note || (req.images && req.images.length)) {
+        var nb = el('div', 'fr-note-box');
+        if (req.note) nb.appendChild(el('div', 'fr-note-text', req.note));
+        if (req.images && req.images.length) {
+          var g = el('div', 'fr-note-imgs');
+          req.images.forEach(function (p) {
+            var im = el('img'); im.className = 'fr-note-thumb'; im.alt = '申请图片';
+            im.onclick = (function (path) {
+              return function (e) {
+                e.stopPropagation();
+                signedUrl(path).then(function (u) { if (u) openReportPreview(u, false); });
+              };
+            })(p);
+            g.appendChild(im);
+            signedUrl(p).then(function (u) { if (u) im.src = u; });
+          });
+          nb.appendChild(g);
+        }
+        info.appendChild(nb);
+      }
       var ok = el('button', 'mini-ok', '同意');
       var no = el('button', 'mini-no', '拒绝');
       ok.onclick = function () { respond(req.rowId, 'accepted'); };
@@ -5882,10 +5908,122 @@
   }
 
   function sendRequest(user, btn) {
-    if (user.id === state.uid) { toast('不能添加自己为好友'); btn.disabled = false; return; }
-    btn.disabled = true;
-    // 先看是否已有任一方向的关系记录
-    sb.from('friendships').select('id,status,requester_id')
+    if (user.id === state.uid) { toast('不能添加自己为好友'); if (btn) btn.disabled = false; return; }
+    // 打开「好友申请信息」弹窗，由用户填写留言 / 附图后确认发送
+    openFriendRequestModal(user, btn);
+  }
+
+  // 好友申请信息：本地预览图（{file, url}），url 为 object URL
+  state.frImages = [];
+
+  function openFriendRequestModal(user, btn) {
+    state.pendingRequestUser = user;
+    state.pendingRequestBtn = btn || null;
+    state.frImages = [];
+    $('fr-target-name').textContent = user.nickname || user.phone || '该用户';
+    var ta = $('fr-note'); if (ta) ta.value = '';
+    var err = $('fr-error'); if (err) err.hidden = true;
+    renderFrImagePreviews();
+    showModal('friend-request-modal');
+    if (ta) setTimeout(function () { try { ta.focus(); } catch (e) {} }, 60);
+  }
+
+  function closeFriendRequestModal() {
+    // 释放本地预览 object URL，避免内存泄漏
+    (state.frImages || []).forEach(function (img) {
+      if (img.url && img.url.indexOf('blob:') === 0) { try { URL.revokeObjectURL(img.url); } catch (e) {} }
+    });
+    state.frImages = [];
+    state.pendingRequestUser = null;
+    var btn = state.pendingRequestBtn; state.pendingRequestBtn = null;
+    if (btn) btn.disabled = false;
+    hideModal('friend-request-modal');
+  }
+
+  function renderFrImagePreviews() {
+    var grid = $('fr-imgs'); if (!grid) return;
+    grid.innerHTML = '';
+    (state.frImages || []).forEach(function (img, idx) {
+      var cell = el('div', 'fr-img-cell');
+      var im = el('img'); im.className = 'fr-thumb'; im.src = img.url; im.alt = '预览';
+      im.onclick = function (e) { e.stopPropagation(); openReportPreview(img.url, false); };
+      var x = el('button', 'fr-img-x', '×'); x.type = 'button';
+      x.onclick = function (e) { e.stopPropagation(); removeFrImage(idx); };
+      cell.appendChild(im); cell.appendChild(x);
+      grid.appendChild(cell);
+    });
+    // 末尾“添加图片”格
+    var add = el('div', 'fr-img-add', '＋');
+    add.onclick = function () { var f = $('fr-file'); if (f) f.click(); };
+    grid.appendChild(add);
+  }
+
+  function removeFrImage(idx) {
+    var img = state.frImages[idx];
+    if (img && img.url && img.url.indexOf('blob:') === 0) { try { URL.revokeObjectURL(img.url); } catch (e) {} }
+    state.frImages.splice(idx, 1);
+    renderFrImagePreviews();
+  }
+
+  function onFrFilePicked(inputEl) {
+    var files = inputEl.files;
+    if (!files) { inputEl.value = ''; return; }
+    var maxMb = CFG.MAX_IMAGE_MB || 5;
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (!f.type || f.type.indexOf('image/') !== 0) { toast('仅支持图片'); continue; }
+      if (f.size > maxMb * 1024 * 1024) { toast('图片「' + f.name + '」超过 ' + maxMb + ' MB'); continue; }
+      state.frImages.push({ file: f, url: URL.createObjectURL(f) });
+    }
+    inputEl.value = '';
+    renderFrImagePreviews();
+  }
+
+  // 把选中的本地图片逐张上传到存储桶，返回路径数组（顺序与选择一致）
+  function uploadFrImages() {
+    var imgs = state.frImages || [];
+    var paths = [];
+    return Promise.all(imgs.map(function (img) {
+      var file = img.file;
+      var ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+      var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+               : Date.now() + '-' + Math.random().toString(36).slice(2);
+      var path = state.uid + '/fr-' + rand + (ext ? '.' + ext : '');
+      return sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          paths.push(path);
+          return path;
+        });
+    })).then(function () { return paths; });
+  }
+
+  function submitFriendRequest() {
+    var user = state.pendingRequestUser;
+    if (!user) return;
+    var note = (($('fr-note') && $('fr-note').value) || '').trim();
+    var imgs = state.frImages || [];
+    var sendBtn = $('fr-send');
+    if (sendBtn) sendBtn.disabled = true;
+    if ($('fr-error')) $('fr-error').hidden = true;
+    // 先上传图片（如有），再写入好友申请（含留言 / 图片路径）
+    uploadFrImages().then(function (paths) {
+      return doSendRequest(user, note, paths);
+    }).then(function () {
+      closeFriendRequestModal();
+    }).catch(function (e) {
+      toast(friendlyError(e));
+      if (sendBtn) sendBtn.disabled = false;
+      if ($('fr-error')) { $('fr-error').textContent = friendlyError(e); $('fr-error').hidden = false; }
+    });
+  }
+
+  // 实际落库好友申请：关系判断 + 写入留言 / 图片。保持原有“已好友/已申请”提示逻辑。
+  function doSendRequest(user, note, imagePaths) {
+    if (user.id === state.uid) { toast('不能添加自己为好友'); return Promise.resolve(); }
+    var payloadNote = note || null;
+    var payloadImgs = (imagePaths && imagePaths.length) ? imagePaths : null;
+    return sb.from('friendships').select('id,status,requester_id')
       .or('and(requester_id.eq.' + state.uid + ',addressee_id.eq.' + user.id + '),' +
           'and(requester_id.eq.' + user.id + ',addressee_id.eq.' + state.uid + ')')
       .maybeSingle()
@@ -5899,9 +6037,9 @@
           } else if (r.data.status === 'accepted') {
             toast('已经是好友了');
           } else {
-            // 之前被拒绝过，重新发起
+            // 之前被拒绝过，重新发起（覆盖写入新的留言 / 图片）
             return sb.from('friendships')
-              .update({ status: 'pending', updated_at: new Date().toISOString() })
+              .update({ status: 'pending', request_note: payloadNote, request_images: payloadImgs, updated_at: new Date().toISOString() })
               .eq('id', r.data.id)
               .then(function (u) {
                 if (u.error) throw u.error;
@@ -5911,15 +6049,30 @@
           return null;
         }
         return sb.from('friendships')
-          .insert({ requester_id: state.uid, addressee_id: user.id, status: 'pending' })
+          .insert({ requester_id: state.uid, addressee_id: user.id, status: 'pending', request_note: payloadNote, request_images: payloadImgs })
           .then(function (ins) {
             if (ins.error) throw ins.error;
             toast('好友申请已发送');
           });
-      })
-      .catch(function (e) { toast(friendlyError(e)); })
-      .then(function () { btn.disabled = false; });
+      });
   }
+
+  // 「好友申请信息」弹窗事件绑定（DOM 已在 body 末尾加载，可直接绑定）
+  (function bindFriendRequestModal() {
+    var fileEl = $('fr-file');
+    if (fileEl) fileEl.addEventListener('change', function (e) { onFrFilePicked(e.target); });
+    var sendBtn = $('fr-send');
+    if (sendBtn) sendBtn.addEventListener('click', submitFriendRequest);
+    var cancelBtn = $('fr-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeFriendRequestModal);
+    var closeBtn = $('fr-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeFriendRequestModal);
+    // 点击遮罩（modal 本身，非卡片）关闭
+    var modal = $('friend-request-modal');
+    if (modal) modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeFriendRequestModal();
+    });
+  })();
 
   /* ============================================================
    *  会话与消息
