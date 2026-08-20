@@ -886,8 +886,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-user-info { min-width: 0; }
 .gm-user-name { font-size: 14px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-user-phone { font-size: 12px; color: var(--text-3); }
+.gm-user-online { font-size: 12px; margin-top: 2px; }
+.gm-user-online.on  { color: var(--ok); }
+.gm-user-online.off { color: #98a0ad; }
 .gm-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 6px; }
 .gm-detail-name { font-size: 14px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-detail-online { font-size: 13px; margin-top: 2px; }
+.gm-detail-online.on  { color: var(--ok); }
+.gm-detail-online.off { color: #98a0ad; }
 .gm-acc-del { flex: 0 0 auto; padding: 8px 12px; font-size: 13px; justify-content: center; }
 .gm-subtitle { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--text-2); }
 .gm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
