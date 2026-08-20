@@ -1209,4 +1209,43 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .profile-title .pt-time { flex: 1; }
 .profile-title .src { font-size: 11px; color: var(--brand); flex: 0 0 auto; }
 
+/* ============================================================
+ *  好友申请信息（弹窗 + 接收列表展示）
+ * ============================================================ */
+/* 弹窗内图片选择网格（老 WebView 不支持 gap，用 margin 兜底） */
+.fr-imgs { display: flex; flex-wrap: wrap; }
+.fr-imgs > * { margin: 5px 5px 0 0; }
+.fr-img-cell {
+  position: relative; width: 64px; height: 64px; border-radius: 10px;
+  overflow: hidden; background: var(--line); cursor: pointer;
+  border: 1px solid var(--line);
+}
+.fr-img-cell .fr-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fr-img-x {
+  position: absolute; top: 1px; right: 1px; width: 18px; height: 18px;
+  border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff;
+  font-size: 13px; line-height: 18px; text-align: center; padding: 0; cursor: pointer;
+}
+.fr-img-add {
+  width: 64px; height: 64px; border-radius: 10px; border: 1px dashed var(--line-2, #c9ccd6);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; color: var(--text-3); cursor: pointer; background: transparent;
+}
+
+/* 接收列表项内的申请信息块 */
+.fr-note-box {
+  margin-top: 6px; padding: 7px 9px; border-radius: 9px;
+  background: var(--bg); border: 1px solid var(--line);
+}
+.fr-note-text {
+  font-size: 13px; color: var(--text-2); line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+.fr-note-imgs { display: flex; flex-wrap: wrap; margin-top: 6px; }
+.fr-note-imgs > * { margin: 4px 4px 0 0; }
+.fr-note-thumb {
+  width: 48px; height: 48px; object-fit: cover; border-radius: 8px;
+  border: 1px solid var(--line); cursor: pointer; display: block; background: var(--line);
+}
+
 
