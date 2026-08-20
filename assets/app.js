@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v222 loaded');
+  console.log('[chatapp] app.js build v223 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2584,11 +2584,13 @@
           var info = el('div', 'gm-user-info');
           info.appendChild(el('div', 'gm-user-name', u.nickname || '(无昵称)'));
           info.appendChild(el('div', 'gm-user-phone', u.phone || ''));
+          var onNow = onlineFromIso(u.last_active);
+          info.appendChild(el('div', 'gm-user-online ' + (onNow ? 'on' : 'off'), onlineText(u.last_active)));
           if (u.remark) info.appendChild(el('div', 'gm-user-phone', '备注：' + u.remark));
           main.appendChild(av); main.appendChild(info);
           var btn = el('button', 'btn-mini', '管理');
           btn.type = 'button';
-          btn.onclick = function () { gmLoadDetail(u.id, u.nickname, u.phone); };
+          btn.onclick = function () { gmLoadDetail(u.id, u.nickname, u.phone, u.last_active); };
           card.appendChild(main); card.appendChild(btn);
           box.appendChild(card);
         });
@@ -2600,7 +2602,7 @@
       });
   }
 
-  function gmLoadDetail(uid, name, phone) {
+  function gmLoadDetail(uid, name, phone, lastActive) {
     gmCurrent = { uid: uid, name: name, phone: phone };
     var box = $('gm-detail');
     box.hidden = false;
@@ -2609,11 +2611,11 @@
       .then(function (gr) {
         if (gr.error) throw gr.error;
         var groups = gr.data || [];
-        return sb.rpc('gm_list_user_friends', { p_pwd: gmPwd, p_user_id: uid })
-          .then(function (fr) {
-            if (fr.error) throw fr.error;
-            renderGmDetail(uid, name, phone, groups, fr.data || []);
-          });
+            return sb.rpc('gm_list_user_friends', { p_pwd: gmPwd, p_user_id: uid })
+              .then(function (fr) {
+                if (fr.error) throw fr.error;
+                renderGmDetail(uid, name, phone, groups, fr.data || [], lastActive);
+              });
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
@@ -2622,12 +2624,16 @@
       });
   }
 
-  function renderGmDetail(uid, name, phone, groups, friends) {
+  function renderGmDetail(uid, name, phone, groups, friends, lastActive) {
     var box = $('gm-detail');
     box.innerHTML = '';
 
     var head = el('div', 'gm-detail-head');
     head.appendChild(el('div', 'gm-detail-name', (name || '(无昵称)') + '  ·  ' + (phone || '')));
+    if (lastActive) {
+      var onNow = onlineFromIso(lastActive);
+      head.appendChild(el('div', 'gm-detail-online ' + (onNow ? 'on' : 'off'), onlineText(lastActive)));
+    }
     var accBtn = el('button', 'btn-danger gm-acc-del', '注销该账号');
     accBtn.type = 'button';
     accBtn.onclick = function () { gmForceDeleteAccount(uid, name); };
