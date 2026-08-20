@@ -880,9 +880,9 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-search .btn-primary { flex: 0 0 auto; padding: 10px 18px; justify-content: center; }
 .gm-users { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .gm-list-col { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-.gm-results { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 14px; min-height: 0; }
-.gm-detail { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 14px 16px; border-top: 1px solid var(--line); min-height: 0; }
-.gm-detail-empty { color: var(--text-3); font-size: 14px; padding: 40px 10px; text-align: center; }
+.gm-results { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 2px 14px; min-height: 0; }
+.gm-detail { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 2px 14px 10px; border-top: 1px solid var(--line); min-height: 0; }
+.gm-detail-empty { color: var(--text-3); font-size: 14px; padding: 24px 10px; text-align: center; }
 
 /* 桌面端：用户管理左右分栏，左侧列表固定宽度，右侧详情占满剩余空间 */
 @media (min-width: 720px) {
@@ -891,26 +891,26 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .gm-results { border-right: none; }
   .gm-detail { flex: 1 1 auto; border-top: none; }
 }
-.gm-empty { color: var(--text-3); font-size: 13px; padding: 18px 4px; text-align: center; }
-.gm-loading { color: var(--text-3); font-size: 13px; padding: 14px 4px; }
-.gm-user { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
-.gm-user-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gm-empty { color: var(--text-3); font-size: 13px; padding: 14px 4px; text-align: center; }
+.gm-loading { color: var(--text-3); font-size: 13px; padding: 10px 4px; }
+.gm-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.gm-user-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .gm-user-info { min-width: 0; }
 .gm-user-name { font-size: 14px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-user-phone { font-size: 12px; color: var(--text-3); }
-.gm-user-online { font-size: 12px; margin-top: 2px; }
+.gm-user-online { font-size: 12px; margin-top: 1px; }
 .gm-user-online.on  { color: var(--ok); }
 .gm-user-online.off { color: #98a0ad; }
-.gm-user-no { font-size: 12px; margin-top: 2px; color: var(--accent, #4f7cf7); font-weight: 500; }
-.gm-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 6px; }
+.gm-user-no { font-size: 12px; margin-top: 1px; color: var(--accent, #4f7cf7); font-weight: 500; }
+.gm-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0 4px; }
 .gm-detail-name { font-size: 14px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gm-detail-online { font-size: 13px; margin-top: 2px; }
+.gm-detail-online { font-size: 13px; margin-top: 1px; }
 .gm-detail-online.on  { color: var(--ok); }
 .gm-detail-online.off { color: #98a0ad; }
 .gm-detail-no { font-size: 13px; color: var(--accent, #4f7cf7); font-weight: 600; }
-.gm-acc-del { flex: 0 0 auto; padding: 8px 12px; font-size: 13px; justify-content: center; }
-.gm-subtitle { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--text-2); }
-.gm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.gm-acc-del { flex: 0 0 auto; padding: 7px 10px; font-size: 12px; justify-content: center; }
+.gm-subtitle { margin: 8px 0 2px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.gm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
 .gm-row-text { min-width: 0; }
 .gm-row-name { font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-row-sub { font-size: 12px; color: var(--text-3); }
