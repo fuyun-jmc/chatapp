@@ -849,19 +849,19 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* ---------- GM 后台覆盖层（页面内，非新网页） ---------- */
 .gm-panel.open { padding: 0; align-items: stretch; justify-content: flex-start; }
 .gm-inner {
-  position: relative; width: 100%; max-width: 560px;
+  position: relative; width: 100%;
   height: 100%; max-height: 100%;
   background: var(--panel); display: flex; flex-direction: column;
   overflow: hidden;
 }
-@media (min-width: 600px) {
+@media (min-width: 720px) {
   .gm-panel.open { padding: 24px 16px; align-items: center; }
-  .gm-inner { height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .gm-inner { max-width: 560px; height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
 }
-/* 手机端：管理员 / GM 面板整体可上下滑动。
+/* 手机端（含小平板，≤719px）：管理员 / GM 面板占满视口、整体可上下滚动。
    老 WebView 下 flex 高度约束常失效，内部列表区 overflow-y:auto 无法触发滚动，
    故改为 .gm-inner 整体滚动，各内容区与列表按内容高度撑开、不再限制高度。 */
-@media (max-width: 599px) {
+@media (max-width: 719px) {
   .gm-panel .gm-inner { overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .gm-reports, .gm-word-log, .gm-userreports, .gm-appeals,
   .gm-titles, .gm-feedback { flex: none; overflow: visible; min-height: 0; }
@@ -912,16 +912,16 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* ---------- GM 聊天记录查看器（顶层弹窗，覆盖在 GM 后台之上） ---------- */
 .gm-chat-viewer.open { padding: 0; align-items: stretch; justify-content: flex-start; }
 .gm-chat-inner {
-  position: relative; width: 100%; max-width: 560px;
+  position: relative; width: 100%;
   height: 100%; max-height: 100%;
   background: var(--panel); display: flex; flex-direction: column; overflow: hidden;
 }
-@media (min-width: 600px) {
+@media (min-width: 720px) {
   .gm-chat-viewer.open { padding: 24px 16px; align-items: center; }
-  .gm-chat-inner { height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .gm-chat-inner { max-width: 560px; height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
 }
-/* 手机端：查看器整体可滚动（与 GM 面板保持一致，兼容老 WebView 的 flex 高度约束失效） */
-@media (max-width: 599px) {
+/* 手机端（含小平板，≤719px）：查看器占满视口、整体可滚动（与 GM 面板保持一致，兼容老 WebView 的 flex 高度约束失效） */
+@media (max-width: 719px) {
   .gm-chat-viewer .gm-chat-inner { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 }
 .gm-chat-body {
