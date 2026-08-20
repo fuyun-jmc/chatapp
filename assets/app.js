@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v224 loaded');
+  console.log('[chatapp] app.js build v225 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -6796,8 +6796,10 @@
       return;   // 拦截：不发送、不清空输入，便于修改后重发
     }
 
-    // 发送前立即 flush 草稿 debounce，避免 600ms 后旧内容被重新落库并回写到输入框
-    flushDraft();
+    // 发送前取消尚未落库的草稿计时：不要把“即将发送的内容”存成草稿
+    // （否则 flushDraft 会把它落库，与下方 clearDraft 的清空异步竞态，
+    //  可能导致已发消息残留在服务端、跨设备拉取后误显示为草稿）。
+    // 真正没发的输入由 openChat 切走会话时 flushDraft 落库，此处只丢弃待发内容。
     pendingDraft = null;
     if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
 
