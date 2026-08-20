@@ -221,6 +221,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .side-me { flex: 1; min-width: 0; }
 .side-name { font-weight: 500; font-size: 15px; }
 .side-phone { font-size: 12.5px; color: var(--text-3); }
+.side-no { font-size: 12px; color: var(--accent, #4f7cf7); font-weight: 500; margin-top: 1px; }
 
 .avatar {
   position: relative; overflow: hidden;
@@ -889,11 +890,13 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-user-online { font-size: 12px; margin-top: 2px; }
 .gm-user-online.on  { color: var(--ok); }
 .gm-user-online.off { color: #98a0ad; }
+.gm-user-no { font-size: 12px; margin-top: 2px; color: var(--accent, #4f7cf7); font-weight: 500; }
 .gm-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 6px; }
 .gm-detail-name { font-size: 14px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gm-detail-online { font-size: 13px; margin-top: 2px; }
 .gm-detail-online.on  { color: var(--ok); }
 .gm-detail-online.off { color: #98a0ad; }
+.gm-detail-no { font-size: 13px; color: var(--accent, #4f7cf7); font-weight: 600; }
 .gm-acc-del { flex: 0 0 auto; padding: 8px 12px; font-size: 13px; justify-content: center; }
 .gm-subtitle { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--text-2); }
 .gm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -1191,6 +1194,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .profile-hero .avatar { box-shadow: 0 6px 18px rgba(0,0,0,.14); }
 .profile-name { font-size: 18px; font-weight: 600; color: var(--text); }
 .profile-phone { font-size: 13px; color: var(--text-2); }
+.profile-no { font-size: 13px; color: var(--accent, #4f7cf7); font-weight: 500; margin-top: 2px; }
 .profile-titles { display: flex; flex-direction: column; gap: 8px; }
 .profile-empty { font-size: 13px; color: var(--text-3); padding: 2px 0; }
 .profile-title {
