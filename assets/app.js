@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v231 loaded');
+  console.log('[chatapp] app.js build v233 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -6963,6 +6963,10 @@
     var draftK = draftKey(peerId, isGroup);
     state.draftSendLock = state.draftSendLock || {};
     state.draftSendLock[draftK] = true;
+    if (state.draftSendLockTimer && state.draftSendLockTimer[draftK]) {
+      clearTimeout(state.draftSendLockTimer[draftK]);
+      delete state.draftSendLockTimer[draftK];
+    }
 
     input.value = '';   // 确认无违禁词后才清空输入框
     fitTextarea(input); // 重置为单行高度
@@ -6970,6 +6974,14 @@
 
     function releaseDraftSendLock() {
       if (state.draftSendLock) delete state.draftSendLock[draftK];
+      if (state.draftSendLockTimer) delete state.draftSendLockTimer[draftK];
+    }
+    function scheduleReleaseDraftSendLock() {
+      if (!state.draftSendLockTimer) state.draftSendLockTimer = {};
+      if (state.draftSendLockTimer[draftK]) clearTimeout(state.draftSendLockTimer[draftK]);
+      state.draftSendLockTimer[draftK] = setTimeout(function () {
+        releaseDraftSendLock();
+      }, 2500);
     }
 
     var payload = {
@@ -6989,7 +7001,9 @@
         // 草稿已在发送前清除；成功后的后处理只刷新会话列表/时间戳
         bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
-        releaseDraftSendLock();
+        // 延迟释放锁：发送前未完成的 save_my_draft RPC 仍可能在成功后回写旧草稿，
+        // 2500ms 窗口可覆盖绝大多数 stale save 的 realtime 回声。
+        scheduleReleaseDraftSendLock();
       })
       .catch(function (err) {
         if (!insertSucceeded) {
@@ -7001,15 +7015,15 @@
             doSaveDraft(peerId, isGroup, text);
           }).catch(function () {
             doSaveDraft(peerId, isGroup, text);
-          }).then(releaseDraftSendLock, releaseDraftSendLock);
+          }).then(scheduleReleaseDraftSendLock, scheduleReleaseDraftSendLock);
         } else {
           console.error('send post-process error:', err);
           toast('消息已发出，但显示异常，正在刷新会话…');
-          releaseDraftSendLock();
+          scheduleReleaseDraftSendLock();
         }
       });
     } catch (fatal) {
-      releaseDraftSendLock();
+      scheduleReleaseDraftSendLock();
       console.error('send handler fatal:', fatal);
       toast('发送异常：' + (fatal && fatal.message ? fatal.message : friendlyError(fatal)));
     }
