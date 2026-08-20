@@ -651,14 +651,18 @@
       </button>
     </header>
 
-    <!-- 用户管理模式 -->
+    <!-- 用户管理模式：桌面端左右分栏，左侧列表+搜索，右侧详情 -->
     <div class="gm-users" id="gm-users">
-      <div class="gm-search">
-        <input id="gm-search-input" placeholder="搜索手机号 / 昵称" autocomplete="off">
-        <button class="btn-primary" id="gm-search-btn" type="button">搜索</button>
+      <div class="gm-list-col">
+        <div class="gm-search">
+          <input id="gm-search-input" placeholder="搜索手机号 / 昵称" autocomplete="off">
+          <button class="btn-primary" id="gm-search-btn" type="button">搜索</button>
+        </div>
+        <div class="gm-results" id="gm-results"></div>
       </div>
-      <div class="gm-results" id="gm-results"></div>
-      <div class="gm-detail" id="gm-detail" hidden></div>
+      <div class="gm-detail" id="gm-detail">
+        <div class="gm-detail-empty">点击左侧用户查看管理详情</div>
+      </div>
     </div>
 
     <!-- 群聊管理模式 -->
@@ -931,7 +935,7 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=112"></script>
-<script src="assets/app.v228.js"></script>
+<script src="assets/app.v229.js"></script>
 
 <!-- ==================== 好友申请信息 ==================== -->
 <div class="modal" id="friend-request-modal">
