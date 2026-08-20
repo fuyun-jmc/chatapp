@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v228 loaded');
+  console.log('[chatapp] app.js build v229 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2512,7 +2512,7 @@
    *  均在数据库端再次校验口令（gm_check），保证前端拿不到口令也能拦住。
    * ============================================================ */
   var gmPwd = '';        // 本次会话的管理员口令（仅内存）
-  var gmCurrent = null;  // 当前正在查看的目标用户 { uid, name, phone }
+  var gmCurrent = null;  // 当前正在查看的目标用户 { uid, name, phone, lastActive, userNo }
   // 管理员账号 uid（须与数据库 gm_admin_uid() 一致）。仅用于控制 GM 入口的可见性，
   // 真正的权限仍由后端 gm_check 校验 auth.uid() === gm_admin_uid() 且口令正确，前端拿不到权限。
   var GM_ADMIN_UID = '66f0744b-007b-4d5f-a9bc-2c5e4462baf9';
@@ -2584,8 +2584,7 @@
     state.gmPanelOpen = true;
     $('gm-search-input').value = '';
     $('gm-results').innerHTML = '';
-    $('gm-detail').hidden = true;
-    $('gm-detail').innerHTML = '';
+    $('gm-detail').innerHTML = '<div class="gm-detail-empty">点击左侧用户查看管理详情</div>';
     showModal('gm-panel');
     try { $('gm-search-input').focus(); } catch (e) {}
   }
@@ -2596,8 +2595,7 @@
     var q = $('gm-search-input').value.trim();
     var box = $('gm-results');
     box.innerHTML = '<div class="gm-empty">搜索中…</div>';
-    $('gm-detail').hidden = true;
-    $('gm-detail').innerHTML = '';
+    $('gm-detail').innerHTML = '<div class="gm-detail-empty">点击左侧用户查看管理详情</div>';
     sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: q })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -2633,9 +2631,8 @@
   }
 
   function gmLoadDetail(uid, name, phone, lastActive, userNo) {
-    gmCurrent = { uid: uid, name: name, phone: phone, userNo: userNo };
+    gmCurrent = { uid: uid, name: name, phone: phone, lastActive: lastActive, userNo: userNo };
     var box = $('gm-detail');
-    box.hidden = false;
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_user_groups', { p_pwd: gmPwd, p_user_id: uid })
       .then(function (gr) {
@@ -2654,9 +2651,10 @@
       });
   }
 
-  function renderGmDetail(uid, name, phone, groups, friends, lastActive, userNo) {
+  function renderGmDetail(uid, name, phone, groups, friends, lastActive) {
     var box = $('gm-detail');
     box.innerHTML = '';
+    var userNo = gmCurrent ? gmCurrent.userNo : null;
 
     var head = el('div', 'gm-detail-head');
     head.appendChild(el('div', 'gm-detail-name', (name || '(无昵称)') + '  ·  ' + (phone || '')));
@@ -2776,7 +2774,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已强制删除群聊：' + (gname || ''));
-        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone, gmCurrent.userNo);
+        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone, gmCurrent.lastActive, gmCurrent.userNo);
       })
       .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
   }
@@ -2787,7 +2785,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已删除好友关系：' + (otherName || ''));
-        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone, gmCurrent.userNo);
+        if (gmCurrent && gmCurrent.uid === uid) gmLoadDetail(gmCurrent.uid, gmCurrent.name, gmCurrent.phone, gmCurrent.lastActive, gmCurrent.userNo);
       })
       .catch(function (e) { toast('删除失败：' + friendlyError(e)); });
   }
@@ -2798,8 +2796,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         toast('已注销账号：' + (name || ''));
-        $('gm-detail').hidden = true;
-        $('gm-detail').innerHTML = '';
+        $('gm-detail').innerHTML = '<div class="gm-detail-empty">点击左侧用户查看管理详情</div>';
         gmSearch();
       })
       .catch(function (e) { toast('注销失败：' + friendlyError(e)); });
@@ -3680,7 +3677,7 @@
     if (mode === 'gm') {
       name.style.cursor = 'pointer';
       name.title = '点击查看该用户';
-      name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone, rep.user_number); };
+      name.onclick = function () { gmLoadDetail(rep.user_id, rep.nickname, rep.phone, null, null); };
     }
     var badge = el('div', 'gm-report-badge' + (rep.handled ? ' done' : ''), rep.handled ? '已处理' : '待处理');
     head.appendChild(name); head.appendChild(badge);
