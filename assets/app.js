@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v237 loaded');
+  console.log('[chatapp] app.js build v238 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -701,9 +701,9 @@
     return (Date.now() - ms) < ONLINE_WINDOW_MS;
   }
 
-  // 把 last_active 格式化成「在线 / X 分钟前 / X 小时前 / X 天前 / 离线」
+  // 把 last_active 格式化成「在线 / X 分钟前 / X 小时前 / X 天前 / 从未上线」
   function onlineText(iso) {
-    if (!iso) return '离线';
+    if (!iso) return '从未上线';
     var ms = Date.parse(iso);
     if (isNaN(ms)) return '离线';
     var diff = Date.now() - ms;
