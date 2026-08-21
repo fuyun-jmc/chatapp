@@ -1247,16 +1247,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 /* 开发者专属头像框标记类（具体阴影由 JS 内联设置，含称号颜色） */
 .dev-frame { border-radius: 50%; }
-/* 管理员头像框「管理员」字样角标（顶部丝带，因 .avatar 设了 overflow:hidden，置于框内仍可显示，且兼容老 WebView） */
+/* 管理员头像框：红色外环标记，不遮挡头像内容（老 WebView 也支持 border/box-shadow） */
 .avatar.avatar-admin::after {
-  content: '管理员';
+  content: '';
   position: absolute;
-  top: 0; left: 0; right: 0;
-  text-align: center;
-  font-size: 9px; line-height: 13px;
-  color: #fff;
-  background: rgba(245, 81, 30, .95);
-  letter-spacing: .04em;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: inherit;
+  border: 2px solid rgba(245, 81, 30, .92);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.5) inset, 0 0 6px rgba(245, 81, 30, .45);
   pointer-events: none;
 }
 
