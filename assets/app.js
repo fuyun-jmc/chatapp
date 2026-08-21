@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v239 loaded');
+  console.log('[chatapp] app.js build v240 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1055,8 +1055,8 @@
     var t = list[0];
     var c = t.frameColor || '#ffd700';
     if (t.frameStyle === 'dev') {
-      // 开发者专属：内白圈 + 红橙黄绿青蓝紫 7 色环 + 外圈光晕
-      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 4px #ff3b30, 0 0 0 6px #ff9500, 0 0 0 8px #ffcc00, 0 0 0 10px #34c759, 0 0 0 12px #00c7be, 0 0 0 14px #007aff, 0 0 0 16px #af52de, 0 0 18px 7px rgba(175,82,222,.55)';
+      // 开发者专属：内白圈 + 红橙黄绿青蓝紫 7 色环（每色 1px 细环）+ 外圈光晕
+      av.style.boxShadow = '0 0 0 1px #ffffff, 0 0 0 2px #ff3b30, 0 0 0 3px #ff9500, 0 0 0 4px #ffcc00, 0 0 0 5px #34c759, 0 0 0 6px #00c7be, 0 0 0 7px #007aff, 0 0 0 8px #af52de, 0 0 5px 0 rgba(175,82,222,.45)';
       if (av.classList) av.classList.add('dev-frame');
     }
     else if (t.frameStyle === 'solid') av.style.boxShadow = '0 0 0 4px ' + c;
@@ -1138,7 +1138,8 @@
           var prev = el('div', 'title-prev' + (isDevTitle ? ' dev-frame' : ''));
           prev.style.background = '#fff';
           if (isDevTitle) {
-            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px #ff3b30, 0 0 0 8px #ff9500, 0 0 0 11px #ffcc00, 0 0 0 14px #34c759, 0 0 0 17px #00c7be, 0 0 0 20px #007aff, 0 0 0 23px #af52de, 0 0 22px 9px rgba(175,82,222,.55)';
+            // 开发者预览：7 色细环（每色 1px）+ 微光晕
+            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 3px #ff3b30, 0 0 0 4px #ff9500, 0 0 0 5px #ffcc00, 0 0 0 6px #34c759, 0 0 0 7px #00c7be, 0 0 0 8px #007aff, 0 0 0 9px #af52de, 0 0 8px 1px rgba(175,82,222,.45)';
           } else {
             prev.style.boxShadow = (t.frame_style === 'solid' ? '0 0 0 4px ' :
                                     t.frame_style === 'glow' ? '0 0 10px 3px ' : '0 0 0 3px ') + (t.frame_color || '#ffd700');
