@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v234 loaded');
+  console.log('[chatapp] app.js build v235 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -221,6 +221,7 @@
 
   var pendingDraft = null;   // { peerId, isGroup, text }  等待 debounce 落库的草稿
   var draftSaveTimer = null;
+  var quotingMsg = null;     // 当前正在引用的消息对象（发送时写入 quote 快照）
 
   function doSaveDraft(peerId, isGroup, text) {
     if (!peerId) return;
@@ -6133,6 +6134,8 @@
   function openChat(peer) {
     // 先落库上一个会话可能尚未 debounce 落库的草稿，避免切走后丢失
     flushDraft();
+    // 切换会话时清除引用状态，避免引用残留到另一个会话
+    clearQuote();
     var isGroup = peer.type === 'group';
     state.active = peer;
     state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
@@ -6728,11 +6731,21 @@
       if (m.sender_id) wrap.dataset.sender = m.sender_id;
       wrap.appendChild(el('div', 'msg-sender', sName));
     }
+    // 引用块（气泡上方）：显示被引用消息的发送者与内容缩略，点击定位原消息
+    if (m.quote && m.quote.msg_id) {
+      var qNode = buildQuoteBlock(m.quote);
+      if (qNode) wrap.appendChild(qNode);
+    }
     wrap.appendChild(bubble);
     wrap.appendChild(el('div', 'msg-time', fmtTime(m.created_at)));
 
     // 操作按钮统一放到气泡下方，避免与时间并排导致误触
     var actions = el('div', 'msg-actions');
+    // 引用按钮（始终可用，不区分发送方/接收方、不区分撤回窗口）
+    var qb = el('button', 'quote-btn', '引用');
+    qb.type = 'button';
+    qb.onclick = function () { startQuote(m); };
+    actions.appendChild(qb);
     if (out) {
       var withinRecall = (Date.now() - new Date(m.created_at).getTime()) < 5 * 60 * 1000;
       if (withinRecall) {
@@ -6918,6 +6931,82 @@
   /* ---------- 发送文字 ---------- */
   var input = $('msg-input');
 
+  // ========== 消息引用 ==========
+  function quoteSenderName(m) {
+    if (m.sender_id === state.uid) return (state.me && state.me.nickname) || '我';
+    if (state.active && state.active.type === 'group') return groupNicknameOf(state.active.id, m.sender_id) || '成员';
+    return (state.active && (state.active.nickname || state.active.remark)) || '对方';
+  }
+
+  // 引用块（气泡上方展示用）
+  function buildQuoteBlock(q) {
+    var node = el('div', 'msg-quote');
+    node.dataset.quoteId = q.msg_id;
+    node.appendChild(el('div', 'msg-quote-name', (q.sender_name || '用户') + '：'));
+    var content = el('div', 'msg-quote-content');
+    if ((q.kind === 'image' || q.kind === 'video') && q.file_path) {
+      var thumb = document.createElement('img');
+      thumb.className = 'msg-quote-thumb';
+      thumb.alt = q.file_name || (q.kind === 'image' ? '图片' : '视频');
+      thumb.loading = 'lazy';
+      content.appendChild(thumb);
+      signedUrl(q.file_path).then(function (u) { if (u) thumb.src = u; });
+    } else if (q.kind === 'file') {
+      content.textContent = q.file_name || '文件';
+    } else {
+      content.textContent = q.content || '';
+    }
+    node.appendChild(content);
+    node.onclick = function () { scrollToMsg(q.msg_id); };
+    return node;
+  }
+
+  function scrollToMsg(id) {
+    var box = $('messages');
+    if (!box) return;
+    var node = box.querySelector('[data-id="' + id + '"]');
+    if (!node) { toast('原消息不在此会话'); return; }
+    try { node.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { node.scrollIntoView(); }
+    node.classList.add('msg-flash');
+    setTimeout(function () { node.classList.remove('msg-flash'); }, 1200);
+  }
+
+  function startQuote(m) {
+    quotingMsg = m;
+    renderQuotePreview();
+    // 引用时聚焦输入框，方便接着打字
+    try { input.focus(); } catch (e) {}
+  }
+
+  function clearQuote() {
+    quotingMsg = null;
+    var p = $('quote-preview');
+    if (p) p.hidden = true;
+  }
+
+  function renderQuotePreview() {
+    var p = $('quote-preview');
+    if (!p || !quotingMsg) { if (p) p.hidden = true; return; }
+    var q = quotingMsg;
+    $('quote-preview-name').textContent = quoteSenderName(q) + '：';
+    var txt = $('quote-preview-text');
+    txt.innerHTML = '';
+    if ((q.kind === 'image' || q.kind === 'video') && q.file_path) {
+      var thumb = document.createElement('img');
+      thumb.className = 'quote-preview-thumb';
+      txt.appendChild(thumb);
+      signedUrl(q.file_path).then(function (u) { if (u) thumb.src = u; });
+    } else if (q.kind === 'file') {
+      txt.textContent = q.file_name || '文件';
+    } else {
+      txt.textContent = q.content || '';
+    }
+    p.hidden = false;
+  }
+
+  var quoteCloseBtn = $('quote-preview-close');
+  if (quoteCloseBtn) quoteCloseBtn.onclick = function () { clearQuote(); };
+
   input.addEventListener('input', function () {
     fitTextarea(this);
     // 边打字边保存草稿（debounce 落库），退出网页 / 切换设备后仍在
@@ -7023,6 +7112,18 @@
     };
     if (isGroup) payload.group_id = peerId;
     else payload.receiver_id = peerId;
+    // 引用：写入引用消息的快照（原消息被撤回/删除后仍可完整显示）
+    if (quotingMsg) {
+      payload.quote = {
+        msg_id: quotingMsg.id,
+        kind: quotingMsg.kind,
+        content: quotingMsg.kind === 'text' ? (quotingMsg.content || '') : '',
+        file_path: quotingMsg.file_path || null,
+        file_name: quotingMsg.file_name || null,
+        sender_id: quotingMsg.sender_id,
+        sender_name: quoteSenderName(quotingMsg)
+      };
+    }
 
     var insertSucceeded = false;
     sb.from('messages').insert(payload).select().single()
@@ -7030,6 +7131,7 @@
         if (r.error) throw r.error;
         insertSucceeded = true;
         appendMessage(r.data);
+        clearQuote();   // 引用是一次性的，发送后清除
         // 草稿已在发送前清除；成功后的后处理只刷新会话列表/时间戳
         bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
@@ -7042,6 +7144,7 @@
           toast('发送失败：' + friendlyError(err));
           input.value = text;
           fitTextarea(input);
+          clearQuote();   // 发送失败，引用状态一并重置
           // 等待服务端清空完成后再恢复草稿，避免“恢复”被晚到的“清空”覆盖
           clearDraftPromise.then(function () {
             doSaveDraft(peerId, isGroup, text);
@@ -7056,6 +7159,7 @@
       });
     } catch (fatal) {
       scheduleReleaseDraftSendLock();
+      clearQuote();
       console.error('send handler fatal:', fatal);
       toast('发送异常：' + (fatal && fatal.message ? fatal.message : friendlyError(fatal)));
     }
