@@ -22,10 +22,9 @@ window.CHAT_CONFIG = {
   // 若注册时提示 "Email address is invalid"，把它换成 example.com 再试。
   EMAIL_DOMAIN: 'chatapp.local',
 
-  // 单个文件大小上限（MB）。Supabase 免费版单文件上限 50MB，
-  // 免费存储总量约 1GB，视频很占空间，建议保守设置。
+  // 单个文件大小上限（MB）。视频按需求放宽到 1GB（1024MB）。
   MAX_IMAGE_MB: 10,
-  MAX_VIDEO_MB: 50,
+  MAX_VIDEO_MB: 1024,
   MAX_FILE_MB: 20,
 
   // 每次进入会话加载的历史消息条数
