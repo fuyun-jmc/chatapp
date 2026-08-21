@@ -497,11 +497,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
   background: rgba(0,0,0,.04); padding: 2px 10px; border-radius: 8px;
 }
 
-.msg { display: flex; max-width: 74%; }
+.msg { display: flex; flex-wrap: wrap; max-width: 74%; }
 .msg > * { margin-right: 8px; }
 .msg > *:last-child { margin-right: 0; }
 .msg.out { align-self: flex-end; flex-direction: row-reverse; }
 .msg.in { align-self: flex-start; }
+.msg-actions { width: 100%; display: flex; align-items: center; margin: 4px 0 0; }
+.msg-actions > * { margin-right: 0; }
+.msg.out .msg-actions { justify-content: flex-end; }
+.msg.in .msg-actions { justify-content: flex-start; }
 
 .bubble {
   padding: 9px 13px; border-radius: 14px;
@@ -548,7 +552,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .recall-btn {
   align-self: center; flex: 0 0 auto;
   font-size: 12px; color: var(--text-3);
-  background: none; border: none; padding: 2px 6px;
+  background: none; border: none; padding: 4px 8px;
   border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity .15s;
 }
 .msg:hover .recall-btn { opacity: .85; }
@@ -572,7 +576,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .del-btn {
   align-self: center; flex: 0 0 auto;
   font-size: 12px; color: var(--text-3);
-  background: none; border: none; padding: 2px 6px;
+  background: none; border: none; padding: 4px 8px;
   border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity .15s;
 }
 .msg:hover .del-btn { opacity: .85; }
