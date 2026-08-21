@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v235 loaded');
+  console.log('[chatapp] app.js build v236 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -6128,7 +6128,52 @@
         bumpConvTs(pid);
       });
       renderConversations();
+      // 离线/跨设备未读：上线（登录或实时重连）后，对 DB 算出的未读会话补弹一次性提示。
+      // realtime 的 INSERT 事件不会回放断线期间的消息，所以离线消息原本没有 toast，
+      // 这里用已读游标重算出的未读 map 补上「上线提示」。
+      notifyOfflineUnread(map);
     }).catch(function () {});
+  }
+
+  // 离线未读提示：用队列顺序弹，避免 toast() 直接覆盖文本导致只显示最后一条。
+  var _toastQ = [];
+  var _toastQrunning = false;
+  function toastEnqueue(msg, ms) {
+    _toastQ.push({ msg: msg, ms: ms || 2600 });
+    if (!_toastQrunning) { _toastQrunning = true; _runToastQ(); }
+  }
+  function _runToastQ() {
+    if (_toastQ.length === 0) { _toastQrunning = false; return; }
+    var it = _toastQ.shift();
+    toast(it.msg, it.ms);
+    setTimeout(_runToastQ, it.ms + 350);
+  }
+  function peerDisplayName(pid) {
+    var g = groupById(pid);
+    if (g) return g.name;
+    var f = friendById(pid);
+    if (f) return f.nickname || f.remark || displayName(f);
+    return '有人';
+  }
+  function notifyOfflineUnread(map) {
+    if (!state._offlineNotified) state._offlineNotified = {};
+    var items = [];
+    Object.keys(map || {}).forEach(function (pid) {
+      if (pid === (state.active && state.active.id)) return;     // 正在看的会话不弹
+      if (state._offlineNotified[pid]) return;                   // 本次在线会话已弹过
+      state._offlineNotified[pid] = true;
+      items.push({ pid: pid, cnt: map[pid] });
+    });
+    if (items.length === 0) return;
+    // 单/少量会话：逐条显示「昵称 发来 N 条新消息」；会话很多时汇总一条，避免刷屏
+    if (items.length <= 3) {
+      items.forEach(function (it) {
+        toastEnqueue(peerDisplayName(it.pid) + ' 发来 ' + it.cnt + ' 条新消息');
+      });
+      return;
+    }
+    var total = items.reduce(function (s, x) { return s + x.cnt; }, 0);
+    toastEnqueue('你有 ' + total + ' 条新消息（来自 ' + items.length + ' 个会话）');
   }
 
   function openChat(peer) {
@@ -6149,6 +6194,8 @@
 
     if (state.recallTimer) { clearInterval(state.recallTimer); state.recallTimer = null; }
     delete state.unread[peer.id];
+    // 打开会话后清除其离线提示去重标记，下次离线再来新消息仍能重新提示
+    if (state._offlineNotified) delete state._offlineNotified[peer.id];
     // 把已读游标推到 now()：服务端据此不再把该会话旧消息算作未读，跨设备同步生效。
     // mark 成功后再清一次红点并渲染，保证即使 loadUnreadFromDb 在 mark 完成前跑过，
     // 也能在游标持久化后正确去掉红点。
