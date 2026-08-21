@@ -6702,27 +6702,30 @@
     wrap.appendChild(bubble);
     wrap.appendChild(el('div', 'msg-time', fmtTime(m.created_at)));
 
+    // 操作按钮统一放到气泡下方，避免与时间并排导致误触
+    var actions = el('div', 'msg-actions');
     if (out) {
       var withinRecall = (Date.now() - new Date(m.created_at).getTime()) < 5 * 60 * 1000;
       if (withinRecall) {
         var rb = el('button', 'recall-btn', '撤回');
         rb.type = 'button';
         rb.onclick = function () { recallMessage(m.id); };
-        wrap.appendChild(rb);
+        actions.appendChild(rb);
       } else {
         var db = el('button', 'del-btn', '删除');
         db.type = 'button';
         db.title = '仅自己删除，对方仍可看到';
         db.onclick = function () { deleteMessageForMe(m.id); };
-        wrap.appendChild(db);
+        actions.appendChild(db);
       }
     } else {
       var db = el('button', 'del-btn', '删除');
       db.type = 'button';
       db.title = '仅自己删除，对方仍可看到';
       db.onclick = function () { deleteMessageForMe(m.id); };
-      wrap.appendChild(db);
+      actions.appendChild(db);
     }
+    wrap.appendChild(actions);
     return wrap;
   }
 
