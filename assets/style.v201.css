@@ -585,6 +585,67 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .del-btn { opacity: .7; }
 }
 
+/* ---------- 引用 ---------- */
+/* 气泡上方引用块：显示被引用消息的发送者与内容缩略，点击定位原消息 */
+.msg-quote {
+  width: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  margin: 0 0 5px; padding: 5px 9px;
+  background: var(--bg);
+  border-left: 3px solid var(--brand);
+  border-radius: 6px; cursor: pointer;
+}
+.msg-quote-name { font-size: 12px; font-weight: 600; color: var(--brand); margin-bottom: 2px; }
+.msg-quote-content {
+  font-size: 12px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.msg-quote-thumb {
+  width: 64px; height: 64px; object-fit: cover; border-radius: 5px;
+  margin-top: 3px; max-width: 100%;
+}
+
+/* 引用按钮：始终可见，放在撤回/删除旁边 */
+.quote-btn {
+  align-self: center; flex: 0 0 auto; margin-right: 6px;
+  font-size: 12px; color: var(--text-3);
+  background: none; border: none; padding: 4px 8px;
+  border-radius: 6px; cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.quote-btn:hover { color: var(--brand); background: rgba(64,108,247,.1); }
+
+/* 点击引用块定位原消息时，原消息高亮闪烁 */
+.msg-flash { animation: msgFlash 1.2s ease; }
+@keyframes msgFlash {
+  0%   { background: rgba(64,108,247,.28); }
+  100% { background: transparent; }
+}
+
+/* 输入框上方引用预览条 */
+.composer { flex-wrap: wrap; }
+.quote-preview {
+  width: 100%; order: -1; box-sizing: border-box;
+  display: flex; align-items: center;
+  margin: 0 0 8px; padding: 7px 10px;
+  background: var(--bg); border: 1px solid var(--line);
+  border-left: 3px solid var(--brand); border-radius: 8px;
+}
+.quote-preview[hidden] { display: none; }
+.quote-preview-body { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-right: 8px; }
+.quote-preview-name { font-size: 12px; font-weight: 600; color: var(--brand); }
+.quote-preview-text {
+  font-size: 12px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.quote-preview-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 5px; margin-right: 6px; flex: 0 0 auto; }
+.quote-preview-close {
+  border: 0; background: transparent; color: var(--text-3);
+  font-size: 18px; line-height: 1; cursor: pointer;
+  padding: 0 2px; flex: 0 0 auto;
+}
+.quote-preview-close:hover { color: var(--danger); }
+
 /* 聊天头里的备注按钮（移动端/无 hover 时也能设置备注） */
 .peer-remark-btn {
   margin-left: auto; flex: 0 0 auto;
