@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v238 loaded');
+  console.log('[chatapp] app.js build v239 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1055,8 +1055,8 @@
     var t = list[0];
     var c = t.frameColor || '#ffd700';
     if (t.frameStyle === 'dev') {
-      // 开发者专属：内白圈 + 彩色渐变环（多色叠加，普通称号无法配置） + 光晕
-      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 4px #7c4dff, 0 0 0 6px #22d3ee, 0 0 0 8px #3bff9e, 0 0 6px 1px #b04dff';
+      // 开发者专属：内白圈 + 红橙黄绿青蓝紫 7 色环 + 外圈光晕
+      av.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 4px #ff3b30, 0 0 0 6px #ff9500, 0 0 0 8px #ffcc00, 0 0 0 10px #34c759, 0 0 0 12px #00c7be, 0 0 0 14px #007aff, 0 0 0 16px #af52de, 0 0 18px 7px rgba(175,82,222,.55)';
       if (av.classList) av.classList.add('dev-frame');
     }
     else if (t.frameStyle === 'solid') av.style.boxShadow = '0 0 0 4px ' + c;
@@ -1138,7 +1138,7 @@
           var prev = el('div', 'title-prev' + (isDevTitle ? ' dev-frame' : ''));
           prev.style.background = '#fff';
           if (isDevTitle) {
-            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px #7c4dff, 0 0 0 8px #22d3ee, 0 0 0 11px #3bff9e, 0 0 14px 5px #b04dff';
+            prev.style.boxShadow = '0 0 0 2px #ffffff, 0 0 0 5px #ff3b30, 0 0 0 8px #ff9500, 0 0 0 11px #ffcc00, 0 0 0 14px #34c759, 0 0 0 17px #00c7be, 0 0 0 20px #007aff, 0 0 0 23px #af52de, 0 0 22px 9px rgba(175,82,222,.55)';
           } else {
             prev.style.boxShadow = (t.frame_style === 'solid' ? '0 0 0 4px ' :
                                     t.frame_style === 'glow' ? '0 0 10px 3px ' : '0 0 0 3px ') + (t.frame_color || '#ffd700');
@@ -7221,6 +7221,34 @@
   $('file-video').onchange = function () { handleFile(this, 'video'); };
   $('file-any').onchange = function () { handleFile(this, 'file'); };
 
+  // 发送端图片压缩：用 canvas 把最长边压到 maxEdge、质量 quality，减少接收端加载体积
+  function compressImageFile(file, maxEdge, quality) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        var scale = Math.min(1, maxEdge / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, cw, ch);
+        URL.revokeObjectURL(url);
+        try {
+          canvas.toBlob(function (blob) {
+            if (!blob) { reject(new Error('toBlob null')); return; }
+            var name = file.name || ('image.' + (file.type ? file.type.split('/')[1] : 'jpg'));
+            if (!/\.jpe?g$/i.test(name)) name = name.replace(/\.[^.]+$/, '') + '.jpg';
+            resolve(new File([blob], name, { type: 'image/jpeg' }));
+          }, 'image/jpeg', quality);
+        } catch (e) { reject(e); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('img decode fail')); };
+      img.src = url;
+    });
+  }
+
   async function handleFile(inputEl, kind) {
     var file = inputEl.files && inputEl.files[0];
     inputEl.value = '';
@@ -7236,6 +7264,14 @@
     if (file.size > maxMb * 1024 * 1024) {
       toast('文件超过 ' + maxMb + ' MB 上限（当前 ' + fmtSize(file.size) + '）');
       return;
+    }
+
+    // 图片压缩（减少接收端加载体积）。压缩失败则退回原图，不影响发送。
+    if (file.type && file.type.indexOf('image/') === 0 && kind === 'image') {
+      try {
+        var compressed = await compressImageFile(file, 1600, 0.82);
+        if (compressed && compressed.size > 0) file = compressed;
+      } catch (e) { /* 压缩失败，用原图 */ }
     }
 
     var bar = $('upload-bar');
