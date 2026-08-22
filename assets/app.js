@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v240 loaded');
+  console.log('[chatapp] app.js build v241 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3547,49 +3547,49 @@
       wrap.appendChild(el('div', 'gm-msg-sender', m.sender_name || '成员'));
     }
 
-    if (m.recalled) {
-      // 撤回会清空正文，GM 也只能看到「已撤回」标记，但保留该条记录不被隐藏
-      wrap.appendChild(el('div', 'gm-msg-recalled', '（已撤回，正文不可见）'));
+    var bubble;
+    if (m.kind === 'text') {
+      bubble = el('div', 'gm-msg-bubble', m.content || '');
+    } else if (m.kind === 'image') {
+      bubble = el('div', 'gm-msg-bubble gm-msg-media');
+      var img = document.createElement('img');
+      img.alt = m.file_name || '图片';
+      bubble.appendChild(img);
+      signedUrl(m.file_path).then(function (u) {
+        if (!u) return;
+        img.src = u;
+        img.onclick = function () { openGmMedia(u, false); };
+      });
+    } else if (m.kind === 'video' || isVideoFile(m)) {
+      bubble = el('div', 'gm-msg-bubble gm-msg-media');
+      var vid = document.createElement('video');
+      vid.controls = true; vid.preload = 'metadata'; vid.playsInline = true;
+      bubble.appendChild(vid);
+      signedUrl(m.file_path).then(function (u) {
+        if (!u) return;
+        vid.src = u;
+        vid.onclick = function (e) { e.stopPropagation(); };
+        bubble.onclick = function () { openGmMedia(u, true); };
+      });
     } else {
-      var bubble;
-      if (m.kind === 'text') {
-        bubble = el('div', 'gm-msg-bubble', m.content || '');
-      } else if (m.kind === 'image') {
-        bubble = el('div', 'gm-msg-bubble gm-msg-media');
-        var img = document.createElement('img');
-        img.alt = m.file_name || '图片';
-        bubble.appendChild(img);
-        signedUrl(m.file_path).then(function (u) {
-          if (!u) return;
-          img.src = u;
-          img.onclick = function () { openGmMedia(u, false); };
-        });
-      } else if (m.kind === 'video' || isVideoFile(m)) {
-        bubble = el('div', 'gm-msg-bubble gm-msg-media');
-        var vid = document.createElement('video');
-        vid.controls = true; vid.preload = 'metadata'; vid.playsInline = true;
-        bubble.appendChild(vid);
-        signedUrl(m.file_path).then(function (u) {
-          if (!u) return;
-          vid.src = u;
-          vid.onclick = function (e) { e.stopPropagation(); };
-          bubble.onclick = function () { openGmMedia(u, true); };
-        });
-      } else {
-        bubble = el('div', 'gm-msg-bubble');
-        var a = document.createElement('a');
-        a.className = 'gm-file-card';
-        a.target = '_blank'; a.rel = 'noopener';
-        var ext = (m.file_name || '').split('.').pop() || 'file';
-        a.appendChild(el('div', 'gm-file-icon', ext.slice(0, 4)));
-        var meta = el('div', 'gm-file-meta');
-        meta.appendChild(el('div', 'gm-file-name', m.file_name || '文件'));
-        meta.appendChild(el('div', 'gm-file-size', fmtSize(m.file_size)));
-        a.appendChild(meta);
-        bubble.appendChild(a);
-        signedUrl(m.file_path).then(function (u) { if (u) { a.href = u; a.download = m.file_name || ''; } });
-      }
-      wrap.appendChild(bubble);
+      bubble = el('div', 'gm-msg-bubble');
+      var a = document.createElement('a');
+      a.className = 'gm-file-card';
+      a.target = '_blank'; a.rel = 'noopener';
+      var ext = (m.file_name || '').split('.').pop() || 'file';
+      a.appendChild(el('div', 'gm-file-icon', ext.slice(0, 4)));
+      var meta = el('div', 'gm-file-meta');
+      meta.appendChild(el('div', 'gm-file-name', m.file_name || '文件'));
+      meta.appendChild(el('div', 'gm-file-size', fmtSize(m.file_size)));
+      a.appendChild(meta);
+      bubble.appendChild(a);
+      signedUrl(m.file_path).then(function (u) { if (u) { a.href = u; a.download = m.file_name || ''; } });
+    }
+    wrap.appendChild(bubble);
+
+    if (m.recalled) {
+      // GM 视角：撤回消息仍显示正文，并追加「已撤回」标注
+      wrap.appendChild(el('div', 'gm-chat-note', '（已撤回）'));
     }
 
     // 异常状态标注（被删除本端 / 命中违禁词）——GM 仍可看到正文，仅追加提示
