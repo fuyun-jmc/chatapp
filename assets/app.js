@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v241 loaded');
+  console.log('[chatapp] app.js build v242 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3005,6 +3005,27 @@
           card.appendChild(el('div', 'gm-report-line', '内容：' + (f.content || '')));
           if (f.contact) card.appendChild(el('div', 'gm-report-sub', '联系方式：' + f.contact));
 
+          // 开发者已有回复
+          if (f.dev_reply) {
+            var rep = el('div', 'gm-report-reply');
+            rep.appendChild(el('div', 'gm-report-reply-label', '开发者回复：'));
+            rep.appendChild(el('div', 'gm-report-reply-text', f.dev_reply));
+            if (f.dev_reply_at) rep.appendChild(el('div', 'gm-report-sub', '回复时间：' + f.dev_reply_at.replace('T', ' ').slice(0, 16)));
+            card.appendChild(rep);
+          }
+
+          // 回复框（开发者留言，提交者可见）
+          var replyWrap = el('div', 'gm-fb-reply');
+          var ta = el('textarea', 'gm-fb-reply-input');
+          ta.rows = 2;
+          ta.placeholder = '输入回复内容（提交反馈的人可在「我的反馈」看到）';
+          replyWrap.appendChild(ta);
+          var replyBtn = el('button', 'btn-mini', '回复');
+          replyBtn.type = 'button';
+          replyBtn.onclick = function () { gmReplyFeedback(f.id, ta.value); };
+          replyWrap.appendChild(replyBtn);
+          card.appendChild(replyWrap);
+
           if (f.status === 'new') {
             var acts = el('div', 'gm-row-acts');
             var read = el('button', 'btn-mini', '标记已读'); read.type = 'button';
@@ -3024,8 +3045,26 @@
 
   function gmMarkFeedbackRead(id) {
     sb.rpc('gm_mark_feedback_read', { p_pwd: gmPwd, p_id: id })
-      .then(function (r) { if (r.error) throw r.error; openGmFeedbackTab(); })
+      .then(function (r) { if (r.error) throw r.error; openGmFeedbackTab(true); })
       .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  // 开发者回复反馈（留言给提交者）
+  function gmReplyFeedback(id, text) {
+    text = (text || '').trim();
+    if (!text) { toast('回复内容不能为空'); return; }
+    sb.rpc('gm_reply_feedback', { p_pwd: gmPwd, p_id: id, p_reply: text })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已回复');
+        openGmFeedbackTab(true);
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/REPLY_EMPTY|REPLY_TOO_SHORT/.test(m)) toast('回复内容不能为空');
+        else if (/FEEDBACK_NOT_FOUND/.test(m)) toast('反馈不存在或已删除');
+        else toast('回复失败：' + friendlyError(e));
+      });
   }
 
   // 违禁词记录：列出「任意」被系统检测出的违禁词（含发给陌生人 / 群聊），不限于好友
@@ -5217,6 +5256,7 @@
     $('feedback-contact').value = '';
     $('feedback-error').hidden = true;
     showModal('feedback-modal');
+    loadMyFeedback();
   });
   $('feedback-submit').addEventListener('click', function () {
     var content = $('feedback-content').value.trim();
@@ -5231,6 +5271,7 @@
         if (r.error) throw r.error;
         toast('反馈已提交，感谢你的建议');
         hideModal('feedback-modal');
+        checkFeedbackReplyBadge();
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
@@ -5240,6 +5281,58 @@
         $('feedback-error').hidden = false;
       });
   });
+
+  // 我的反馈记录（用户在反馈弹窗内查看 + 开发者回复）
+  function loadMyFeedback() {
+    var box = $('my-feedback-list');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    sb.rpc('get_my_feedback')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无反馈记录</div>'; return; }
+        rows.forEach(function (f) {
+          var card = el('div', 'my-fb');
+          card.appendChild(el('div', 'my-fb-time', '提交时间：' + (f.created_at ? f.created_at.replace('T', ' ').slice(0, 16) : '—')));
+          card.appendChild(el('div', 'my-fb-content', f.content || ''));
+          if (f.contact) card.appendChild(el('div', 'my-fb-sub', '联系方式：' + f.contact));
+          if (f.dev_reply) {
+            var rep = el('div', 'my-fb-reply');
+            rep.appendChild(el('div', 'my-fb-reply-label', '开发者回复：'));
+            rep.appendChild(el('div', 'my-fb-reply-text', f.dev_reply));
+            if (f.dev_reply_at) rep.appendChild(el('div', 'my-fb-sub', '回复时间：' + f.dev_reply_at.replace('T', ' ').slice(0, 16)));
+            card.appendChild(rep);
+            if (!f.reply_seen) {
+              // 用户打开即视为已读，消除红点
+              sb.rpc('mark_feedback_reply_seen', { p_id: f.id }).catch(function () {});
+            }
+          }
+          box.appendChild(card);
+        });
+        checkFeedbackReplyBadge();
+      })
+      .catch(function (e) {
+        box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+      });
+  }
+
+  // 检查当前用户是否有未读开发者回复，控制红点
+  function checkFeedbackReplyBadge() {
+    var badge = $('feedback-badge');
+    var navBadge = $('settings-badge');
+    sb.rpc('get_my_feedback')
+      .then(function (r) {
+        var rows = (r.data) || [];
+        var unseen = rows.filter(function (f) { return f.dev_reply && !f.reply_seen; }).length;
+        var show = unseen > 0;
+        var label = unseen > 9 ? '9+' : String(unseen);
+        if (badge) { badge.hidden = !show; if (show) badge.textContent = label; }
+        if (navBadge) { navBadge.hidden = !show; if (show) navBadge.textContent = label; }
+      })
+      .catch(function () {});
+  }
 
   // 注销账号：入口与各步骤按钮
   $('delete-account-btn').addEventListener('click', openDeleteAccount);
@@ -7478,7 +7571,7 @@
       }, onAdminFeedInsert)
       .subscribe(function (status) {
         // 实时通道（重）连上后，用 DB 已读游标重新校准未读，避免离线期间漏算
-        if (status === 'SUBSCRIBED') { loadUnreadFromDb(); return; }
+        if (status === 'SUBSCRIBED') { loadUnreadFromDb(); checkFeedbackReplyBadge(); return; }
         // 断线/超时时自动重连，避免实时推送永久失效
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           setTimeout(function () { if (state.uid) subscribeRealtime(); }, 1500);
