@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v242 loaded');
+  console.log('[chatapp] app.js build v243 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2203,7 +2203,10 @@
 
     renderGroupedFriends(panel, local, pickConv);
 
-    if (PHONE_RE.test(kw)) {
+    var fcCode = kw.toLowerCase();
+    if (/^[a-z0-9]{8}$/.test(fcCode)) {
+      addFriendByCode(fcCode);
+    } else if (PHONE_RE.test(kw)) {
       sb.from('profiles').select('id,phone,nickname,avatar_path').eq('phone', kw).maybeSingle()
         .then(function (r) {
           if (r.error) { toast(friendlyError(r.error)); return; }
@@ -2353,6 +2356,7 @@
     resetPwdFields();
     loadDeviceSessions();
     loadMyTitles();
+    loadMyCodes();
     refreshAppealSection();
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
@@ -5175,6 +5179,12 @@
   $('switch-account-settings').addEventListener('click', switchAccountFromSettings);
   $('settings-cancel').addEventListener('click', closeSettings);
 
+  // 好友码区块事件
+  var fcPerm = $('fc-mode-perm'); if (fcPerm) fcPerm.addEventListener('change', onFcModeChange);
+  var fcTemp = $('fc-mode-temp'); if (fcTemp) fcTemp.addEventListener('change', onFcModeChange);
+  var fcCopy = $('fc-copy'); if (fcCopy) fcCopy.addEventListener('click', copyFcCode);
+  var fcRegen = $('fc-regen'); if (fcRegen) fcRegen.addEventListener('click', regenFcCode);
+
   // 禁言提示弹窗（发送被拦截时弹出）
   $('mute-notice-close').addEventListener('click', function () { hideModal('mute-notice-modal'); });
   $('mute-notice-ok').addEventListener('click', function () { hideModal('mute-notice-modal'); });
@@ -6197,6 +6207,92 @@
       if (e.target === modal) closeFriendRequestModal();
     });
   })();
+
+  /* ============================================================
+   *  好友码（v243）：通过好友码添加好友 + 个人设置管理
+   * ============================================================ */
+  // 在搜索框输入 8 位好友码 → 向对方发起好友申请（临时码会被消耗并自动换新）
+  function addFriendByCode(code) {
+    var panel = $('search-result');
+    if (panel) panel.innerHTML = '<div class="note">正在通过好友码添加…</div>';
+    sb.rpc('add_friend_by_code', { p_code: code, p_note: null })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var d = (r.data && r.data[0]) || {};
+        var name = d.target_nickname || '对方';
+        var outcome = d.outcome || 'requested';
+        if (outcome === 'already_pending') toast('好友申请已发送，等待对方同意');
+        else if (outcome === 'they_pending') toast('对方已向你发起申请，请到「新的好友」同意');
+        else toast('已向「' + name + '」发送好友申请');
+        var box = $('search-box'); if (box) box.value = '';
+        onUnifiedSearch();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/CODE_EMPTY/.test(m)) toast('请输入好友码');
+        else if (/CODE_NOT_FOUND/.test(m)) toast('好友码无效或已失效');
+        else if (/CANNOT_ADD_SELF/.test(m)) toast('不能添加自己为好友');
+        else if (/ALREADY_FRIEND/.test(m)) toast('已经是好友了');
+        else if (/NOT_AUTH/.test(m)) toast('请先登录');
+        else toast('添加失败：' + friendlyError(e));
+        var box = $('search-box'); if (box) box.value = '';
+        onUnifiedSearch();
+      });
+  }
+
+  // 读取并渲染本人好友码
+  function loadMyCodes() {
+    sb.rpc('get_my_codes').then(function (r) {
+      if (r.error) return;
+      var d = (r.data && r.data[0]) || {};
+      var perm = d.perm_code, temp = d.temp_code, useTemp = !!d.use_temp;
+      var codeEl = $('fc-code-text');
+      var regen = $('fc-regen');
+      var tempHint = $('fc-temp-hint');
+      if (useTemp) {
+        if ($('fc-mode-temp')) $('fc-mode-temp').checked = true;
+        if (codeEl) codeEl.textContent = temp || '（生成中…）';
+        if (regen) regen.hidden = false;
+        if (tempHint) tempHint.hidden = false;
+      } else {
+        if ($('fc-mode-perm')) $('fc-mode-perm').checked = true;
+        if (codeEl) codeEl.textContent = perm || '—';
+        if (regen) regen.hidden = true;
+        if (tempHint) tempHint.hidden = true;
+      }
+    }).catch(function () {});
+  }
+
+  // 永久 / 临时 切换
+  function onFcModeChange() {
+    var useTemp = !!($('fc-mode-temp') && $('fc-mode-temp').checked);
+    sb.rpc('set_use_temp_code', { p_val: useTemp }).then(function (r) {
+      if (r.error) { toast(friendlyError(r.error)); return; }
+      loadMyCodes();
+      toast(useTemp ? '已切换为临时好友码' : '已切换为永久好友码');
+    }).catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  // 复制当前好友码
+  function copyFcCode() {
+    var t = ($('fc-code-text') && $('fc-code-text').textContent) || '';
+    if (!t || t === '—' || t === '（生成中…）') { toast('暂无可复制的好友码'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () { toast('已复制好友码'); })
+        .catch(function () { toast('复制失败，请手动选择'); });
+    } else {
+      toast('当前环境不支持自动复制');
+    }
+  }
+
+  // 换一个临时好友码
+  function regenFcCode() {
+    sb.rpc('regen_temp_code').then(function (r) {
+      if (r.error) { toast(friendlyError(r.error)); return; }
+      loadMyCodes();
+      toast('已生成新的临时好友码');
+    }).catch(function (e) { toast(friendlyError(e)); });
+  }
 
   /* ============================================================
    *  会话与消息
