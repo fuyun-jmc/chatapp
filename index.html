@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=244">
+<link rel="stylesheet" href="assets/style.v201.css?v=245">
 </head>
 <body>
 
@@ -384,6 +384,15 @@
           <button class="btn-mini" id="fc-regen" type="button" hidden>换一个</button>
         </div>
         <p class="form-hint" id="fc-temp-hint" hidden>临时好友码只能使用一次，被添加后会自动失效并生成新码。</p>
+      </div>
+
+      <div class="fch-section" id="hide-phone-section">
+        <div class="section-title">隐私设置</div>
+        <label class="fch-check">
+          <input type="checkbox" id="hide-phone-toggle">
+          <span class="fch-title">隐藏我的手机号</span>
+        </label>
+        <p class="form-hint">开启后，好友列表、聊天页、他人查看你的资料页以及搜索结果中均不显示你的手机号；他人也无法通过手机号搜索到你。</p>
       </div>
 
       <div class="divider"></div>
@@ -991,7 +1000,7 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v244.js"></script>
+<script src="assets/app.v245.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
