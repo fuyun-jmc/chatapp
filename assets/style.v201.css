@@ -1350,4 +1350,18 @@ input, textarea { font-family: inherit; font-size: 15px; }
   border: 1px solid var(--line); cursor: pointer; display: block; background: var(--line);
 }
 
+/* 好友码（v243） */
+.fc-section { margin-top: 4px; }
+.fc-mode { display: flex; flex-wrap: wrap; margin: 8px 0; }
+.fc-radio { display: flex; align-items: center; margin: 0 16px 4px 0; font-size: 14px; color: var(--text); cursor: pointer; }
+.fc-radio input { margin: 0 6px 0 0; }
+.fc-current { display: flex; align-items: center; margin-top: 4px; }
+.fc-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 18px; letter-spacing: 2px; font-weight: 600; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 12px; margin: 0 8px 0 0; user-select: all;
+}
+.fc-current .btn-mini { margin: 0 6px 0 0; }
+
 
