@@ -614,6 +614,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
   transition: color .15s, background .15s;
 }
 .quote-btn:hover { color: var(--brand); background: rgba(64,108,247,.1); }
+.re-edit-btn {
+  align-self: center; flex: 0 0 auto; margin-right: 6px;
+  font-size: 12px; color: var(--text-3);
+  background: none; border: none; padding: 4px 8px;
+  border-radius: 6px; cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.re-edit-btn:hover { color: var(--brand); background: rgba(64,108,247,.12); }
 
 /* 点击引用块定位原消息时，原消息高亮闪烁 */
 .msg-flash { animation: msgFlash 1.2s ease; }
@@ -1363,5 +1371,14 @@ input, textarea { font-family: inherit; font-size: 15px; }
   padding: 6px 12px; margin: 0 8px 0 0; user-select: all;
 }
 .fc-current .btn-mini { margin: 0 6px 0 0; }
+
+/* 隐藏手机号（v244） */
+.fch-section { margin-top: 10px; }
+.fch-row { display: flex; align-items: flex-start; justify-content: space-between; }
+.fch-text { margin: 0 12px 0 0; }
+.fch-title { font-size: 14px; color: var(--text); }
+.fch-desc { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 300px; line-height: 1.4; }
+.fch-check { font-size: 14px; color: var(--text); white-space: nowrap; cursor: pointer; display: flex; align-items: center; }
+.fch-check input { margin: 0 6px 0 0; }
 
 
