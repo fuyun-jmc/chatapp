@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=242">
+<link rel="stylesheet" href="assets/style.v201.css?v=243">
 </head>
 <body>
 
@@ -367,6 +367,23 @@
         <div class="section-title">问题反馈</div>
         <p class="form-hint">使用过程中遇到问题或有改进建议？向开发者反馈。</p>
         <button class="btn-primary" id="feedback-open-btn" type="button">我要反馈<span class="nav-badge" id="feedback-badge" hidden></span></button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="fc-section" id="friend-code-section">
+        <div class="section-title">好友码</div>
+        <p class="form-hint">把好友码发给朋友，对方在顶部搜索框输入即可向你发起好友申请。好友码仅你自己可见。</p>
+        <div class="fc-mode">
+          <label class="fc-radio"><input type="radio" name="fc-mode" id="fc-mode-perm" value="perm"> 永久好友码</label>
+          <label class="fc-radio"><input type="radio" name="fc-mode" id="fc-mode-temp" value="temp"> 临时好友码</label>
+        </div>
+        <div class="fc-current">
+          <span class="fc-code" id="fc-code-text">—</span>
+          <button class="btn-mini" id="fc-copy" type="button">复制</button>
+          <button class="btn-mini" id="fc-regen" type="button" hidden>换一个</button>
+        </div>
+        <p class="form-hint" id="fc-temp-hint" hidden>临时好友码只能使用一次，被添加后会自动失效并生成新码。</p>
       </div>
 
       <div class="divider"></div>
@@ -974,7 +991,7 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v242.js"></script>
+<script src="assets/app.v243.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
