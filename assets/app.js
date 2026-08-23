@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v243 loaded');
+  console.log('[chatapp] app.js build v244 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -738,7 +738,13 @@
     var av = $('peer-avatar');
     if (av) addOnlineDot(av, state.active.id);
     var ph = $('peer-phone');
-    if (ph) ph.textContent = state.active.phone + (isOnline(state.active.id) ? ' · 在线' : '');
+    if (ph) {
+      if (state.active.hide_phone) {
+        ph.textContent = isOnline(state.active.id) ? '在线' : '';
+      } else {
+        ph.textContent = state.active.phone + (isOnline(state.active.id) ? ' · 在线' : '');
+      }
+    }
   }
 
   // 批量获取好友/自己/当前会话对象的展示称号（头像框渲染用）
@@ -1730,7 +1736,8 @@
         state.mutedUntil = p.muted_until || null;
         // 尽早把「隐藏开发者称号」开关读到内存，避免后续 refreshAdminStatus 先用旧值把徽标画出来
         state.hideDevTitle = !!p.hide_dev_title;
-        state.profilesById[state.uid] = Object.assign(state.profilesById[state.uid] || {}, { user_number: p.user_number });
+        state.hidePhone = !!p.hide_phone;
+        state.profilesById[state.uid] = Object.assign(state.profilesById[state.uid] || {}, { user_number: p.user_number, hide_phone: p.hide_phone });
         $('me-name').textContent = p.nickname;
         $('me-phone').textContent = p.phone;
         $('me-number').textContent = (p.user_number != null) ? ('编号 #' + p.user_number) : '未分配编号';
@@ -1745,8 +1752,8 @@
     return sb.from('friendships')
       .select('id,status,requester_id,addressee_id,created_at,requester_remark,addressee_remark,request_note,request_images,' +
               'pinned_by_requester,pinned_by_addressee,' +
-              'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path,user_number),' +
-              'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path,user_number)')
+              'requester:profiles!friendships_requester_id_fkey(id,phone,nickname,avatar_path,hide_phone,user_number),' +
+              'addressee:profiles!friendships_addressee_id_fkey(id,phone,nickname,avatar_path,hide_phone,user_number)')
       .or('requester_id.eq.' + state.uid + ',addressee_id.eq.' + state.uid)
       .order('created_at', { ascending: false })
       .then(function (r) {
@@ -1767,6 +1774,7 @@
               avatar: other.avatar_path,
               remark: myRemark,
               user_number: other.user_number,
+              hide_phone: other.hide_phone,
               relId: row.id,
               iAmRequester: iAmRequester,
               pinned: !!pinned,
@@ -1786,7 +1794,7 @@
         state.friends = friends;
         state.incoming = incoming;
         friends.forEach(function (f) {
-          state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone, user_number: f.user_number };
+          state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone, user_number: f.user_number, hide_phone: f.hide_phone };
         });
         renderFriends();
         renderRequests();
@@ -2053,7 +2061,7 @@
     var info = el('div', 'info');
     var nm = el('div', 'nm', displayName(f));
     info.appendChild(nm);
-    info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
+    info.appendChild(el('div', 'ph', (f.hide_phone ? '手机号已隐藏' : f.phone) + (f.remark ? ' · ' + f.nickname : '')));
     row.appendChild(av); row.appendChild(info);
     addOnlineDot(av, f.id);
     applyTitleFrame(av, f.id);
@@ -2109,7 +2117,7 @@
     var info = el('div', 'info');
     var nm = el('div', 'nm', displayName(f));
     info.appendChild(nm);
-    info.appendChild(el('div', 'ph', f.phone + (f.remark ? ' · ' + f.nickname : '')));
+    info.appendChild(el('div', 'ph', (f.hide_phone ? '手机号已隐藏' : f.phone) + (f.remark ? ' · ' + f.nickname : '')));
     appendDraftPreview(info, f.id, false);
     li.appendChild(av); li.appendChild(info);
     addOnlineDot(av, f.id);
@@ -2153,7 +2161,7 @@
     setAvatar(av, { nickname: remark || user.nickname, phone: user.phone, avatarPath: user.avatar_path });
     var info = el('div', 'info');
     info.appendChild(el('div', 'nm', displayName(user)));
-    info.appendChild(el('div', 'ph', user.phone + (remark ? ' · ' + user.nickname : '')));
+    info.appendChild(el('div', 'ph', (user.hide_phone ? '手机号已隐藏' : user.phone) + (remark ? ' · ' + user.nickname : '')));
     row.appendChild(av); row.appendChild(info);
     return row;
   }
@@ -2207,7 +2215,7 @@
     if (/^[a-z0-9]{8}$/.test(fcCode)) {
       addFriendByCode(fcCode);
     } else if (PHONE_RE.test(kw)) {
-      sb.from('profiles').select('id,phone,nickname,avatar_path').eq('phone', kw).maybeSingle()
+      sb.from('profiles').select('id,phone,nickname,avatar_path,hide_phone').eq('phone', kw).eq('hide_phone', false).maybeSingle()
         .then(function (r) {
           if (r.error) { toast(friendlyError(r.error)); return; }
           if (!r.data) {
@@ -2357,6 +2365,8 @@
     loadDeviceSessions();
     loadMyTitles();
     loadMyCodes();
+    var hp = $('hide-phone-toggle');
+    if (hp) hp.checked = !!state.hidePhone;
     refreshAppealSection();
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
@@ -5515,6 +5525,8 @@
     var name = $('settings-name').value.trim();
     if (!name) { toast('名称不能为空'); return; }
     var payload = { nickname: name.slice(0, 20) };
+    var hpToggle = $('hide-phone-toggle');
+    payload.hide_phone = !!(hpToggle && hpToggle.checked);
     if (pendingAvatar !== null) payload.avatar_path = pendingAvatar;
 
     var btn = $('settings-save');
@@ -6519,7 +6531,11 @@
     setAvatar(av, { nickname: peer.remark || peer.nickname, phone: peer.phone, avatarPath: peer.avatar });
     applyTitleFrame(av, peer.id);
     $('profile-name').textContent = displayName(peer);
-    $('profile-phone').textContent = peer.phone || '未绑定手机号';
+    if (peer.hide_phone) {
+      $('profile-phone').textContent = '对方已隐藏手机号';
+    } else {
+      $('profile-phone').textContent = peer.phone || '未绑定手机号';
+    }
 
     var _uno = (peer.user_number != null) ? peer.user_number
              : (state.profilesById[peer.id] && state.profilesById[peer.id].user_number);
@@ -6916,6 +6932,25 @@
       wrap.className = 'msg recalled';
       wrap.appendChild(el('div', 'recalled-note',
         out ? '你撤回了一条消息' : '对方撤回了一条消息'));
+      // 本人撤回后 1 分钟内：提供「重新编辑」，点击把原文填回输入框
+      if (out && state.recalledEdit) {
+        var _re = state.recalledEdit[m.id];
+        if (_re && (Date.now() - _re.ts) < 60 * 1000 && _re.content) {
+          var _reb = el('button', 're-edit-btn', '重新编辑');
+          _reb.type = 'button';
+          _reb.onclick = function () {
+            var _box = $('msg-input');
+            if (_box) {
+              _box.value = _re.content;
+              if (window.fitTextarea) fitTextarea(_box);
+              try { _box.focus(); } catch (e2) {}
+            }
+            delete state.recalledEdit[m.id];
+            if (_reb.parentNode) domRemove(_reb);
+          };
+          wrap.appendChild(_reb);
+        }
+      }
       return wrap;
     }
 
@@ -7032,12 +7067,25 @@
   function recallMessage(id) {
     var box = $('messages');
     var old = box.querySelector('[data-id="' + id + '"]');
+    // 撤回前快照原文（仅纯文本消息支持「重新编辑」），存入内存缓存供 1 分钟内取回
+    if (!state.recalledEdit) state.recalledEdit = {};
+    var snapNode = old && old.querySelector('.bubble:not(.media)');
+    if (snapNode && !snapNode.querySelector('img,video,audio,a.file-card')) {
+      var _txt = snapNode.textContent || '';
+      if (_txt) state.recalledEdit[id] = { content: _txt, ts: Date.now() };
+    }
     sb.from('messages')
       .update({ recalled: true, content: null, file_path: null, file_name: null, file_size: null })
       .eq('id', id)
       .then(function (r) {
         if (r.error) throw r.error;
         domReplace(old, renderMessage({ id: id, sender_id: state.uid, recalled: true }));
+        // 1 分钟后「重新编辑」按钮失效：重渲染该撤回气泡移除按钮并清理缓存
+        setTimeout(function () {
+          delete state.recalledEdit[id];
+          var _nd = box.querySelector('[data-id="' + id + '"]');
+          if (_nd) domReplace(_nd, renderMessage({ id: id, sender_id: state.uid, recalled: true }));
+        }, 60 * 1000);
       })
       .catch(function (e) { toast(friendlyError(e)); });
   }
