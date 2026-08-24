@@ -1420,6 +1420,24 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 13px;
 }
 
+/* v265：好友申请入口与违禁接收入口并排 */
+.side-top-actions {
+  display: flex;
+  margin: 0 14px 8px;
+}
+.side-top-actions .friend-req-btn,
+.side-top-actions .side-admin-entry {
+  flex: 1;
+  margin: 0;
+  padding: 10px 8px;
+}
+.side-top-actions .friend-req-btn {
+  margin-right: 6px;
+}
+.side-top-actions .side-admin-entry .sae-sub {
+  display: none;
+}
+
 /* v259：好友申请入口按钮与违禁接收入口大小一致 */
 /* v257：好友申请入口按钮改为蓝色，与违禁接收入口保持一致 */
 /* v256：好友申请入口按钮 + 好友申请页面 */
