@@ -1418,6 +1418,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 13px;
 }
 
+/* v259：好友申请入口按钮与违禁接收入口大小一致 */
 /* v257：好友申请入口按钮改为蓝色，与违禁接收入口保持一致 */
 /* v256：好友申请入口按钮 + 好友申请页面 */
 .friend-req-btn {
@@ -1425,8 +1426,8 @@ input, textarea { font-family: inherit; font-size: 15px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  margin: 0 0 8px;
+  width: auto;
+  margin: 0 14px 8px;
   padding: 9px 12px;
   border: 1px solid rgba(79,124,247,.4);
   border-radius: 10px;
