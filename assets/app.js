@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v251 loaded');
+  console.log('[chatapp] app.js build v252 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2607,6 +2607,8 @@
     showModal('gm-panel');
     try { $('gm-search-input').focus(); } catch (e) {}
     gmFeedbackBadge();
+    // 默认「用户管理」标签：自动加载全部用户，按编号升序展示
+    gmSearch();
   }
 
   function closeGm() { state.gmPanelOpen = false; stopGmPolling(); hideModal('gm-panel'); }
@@ -2614,7 +2616,7 @@
   function gmSearch() {
     var q = $('gm-search-input').value.trim();
     var box = $('gm-results');
-    box.innerHTML = '<div class="gm-empty">搜索中…</div>';
+    box.innerHTML = '<div class="gm-empty">' + (q ? '搜索中…' : '加载中…') + '</div>';
     $('gm-detail').innerHTML = '<div class="gm-detail-empty">点击左侧用户查看管理详情</div>';
     sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: q })
       .then(function (r) {
@@ -3733,6 +3735,7 @@
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
     if (tab === 'titles') { stopGmPolling(); openTitleTab(); }
+    else if (tab === 'users') { stopGmPolling(); gmSearch(); }
     else if (tab === 'reports') { openReportsTab(); startGmPolling(); }
     else if (tab === 'userreports') { openGmUserReportsTab(); startGmPolling(); }
     else if (tab === 'groups') { stopGmPolling(); openGmGroupsTab(); }
