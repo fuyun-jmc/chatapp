@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v262 loaded');
+  console.log('[chatapp] app.js build v263 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3291,7 +3291,15 @@
           // 开发者已有回复
           if (f.dev_reply) {
             var rep = el('div', 'gm-report-reply');
-            rep.appendChild(el('div', 'gm-report-reply-label', '开发者回复：'));
+            var repHead = el('div', 'gm-report-reply-head');
+            repHead.appendChild(el('div', 'gm-report-reply-label', '开发者回复：'));
+            var delBtn = el('button', 'btn-mini btn-danger-mini', '删除回复');
+            delBtn.type = 'button';
+            delBtn.onclick = (function (fid) {
+              return function () { gmDeleteFeedbackReply(fid); };
+            })(f.id);
+            repHead.appendChild(delBtn);
+            rep.appendChild(repHead);
             rep.appendChild(el('div', 'gm-report-reply-text', f.dev_reply));
             if (f.dev_reply_at) rep.appendChild(el('div', 'gm-report-sub', '回复时间：' + f.dev_reply_at.replace('T', ' ').slice(0, 16)));
             card.appendChild(rep);
@@ -3371,6 +3379,23 @@
         if (/REPLY_EMPTY|REPLY_TOO_SHORT/.test(m)) toast('回复内容不能为空');
         else if (/FEEDBACK_NOT_FOUND/.test(m)) toast('反馈不存在或已删除');
         else toast('回复失败：' + friendlyError(e));
+      });
+  }
+
+  // GM 删除某条反馈的开发者回复
+  function gmDeleteFeedbackReply(id) {
+    if (!confirm('确定删除该回复？')) return;
+    sb.rpc('gm_delete_feedback_reply', { p_pwd: gmPwd, p_id: id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已删除回复');
+        openGmFeedbackTab(true);
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/FEEDBACK_NOT_FOUND/.test(m)) toast('反馈不存在或已删除');
+        else if (/PGRST201|function.*not found/.test(m)) toast('请先执行 20260824_delete_feedback_reply.sql');
+        else toast('删除失败：' + friendlyError(e));
       });
   }
 
