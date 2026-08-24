@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v261 loaded');
+  console.log('[chatapp] app.js build v262 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1885,11 +1885,8 @@
    *  好友申请页面（收 / 发）
    * ============================================================ */
   function updateFriendRequestBadge() {
-    var badge = $('fr-page-badge');
-    if (!badge) return;
     var n = (state.incoming || []).length;
-    if (n > 0) { badge.hidden = false; badge.textContent = n; }
-    else badge.hidden = true;
+    paintBadge('fr-page-badge', n);
   }
 
   function openFriendRequestsPage() {
