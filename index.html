@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=247">
+<link rel="stylesheet" href="assets/style.v201.css?v=248">
 </head>
 <body>
 
@@ -683,7 +683,7 @@
         <button class="gm-tab" id="gm-tab-userreports" type="button">用户举报</button>
         <button class="gm-tab" id="gm-tab-titles" type="button">称号管理</button>
         <button class="gm-tab" id="gm-tab-appeals" type="button">禁言申诉</button>
-        <button class="gm-tab" id="gm-tab-feedback" type="button">问题反馈</button>
+        <button class="gm-tab" id="gm-tab-feedback" type="button">问题反馈<span class="gm-tab-badge" id="gm-feedback-tab-badge">0</span></button>
         <button class="gm-tab" id="gm-tab-wordlog" type="button">违禁词记录</button>
       </div>
       <button class="icon-btn" id="gm-close" type="button" aria-label="关闭">
@@ -752,7 +752,12 @@
 
     <!-- 问题反馈模式 -->
     <div class="gm-feedback" id="gm-feedback" hidden>
-      <div class="gm-empty">加载中…</div>
+      <div class="gm-fb-bar">
+        <span class="gm-fb-title">问题反馈</span>
+        <span class="gm-fb-count" id="gm-feedback-count">新反馈 0 条</span>
+        <button class="btn-mini" id="gm-feedback-refresh" type="button">刷新</button>
+      </div>
+      <div class="gm-feedback-list" id="gm-feedback-list"><div class="gm-empty">加载中…</div></div>
     </div>
 
     <!-- 违禁词记录模式（任意检测，不限于好友；GM 后台留存、不可删除、可搜索） -->
@@ -1002,7 +1007,7 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v247.js"></script>
+<script src="assets/app.v248.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
