@@ -1418,3 +1418,69 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 13px;
 }
 
+/* v256：好友申请入口按钮 + 好友申请页面 */
+.friend-req-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.friend-req-btn:active { opacity: .85; }
+.friend-req-btn .fr-badge {
+  display: inline-block;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+}
+.fr-page-body { gap: 8px; }
+.fr-page-section { margin: 0; }
+.fr-page-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 8px 14px 2px;
+}
+.fr-page-title .count {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  vertical-align: middle;
+}
+.fr-page-list .fr-status {
+  font-size: 12px;
+  color: var(--text-3);
+  flex: 1;
+  min-width: 0;
+  padding-left: 7px;
+}
+.request-list li.fr-empty {
+  justify-content: flex-start;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+
