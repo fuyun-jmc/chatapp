@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v263 loaded');
+  console.log('[chatapp] app.js build v264 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3221,7 +3221,7 @@
     }
   }
 
-  // 用户举报卡片（GM 后台只读版：展示内容 + 图片预览，无禁言 / 不禁言 / 忽略 / 删除按钮，保证留存）
+  // 用户举报卡片（GM 后台版：展示内容 + 图片预览 + 处理按钮）
   function renderUserReportCardGm(rep) {
     var card = el('div', 'gm-report');
     var head = el('div', 'gm-report-head');
@@ -3237,8 +3237,20 @@
       '类型：' + typeTxt + ' · 提交时间：' + (rep.created_at ? rep.created_at.replace('T', ' ').slice(0, 16) : '—')));
 
     if (rep.reporter_phone) card.appendChild(el('div', 'gm-report-sub', '举报人手机号：' + rep.reporter_phone));
+    if (rep.reported_kind === 'user' && rep.reported_phone) card.appendChild(el('div', 'gm-report-sub', '被举报人手机号：' + rep.reported_phone));
     if (rep.target_ref)   card.appendChild(el('div', 'gm-report-line', '被举报内容：' + rep.target_ref));
     if (rep.detail)       card.appendChild(el('div', 'gm-report-line', '补充说明：' + rep.detail));
+
+    if (rep.status !== 'handled') {
+      var acts = el('div', 'gm-report-acts');
+      var handleBtn = el('button', 'btn-mini', '处理');
+      handleBtn.type = 'button';
+      handleBtn.onclick = (function (rid) {
+        return function () { gmHandleUserReport(rid); };
+      })(rep.id);
+      acts.appendChild(handleBtn);
+      card.appendChild(acts);
+    }
 
     if (rep.file_path) {
       var isVid = rep.report_type === 'video' || /\.(mp4|webm|mov|ogg|m4v)$/i.test(rep.file_path || '');
@@ -3396,6 +3408,23 @@
         if (/FEEDBACK_NOT_FOUND/.test(m)) toast('反馈不存在或已删除');
         else if (/PGRST201|function.*not found/.test(m)) toast('请先执行 20260824_delete_feedback_reply.sql');
         else toast('删除失败：' + friendlyError(e));
+      });
+  }
+
+  // GM 后台标记用户举报为已处理
+  function gmHandleUserReport(id) {
+    if (!confirm('确定将该举报标记为已处理？')) return;
+    sb.rpc('gm_handle_user_report', { p_pwd: gmPwd, p_id: id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已处理');
+        openGmUserReportsTab(true);
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/REPORT_NOT_FOUND/.test(m)) toast('举报不存在或已删除');
+        else if (/PGRST201|function.*not found/.test(m)) toast('请先执行 20260824_gm_user_report_handle.sql');
+        else toast('处理失败：' + friendlyError(e));
       });
   }
 
