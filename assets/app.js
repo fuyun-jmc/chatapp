@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v256 loaded');
+  console.log('[chatapp] app.js build v258 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1965,7 +1965,9 @@
     inList.innerHTML = ''; outList.innerHTML = '';
 
     var inc = state.incoming || [];
-    $('fr-in-count').textContent = inc.length;
+    var inCount = $('fr-in-count');
+    inCount.textContent = inc.length;
+    inCount.classList.toggle('gray', inc.length === 0);
     if (!inc.length) {
       var e1 = el('li', 'fr-empty', '暂无收到的申请');
       inList.appendChild(e1);
