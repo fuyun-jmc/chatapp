@@ -1381,4 +1381,12 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .fch-check { font-size: 14px; color: var(--text); white-space: nowrap; cursor: pointer; display: flex; align-items: center; }
 .fch-check input { margin: 0 6px 0 0; }
 
+/* v248：GM 问题反馈手动刷新 + 新反馈徽章 */
+.gm-tabs .gm-tab { position: relative; }
+.gm-tabs .gm-tab .gm-tab-badge { position: absolute; top: -2px; right: -2px; margin: 0; padding: 0 3px; min-width: 14px; height: 14px; font-size: 10px; line-height: 14px; }
+.gm-fb-bar { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; padding: 2px 0 10px; }
+.gm-fb-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.gm-fb-count { font-size: 12px; color: var(--danger); margin-left: auto; margin-right: 10px; }
+.gm-fb-count.zero { color: var(--text-3); }
+.gm-feedback-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; margin: 0 -14px; padding: 0 14px; }
 
