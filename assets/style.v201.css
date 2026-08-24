@@ -1437,6 +1437,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .side-top-actions .side-admin-entry .sae-sub {
   display: none;
 }
+/* v266：非管理员 / 开发者时违禁接收 hidden，好友申请占满整行 */
+.side-top-actions .side-admin-entry[hidden] {
+  display: none;
+}
+.side-top-actions .side-admin-entry[hidden] + .friend-req-btn,
+.side-top-actions .friend-req-btn:only-child {
+  flex: 1 1 100%;
+  margin-right: 0;
+}
 
 /* v259：好友申请入口按钮与违禁接收入口大小一致 */
 /* v257：好友申请入口按钮改为蓝色，与违禁接收入口保持一致 */
