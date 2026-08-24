@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=264">
+<link rel="stylesheet" href="assets/style.v201.css?v=265">
 </head>
 <body>
 
@@ -94,18 +94,19 @@
       </button>
     </header>
 
-    <!-- 管理员 / 开发者：侧边栏「违禁接收」入口（无口令进入管理面板） -->
-    <button class="side-admin-entry" id="admin-violation-open" type="button" hidden>
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      <span class="sae-title">违禁接收</span>
-      <span class="sae-badge" id="admin-violation-badge"></span>
-      <span class="sae-sub">查看违禁词违规详情</span>
-    </button>
-
-    <button class="friend-req-btn" id="friend-requests-btn" type="button">
-      <span>好友申请</span>
-      <span class="fr-badge" id="fr-page-badge"></span>
-    </button>
+    <!-- 顶部并排入口：好友申请 + 违禁接收 -->
+    <div class="side-top-actions">
+      <button class="friend-req-btn" id="friend-requests-btn" type="button">
+        <span>好友申请</span>
+        <span class="fr-badge" id="fr-page-badge"></span>
+      </button>
+      <button class="side-admin-entry" id="admin-violation-open" type="button" hidden>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="sae-title">违禁接收</span>
+        <span class="sae-badge" id="admin-violation-badge"></span>
+        <span class="sae-sub">查看违禁词违规详情</span>
+      </button>
+    </div>
 
     <div class="unified-search">
       <div class="friend-search" id="search-wrap">
