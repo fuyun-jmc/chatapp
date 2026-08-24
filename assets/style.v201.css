@@ -1440,19 +1440,21 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .friend-req-btn:hover { background: rgba(79,124,247,.2); }
 .friend-req-btn:active { opacity: .85; }
+/* v262：好友申请入口角标统一用 paintBadge / .show 控制，支持 99+ */
 .friend-req-btn .fr-badge {
-  display: inline-block;
+  display: none;
   min-width: 16px;
   height: 16px;
   line-height: 16px;
   margin-left: 6px;
   padding: 0 4px;
-  border-radius: 8px;
-  background: var(--danger);
+  border-radius: 999px;
+  background: #ff4d4f;
   color: #fff;
   font-size: 11px;
   text-align: center;
 }
+.friend-req-btn .fr-badge.show { display: inline-block; }
 .fr-page-body { gap: 8px; }
 .fr-page-section { margin: 0; }
 .fr-page-title {
