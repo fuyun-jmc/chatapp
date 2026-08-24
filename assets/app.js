@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v258 loaded');
+  console.log('[chatapp] app.js build v260 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1977,23 +1977,69 @@
 
     var out = state.outgoing || [];
     $('fr-out-count').textContent = out.length;
+    var hasOut = false;
     if (!out.length) {
       var e2 = el('li', 'fr-empty', '暂无发出的申请');
       outList.appendChild(e2);
     } else {
       out.forEach(function (req) { outList.appendChild(buildRequestItem(req, false)); });
+      hasOut = true;
+    }
+
+    // 撤回后 5 分钟内的「重新编辑」项
+    var wd = (state.withdrawn || []).filter(function (e) { return e.expiresAt > Date.now(); });
+    if (wd.length) {
+      if (!hasOut) { outList.innerHTML = ''; }
+      wd.forEach(function (entry) {
+        var li = el('li');
+        var av = el('div', 'avatar sm');
+        setAvatar(av, { nickname: entry.user.nickname, phone: entry.user.phone, avatarPath: entry.user.avatar_path });
+        var info = el('div', 'info');
+        info.appendChild(el('div', 'nm', entry.user.nickname || '(无昵称)'));
+        info.appendChild(el('div', 'ph', maskPhone(entry.user.phone)));
+        li.appendChild(av); li.appendChild(info);
+        var st = el('div', 'fr-status', '已撤回·可重新编辑');
+        var edit = el('button', 'mini-ok', '重新编辑');
+        edit.onclick = function () { reEditWithdrawn(entry); };
+        li.appendChild(st); li.appendChild(edit);
+        outList.appendChild(li);
+      });
     }
     updateFriendRequestBadge();
   }
 
   function cancelFriendRequest(rowId) {
+    var req = null;
+    (state.outgoing || []).forEach(function (r) { if (r.rowId === rowId) req = r; });
     sb.from('friendships').delete().eq('id', rowId)
       .then(function (r) {
         if (r.error) throw r.error;
-        toast('已撤回申请');
+        // 撤回后保留 5 分钟，允许重新编辑（不落库，仅会话内有效）
+        if (req) {
+          state.withdrawn = state.withdrawn || [];
+          var entry = {
+            user: req.user,
+            note: req.note || '',
+            images: req.images || [],
+            expiresAt: Date.now() + 5 * 60 * 1000
+          };
+          state.withdrawn.push(entry);
+          setTimeout(function () {
+            state.withdrawn = (state.withdrawn || []).filter(function (e) { return e !== entry; });
+            if (state.frPageOpen) renderFriendRequestsPage();
+          }, 5 * 60 * 1000);
+        }
+        toast('已撤回申请，5 分钟内可重新编辑');
         return loadRelations();
       })
       .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  // 撤回后在有效期内重新编辑：打开好友申请弹窗并预填留言与图片
+  function reEditWithdrawn(entry) {
+    state.withdrawn = (state.withdrawn || []).filter(function (e) { return e !== entry; });
+    closeFriendRequestsPage();
+    openFriendRequestModal(entry.user, null, { note: entry.note, images: entry.images });
   }
 
   // 统一会话列表：好友 + 群聊合并渲染到 #chat-list
@@ -6343,13 +6389,20 @@
   // 好友申请信息：本地预览图（{file, url}），url 为 object URL
   state.frImages = [];
 
-  function openFriendRequestModal(user, btn) {
+  function openFriendRequestModal(user, btn, prefill) {
     state.pendingRequestUser = user;
     state.pendingRequestBtn = btn || null;
     state.frImages = [];
     $('fr-target-name').textContent = user.nickname || user.phone || '该用户';
-    var ta = $('fr-note'); if (ta) ta.value = '';
+    var ta = $('fr-note'); if (ta) ta.value = (prefill && prefill.note) ? prefill.note : '';
     var err = $('fr-error'); if (err) err.hidden = true;
+    // 预填已存在的图片（来自撤回的请求），仅复用路径，不再重复上传
+    if (prefill && prefill.images && prefill.images.length) {
+      prefill.images.forEach(function (p) { state.frImages.push({ path: p, url: '', existing: true }); });
+      prefill.images.forEach(function (p, idx) {
+        signedUrl(p).then(function (u) { if (u) { state.frImages[idx].url = u; renderFrImagePreviews(); } });
+      });
+    }
     renderFrImagePreviews();
     showModal('friend-request-modal');
     if (ta) setTimeout(function () { try { ta.focus(); } catch (e) {} }, 60);
@@ -6411,6 +6464,7 @@
     var imgs = state.frImages || [];
     var paths = [];
     return Promise.all(imgs.map(function (img) {
+      if (img.existing && img.path) { paths.push(img.path); return Promise.resolve(img.path); }
       var file = img.file;
       var ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
       var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
