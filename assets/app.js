@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v252 loaded');
+  console.log('[chatapp] app.js build v253 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2662,15 +2662,29 @@
         return sb.rpc('gm_list_user_friends', { p_pwd: gmPwd, p_user_id: uid })
           .then(function (fr) {
             if (fr.error) throw fr.error;
-            // 聊天对象（含已删除好友）：独立拉取，拉不到（未执行迁移 SQL）时降级为空，不影响主信息
-            return sb.rpc('gm_list_user_chat_peers', { p_pwd: gmPwd, p_user_id: uid })
-              .then(function (pr) {
-                var peers = pr.error ? [] : (pr.data || []);
-                renderGmDetail(uid, name, phone, gr.data || [], fr.data || [], peers, lastActive);
-              })
-              .catch(function () {
-                renderGmDetail(uid, name, phone, gr.data || [], fr.data || [], [], lastActive);
-              });
+            var friends = fr.data || [];
+            var friendIds = friends.map(function (f) { return f.other_id; }).filter(Boolean);
+            var onlinePromise = Promise.resolve({});
+            if (friendIds.length) {
+              onlinePromise = sb.from('profiles').select('id, last_active').in('id', friendIds)
+                .then(function (r) {
+                  var map = {};
+                  if (!r.error) (r.data || []).forEach(function (p) { map[p.id] = p.last_active; });
+                  return map;
+                })
+                .catch(function () { return {}; });
+            }
+            return onlinePromise.then(function (friendOnlineMap) {
+              // 聊天对象（含已删除好友）：独立拉取，拉不到（未执行迁移 SQL）时降级为空，不影响主信息
+              return sb.rpc('gm_list_user_chat_peers', { p_pwd: gmPwd, p_user_id: uid })
+                .then(function (pr) {
+                  var peers = pr.error ? [] : (pr.data || []);
+                  renderGmDetail(uid, name, phone, gr.data || [], friends, peers, lastActive, friendOnlineMap);
+                })
+                .catch(function () {
+                  renderGmDetail(uid, name, phone, gr.data || [], friends, [], lastActive, friendOnlineMap);
+                });
+            });
           });
       })
       .catch(function (e) {
@@ -2680,7 +2694,7 @@
       });
   }
 
-  function renderGmDetail(uid, name, phone, groups, friends, peers, lastActive) {
+  function renderGmDetail(uid, name, phone, groups, friends, peers, lastActive, friendOnlineMap) {
     var box = $('gm-detail');
     box.innerHTML = '';
     var userNo = gmCurrent ? gmCurrent.userNo : null;
@@ -2698,68 +2712,148 @@
     head.appendChild(accBtn);
     box.appendChild(head);
 
+    // 搜索框：过滤该用户的好友 / 群聊
+    var search = el('input', 'gm-detail-search');
+    search.type = 'text';
+    search.id = 'gm-detail-search';
+    search.placeholder = '搜索该用户的好友 / 群聊';
+    search.oninput = function () { renderGmDetailLists(this.value.trim()); };
+    box.appendChild(search);
+
     box.appendChild(el('div', 'gm-subtitle', '群聊（' + groups.length + '）'));
-    if (!groups.length) box.appendChild(el('div', 'gm-empty', '无群聊'));
-    groups.forEach(function (g) {
-      var row = el('div', 'gm-row');
-      var txt = el('div', 'gm-row-text');
-      txt.appendChild(el('div', 'gm-row-name', g.name));
-      txt.appendChild(el('div', 'gm-row-sub', (g.is_owner ? '群主' : '成员') + ' · ' + (g.member_count || 0) + ' 人'));
-      row.appendChild(txt);
-      var b = el('button', 'btn-mini gm-danger', '强制删除');
-      b.type = 'button';
-      b.onclick = function () { gmForceDeleteGroup(uid, g.group_id, g.name); };
-      row.appendChild(b);
-      var chatBtn = el('button', 'btn-mini', '聊天');
-      chatBtn.type = 'button';
-      chatBtn.onclick = function () { gmOpenGroupChat(g.group_id, g.name, uid); };
-      row.appendChild(chatBtn);
-      box.appendChild(row);
-    });
+    var groupsBox = el('div', 'gm-list-box');
+    groupsBox.id = 'gm-detail-groups';
+    box.appendChild(groupsBox);
 
     box.appendChild(el('div', 'gm-subtitle', '好友（' + friends.length + '）'));
-    if (!friends.length) box.appendChild(el('div', 'gm-empty', '无好友'));
-    friends.forEach(function (f) {
-      var row = el('div', 'gm-row');
-      var txt = el('div', 'gm-row-text');
-      txt.appendChild(el('div', 'gm-row-name', f.other_nickname || '(无昵称)'));
-      txt.appendChild(el('div', 'gm-row-sub', (f.other_phone || '') + ' · ' + (f.status || '')));
-      row.appendChild(txt);
-      var b = el('button', 'btn-mini gm-danger', '删除好友');
-      b.type = 'button';
-      b.onclick = function () { gmForceDeleteFriend(uid, f.other_id, f.other_nickname); };
-      row.appendChild(b);
-      var chatBtn = el('button', 'btn-mini', '聊天');
-      chatBtn.type = 'button';
-      chatBtn.onclick = function () { gmOpenDmChat(uid, f.other_id, f.other_nickname); };
-      row.appendChild(chatBtn);
-      box.appendChild(row);
-    });
+    var friendsBox = el('div', 'gm-list-box');
+    friendsBox.id = 'gm-detail-friends';
+    box.appendChild(friendsBox);
 
-    // 聊天对象（含已删除好友）：从 messages 聚合，friendship_status 为空表示已删除
-    var deletedPeers = (peers || []).filter(function (p) {
-      return !p.friendship_status || p.friendship_status !== 'accepted';
-    });
     box.appendChild(el('div', 'gm-subtitle', '聊天对象（含已删除好友）'));
-    if (!deletedPeers.length) box.appendChild(el('div', 'gm-empty', '无历史聊天对象'));
-    deletedPeers.forEach(function (p) {
-      var row = el('div', 'gm-row');
-      var txt = el('div', 'gm-row-text');
-      var nameRow = el('div', 'gm-row-name');
-      nameRow.appendChild(document.createTextNode(p.other_nickname || '(无昵称)'));
-      nameRow.appendChild(el('span', 'gm-deleted-tag', '已删除'));
-      txt.appendChild(nameRow);
-      txt.appendChild(el('div', 'gm-row-sub', (p.other_phone || '')));
-      row.appendChild(txt);
-      var chatBtn = el('button', 'btn-mini', '聊天');
-      chatBtn.type = 'button';
-      chatBtn.onclick = function () { gmOpenDmChat(uid, p.other_id, p.other_nickname); };
-      row.appendChild(chatBtn);
-      box.appendChild(row);
-    });
+    var peersBox = el('div', 'gm-list-box');
+    peersBox.id = 'gm-detail-peers';
+    box.appendChild(peersBox);
 
+    state.gmDetailData = {
+      uid: uid, name: name, phone: phone,
+      groups: groups, friends: friends, peers: peers,
+      friendOnlineMap: friendOnlineMap || {}, lastActive: lastActive
+    };
+    renderGmDetailLists('');
     renderGmUserTitles(uid);
     renderGmMuteSection(uid);
+  }
+
+  function renderGmDetailLists(q) {
+    var d = state.gmDetailData;
+    if (!d) return;
+    var lc = q.toLowerCase();
+    var uid = d.uid;
+    var friendMap = d.friendOnlineMap || {};
+
+    var groupsBox = $('gm-detail-groups');
+    var friendsBox = $('gm-detail-friends');
+    var peersBox = $('gm-detail-peers');
+    if (!groupsBox || !friendsBox || !peersBox) return;
+
+    // 群聊
+    var gFiltered = d.groups.filter(function (g) {
+      if (!q) return true;
+      return (g.name || '').toLowerCase().indexOf(lc) >= 0;
+    });
+    groupsBox.innerHTML = '';
+    if (!gFiltered.length) {
+      groupsBox.appendChild(el('div', 'gm-empty', q ? '无匹配群聊' : '无群聊'));
+    } else {
+      gFiltered.forEach(function (g) {
+        var row = el('div', 'gm-row');
+        var txt = el('div', 'gm-row-text');
+        txt.appendChild(el('div', 'gm-row-name', g.name));
+        txt.appendChild(el('div', 'gm-row-sub', (g.is_owner ? '群主' : '成员') + ' · ' + (g.member_count || 0) + ' 人'));
+        row.appendChild(txt);
+        var b = el('button', 'btn-mini gm-danger', '强制删除');
+        b.type = 'button';
+        b.onclick = function () { gmForceDeleteGroup(uid, g.group_id, g.name); };
+        row.appendChild(b);
+        var chatBtn = el('button', 'btn-mini', '聊天');
+        chatBtn.type = 'button';
+        chatBtn.onclick = function () { gmOpenGroupChat(g.group_id, g.name, uid); };
+        row.appendChild(chatBtn);
+        groupsBox.appendChild(row);
+      });
+    }
+
+    // 好友（同时显示在线状态）
+    var fFiltered = d.friends.filter(function (f) {
+      if (!q) return true;
+      var la = friendMap[f.other_id];
+      var searchText = [
+        f.other_nickname || '',
+        f.other_phone || '',
+        f.status || '',
+        la ? onlineText(la) : ''
+      ].join(' ').toLowerCase();
+      return searchText.indexOf(lc) >= 0;
+    });
+    friendsBox.innerHTML = '';
+    if (!fFiltered.length) {
+      friendsBox.appendChild(el('div', 'gm-empty', q ? '无匹配好友' : '无好友'));
+    } else {
+      fFiltered.forEach(function (f) {
+        var row = el('div', 'gm-row');
+        var txt = el('div', 'gm-row-text');
+        txt.appendChild(el('div', 'gm-row-name', f.other_nickname || '(无昵称)'));
+        var sub = el('div', 'gm-row-sub');
+        sub.appendChild(document.createTextNode((f.other_phone || '') + ' · ' + (f.status || '')));
+        var la = friendMap[f.other_id];
+        if (la) {
+          var onNow = onlineFromIso(la);
+          sub.appendChild(document.createTextNode(' · '));
+          sub.appendChild(el('span', 'gm-detail-online ' + (onNow ? 'on' : 'off'), onlineText(la)));
+        }
+        txt.appendChild(sub);
+        row.appendChild(txt);
+        var b = el('button', 'btn-mini gm-danger', '删除好友');
+        b.type = 'button';
+        b.onclick = function () { gmForceDeleteFriend(uid, f.other_id, f.other_nickname); };
+        row.appendChild(b);
+        var chatBtn = el('button', 'btn-mini', '聊天');
+        chatBtn.type = 'button';
+        chatBtn.onclick = function () { gmOpenDmChat(uid, f.other_id, f.other_nickname); };
+        row.appendChild(chatBtn);
+        friendsBox.appendChild(row);
+      });
+    }
+
+    // 聊天对象（含已删除好友）
+    var deletedPeers = (d.peers || []).filter(function (p) {
+      return !p.friendship_status || p.friendship_status !== 'accepted';
+    });
+    var pFiltered = deletedPeers.filter(function (p) {
+      if (!q) return true;
+      return ((p.other_nickname || '') + ' ' + (p.other_phone || '')).toLowerCase().indexOf(lc) >= 0;
+    });
+    peersBox.innerHTML = '';
+    if (!pFiltered.length) {
+      peersBox.appendChild(el('div', 'gm-empty', q ? '无匹配聊天对象' : '无历史聊天对象'));
+    } else {
+      pFiltered.forEach(function (p) {
+        var row = el('div', 'gm-row');
+        var txt = el('div', 'gm-row-text');
+        var nameRow = el('div', 'gm-row-name');
+        nameRow.appendChild(document.createTextNode(p.other_nickname || '(无昵称)'));
+        nameRow.appendChild(el('span', 'gm-deleted-tag', '已删除'));
+        txt.appendChild(nameRow);
+        txt.appendChild(el('div', 'gm-row-sub', (p.other_phone || '')));
+        row.appendChild(txt);
+        var chatBtn = el('button', 'btn-mini', '聊天');
+        chatBtn.type = 'button';
+        chatBtn.onclick = function () { gmOpenDmChat(uid, p.other_id, p.other_nickname); };
+        row.appendChild(chatBtn);
+        peersBox.appendChild(row);
+      });
+    }
   }
 
   // GM 用户详情里的「禁言管理」区块
