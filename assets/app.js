@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v249 loaded');
+  console.log('[chatapp] app.js build v250 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -5540,7 +5540,8 @@
         im.className = 'avatar-img';
         im.src = url;
         av.appendChild(im);
-        toast('头像已选择，点「保存」生效');
+        // 头像立即自动保存（与昵称、隐私设置一样，无需「保存」按钮）
+        saveSettingsProfile();
       })
       .catch(function (e) { toast(friendlyError(e)); })
       .then(function () { btn.disabled = false; btn.textContent = '更换头像'; });
@@ -5549,35 +5550,55 @@
   $('change-pwd-btn').addEventListener('click', changePassword);
   $('logout-other-devices').addEventListener('click', logoutOtherDevices);
 
-  $('settings-save').addEventListener('click', function () {
-    var name = $('settings-name').value.trim();
-    if (!name) { toast('名称不能为空'); return; }
+  // 个人设置：所有改动立即自动保存（不再依赖「保存」按钮）
+  function saveSettingsProfile() {
+    if (!state.profile) return;
+    var name = ($('settings-name').value || '').trim();
+    if (!name) {
+      // 名称不可为空，回填当前昵称并提示
+      $('settings-name').value = state.profile.nickname || '';
+      toast('名称不能为空');
+      return;
+    }
     var payload = { nickname: name.slice(0, 20) };
     var hpToggle = $('hide-phone-toggle');
-    payload.hide_phone = !!(hpToggle && hpToggle.checked);
+    if (hpToggle) payload.hide_phone = !!hpToggle.checked;
     if (pendingAvatar !== null) payload.avatar_path = pendingAvatar;
 
-    var btn = $('settings-save');
-    btn.disabled = true; btn.textContent = '保存中…';
     sb.from('profiles').update(payload).eq('id', state.uid)
       .then(function (r) {
         if (r.error) throw r.error;
         state.profile.nickname = name;
-        state.profile.hide_phone = payload.hide_phone;
-        state.hidePhone = payload.hide_phone;
-        if (pendingAvatar !== null) state.profile.avatar_path = pendingAvatar;
         $('me-name').textContent = name;
+        if (hpToggle) {
+          state.profile.hide_phone = !!hpToggle.checked;
+          state.hidePhone = !!hpToggle.checked;
+        }
+        if (pendingAvatar !== null) {
+          state.profile.avatar_path = pendingAvatar;
+          pendingAvatar = null;
+        }
         setAvatar($('me-avatar'), {
           nickname: state.profile.nickname,
           phone: state.profile.phone,
           avatarPath: state.profile.avatar_path
         });
         toast('已保存');
-        closeSettings();
       })
-      .catch(function (e) { toast(friendlyError(e)); })
-      .then(function () { btn.disabled = false; btn.textContent = '保存'; });
-  });
+      .catch(function (e) { toast('保存失败：' + friendlyError(e)); });
+  }
+
+  // 名称：失焦 / 回车即自动保存
+  var snEl = $('settings-name');
+  if (snEl) {
+    snEl.addEventListener('change', saveSettingsProfile);
+    snEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); this.blur(); }
+    });
+  }
+  // 隐藏手机号开关：切换即自动保存
+  var hpT = $('hide-phone-toggle');
+  if (hpT) hpT.addEventListener('change', saveSettingsProfile);
 
   /* ============================================================
    *  群聊
