@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v248 loaded');
+  console.log('[chatapp] app.js build v249 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -5563,6 +5563,8 @@
       .then(function (r) {
         if (r.error) throw r.error;
         state.profile.nickname = name;
+        state.profile.hide_phone = payload.hide_phone;
+        state.hidePhone = payload.hide_phone;
         if (pendingAvatar !== null) state.profile.avatar_path = pendingAvatar;
         $('me-name').textContent = name;
         setAvatar($('me-avatar'), {
@@ -6448,8 +6450,14 @@
     document.querySelector('.app-view').classList.add('show-chat');
 
     $('peer-name').textContent = isGroup ? groupDisplayName(peer) : displayName(peer);
-    $('peer-phone').textContent = isGroup ? (peer.memberCount + ' 位成员')
-      : peer.phone + (isOnline(peer.id) ? ' · 在线' : '');
+    var peerPhoneText;
+    if (isGroup) {
+      peerPhoneText = peer.memberCount + ' 位成员';
+    } else {
+      peerPhoneText = peer.hide_phone ? '手机号已隐藏' : peer.phone;
+      if (isOnline(peer.id)) peerPhoneText += ' · 在线';
+    }
+    $('peer-phone').textContent = peerPhoneText;
 
     var av = $('peer-avatar');
     if (isGroup) {
