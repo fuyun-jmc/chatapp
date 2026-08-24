@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v260 loaded');
+  console.log('[chatapp] app.js build v261 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2806,11 +2806,11 @@
           av.style.background = colorOf(u.nickname || u.phone);
           av.textContent = initialOf(u.nickname || u.phone);
           var info = el('div', 'gm-user-info');
+          info.appendChild(el('div', 'gm-user-name', u.nickname || '(无昵称)'));
           info.appendChild(el('div', 'gm-user-phone', u.phone || ''));
           var onNow = onlineFromIso(u.last_active);
           info.appendChild(el('div', 'gm-user-online ' + (onNow ? 'on' : 'off'), onlineText(u.last_active)));
           if (u.user_number != null) info.appendChild(el('div', 'gm-user-no', '编号 #' + u.user_number));
-          if (u.remark) info.appendChild(el('div', 'gm-user-phone', '备注：' + u.remark));
           main.appendChild(av); main.appendChild(info);
           var btn = el('button', 'btn-mini', '管理');
           btn.type = 'button';
