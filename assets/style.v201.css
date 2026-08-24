@@ -1390,3 +1390,18 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-fb-count.zero { color: var(--text-3); }
 .gm-feedback-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; margin: 0 -14px; padding: 0 14px; }
 
+/* v253：GM 用户详情内好友 / 群聊搜索 */
+.gm-detail-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  margin: 8px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-2);
+  color: var(--text);
+}
+.gm-detail-search::placeholder { color: var(--text-3); }
+.gm-list-box { margin: 0; }
+
