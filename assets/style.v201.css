@@ -1418,22 +1418,26 @@ input, textarea { font-family: inherit; font-size: 15px; }
   font-size: 13px;
 }
 
+/* v257：好友申请入口按钮改为蓝色，与违禁接收入口保持一致 */
 /* v256：好友申请入口按钮 + 好友申请页面 */
 .friend-req-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   margin: 0 0 8px;
   padding: 9px 12px;
-  border: 0;
+  border: 1px solid rgba(79,124,247,.4);
   border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
+  background: linear-gradient(90deg, rgba(79,124,247,.14), rgba(79,124,247,.06));
+  color: var(--brand);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  text-align: center;
 }
+.friend-req-btn:hover { background: rgba(79,124,247,.2); }
 .friend-req-btn:active { opacity: .85; }
 .friend-req-btn .fr-badge {
   display: inline-block;
