@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v247 loaded');
+  console.log('[chatapp] app.js build v248 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2606,6 +2606,7 @@
     $('gm-detail').innerHTML = '<div class="gm-detail-empty">点击左侧用户查看管理详情</div>';
     showModal('gm-panel');
     try { $('gm-search-input').focus(); } catch (e) {}
+    gmFeedbackBadge();
   }
 
   function closeGm() { state.gmPanelOpen = false; stopGmPolling(); hideModal('gm-panel'); }
@@ -2997,15 +2998,16 @@
 
   // ---------- GM 问题反馈列表 ----------
   function openGmFeedbackTab(silent) {
-    var box = $('gm-feedback');
-    if (!box) return;
-    if (!silent) box.innerHTML = '<div class="gm-loading">加载中…</div>';
+    var list = $('gm-feedback-list');
+    if (!list) return;
+    if (!silent) list.innerHTML = '<div class="gm-loading">加载中…</div>';
     sb.rpc('gm_list_feedback', { p_pwd: gmPwd })
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
-        box.innerHTML = '';
-        if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无反馈</div>'; return; }
+        list.innerHTML = '';
+        updateFeedbackBadgeFromRows(rows);
+        if (!rows.length) { list.innerHTML = '<div class="gm-empty">暂无反馈</div>'; return; }
         rows.forEach(function (f) {
           var card = el('div', 'gm-report');
           var head = el('div', 'gm-report-head');
@@ -3047,14 +3049,38 @@
             acts.appendChild(read);
             card.appendChild(acts);
           }
-          box.appendChild(card);
+          list.appendChild(card);
         });
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        if (/BAD_PWD|GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
-        else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+        if (/BAD_PWD|GM_AUTH_FAIL/.test(m)) list.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+        else list.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
       });
+  }
+
+  // 根据 feedback 列表计算未读数并更新 tab 徽章与面板计数
+  function updateFeedbackBadgeFromRows(rows) {
+    rows = rows || [];
+    var unread = rows.filter(function (f) { return f.status === 'new'; }).length;
+    var tabBadge = $('gm-feedback-tab-badge');
+    if (tabBadge) {
+      tabBadge.textContent = unread > 99 ? '99+' : String(unread);
+      tabBadge.classList.toggle('show', unread > 0);
+    }
+    var countEl = $('gm-feedback-count');
+    if (countEl) {
+      countEl.textContent = unread > 0 ? '新反馈 ' + unread + ' 条' : '无新反馈';
+      countEl.classList.toggle('zero', unread === 0);
+    }
+  }
+
+  // 拉取未读数（仅用于 GM 入口/切换 tab 时，不轮询）
+  function gmFeedbackBadge() {
+    if (!gmPwd) return;
+    sb.rpc('gm_list_feedback', { p_pwd: gmPwd })
+      .then(function (r) { if (r.error) return; updateFeedbackBadgeFromRows(r.data || []); })
+      .catch(function () {});
   }
 
   function gmMarkFeedbackRead(id) {
@@ -3711,12 +3737,13 @@
     else if (tab === 'userreports') { openGmUserReportsTab(); startGmPolling(); }
     else if (tab === 'groups') { stopGmPolling(); openGmGroupsTab(); }
     else if (tab === 'appeals') { openGmAppealsTab(); startGmPolling(); }
-    else if (tab === 'feedback') { openGmFeedbackTab(); startGmPolling(); }
+    else if (tab === 'feedback') { openGmFeedbackTab(); gmFeedbackBadge(); stopGmPolling(); }
     else if (tab === 'wordlog') { openGmWordLogTab(); startGmPolling(); }
     else { stopGmPolling(); }
   }
 
   // 自动刷新当前打开的 GM 看板（轮询 / 每日 00:00 兜底）
+  // 注意：问题反馈改为手动刷新，不参与自动轮询与兜底刷新
   function refreshGmCurrentTab(silent) {
     if (state.gmPanelOpen !== true) return;
     var tab = state.gmCurrentTab;
@@ -3724,7 +3751,7 @@
     else if (tab === 'userreports') openGmUserReportsTab(silent);
     else if (tab === 'wordlog') openGmWordLogTab(silent);
     else if (tab === 'appeals') openGmAppealsTab(silent);
-    else if (tab === 'feedback') openGmFeedbackTab(silent);
+    else if (tab === 'feedback') { /* 手动刷新，不自动刷新 */ }
   }
 
   // GM 看板轮询：每 5 秒静默刷新当前 tab（页面隐藏时跳过）
@@ -5394,6 +5421,7 @@
   $('gm-userreport-refresh').addEventListener('click', openGmUserReportsTab);
   $('gm-word-log-refresh').addEventListener('click', openGmWordLogTab);
   $('gm-appeal-refresh').addEventListener('click', openGmAppealsTab);
+  $('gm-feedback-refresh').addEventListener('click', function () { openGmFeedbackTab(); });
   // 各看板搜索框（输入即过滤，模糊匹配）
   function bindSearch(id, fn) { var e = $(id); if (e) e.addEventListener('input', fn); }
   bindSearch('gm-report-search', renderGmReports);
