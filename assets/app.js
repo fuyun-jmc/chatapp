@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v255 loaded');
+  console.log('[chatapp] app.js build v256 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -57,7 +57,9 @@
     uid: null,
     profile: null,
     friends: [],        // { id, phone, nickname }
-    incoming: [],       // 待我处理的好友申请
+    incoming: [],       // 待我处理的好友申请（收到的，待同意）
+    outgoing: [],       // 我发出的好友申请（等待中 / 被拒绝；被同意的不在列表）
+    frPageOpen: false,  // 好友申请页面是否打开
     groups: [],         // { id, name, ownerId, memberIds, memberCount, iAmOwner }
     groupRemarks: {},    // { groupId: remark }  我给各群设置的个人备注（仅自己可见）
     groupNicknames: {},  // { groupId: { userId: nickname } }  群内昵称（对全群成员可见）
@@ -1759,7 +1761,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         var rows = r.data || [];
-        var friends = [], incoming = [];
+        var friends = [], incoming = [], outgoing = [];
         rows.forEach(function (row) {
           var iAmRequester = row.requester_id === state.uid;
           var other = iAmRequester ? row.addressee : row.requester;
@@ -1787,17 +1789,29 @@
               note: row.request_note || '',
               images: (row.request_images && Array.isArray(row.request_images)) ? row.request_images : []
             });
+          } else if (iAmRequester && row.status !== 'accepted') {
+            // 我发出的申请：被同意的不显示；等待中 / 被拒绝都显示
+            outgoing.push({
+              rowId: row.id,
+              status: row.status,
+              user: other,
+              note: row.request_note || '',
+              images: (row.request_images && Array.isArray(row.request_images)) ? row.request_images : []
+            });
           }
         });
         // 置顶的好友排到最前；其余保持原有（创建时间倒序）顺序
         friends.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
         state.friends = friends;
         state.incoming = incoming;
+        state.outgoing = outgoing;
         friends.forEach(function (f) {
           state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone, user_number: f.user_number, hide_phone: f.hide_phone };
         });
         renderFriends();
         renderRequests();
+        updateFriendRequestBadge();
+        if (state.frPageOpen) renderFriendRequestsPage();
         refreshOnline(); // 好友加载完后立即拉一次在线状态
 
         // 当前会话对象被删除好友时收起聊天窗
@@ -1866,6 +1880,119 @@
   }
 
   function renderFriends() { renderConversations(); }
+
+  /* ============================================================
+   *  好友申请页面（收 / 发）
+   * ============================================================ */
+  function updateFriendRequestBadge() {
+    var badge = $('fr-page-badge');
+    if (!badge) return;
+    var n = (state.incoming || []).length;
+    if (n > 0) { badge.hidden = false; badge.textContent = n; }
+    else badge.hidden = true;
+  }
+
+  function openFriendRequestsPage() {
+    state.frPageOpen = true;
+    showModal('friend-requests-page');
+    loadRelations().then(function () { renderFriendRequestsPage(); });
+  }
+
+  function closeFriendRequestsPage() {
+    state.frPageOpen = false;
+    hideModal('friend-requests-page');
+  }
+
+  // 在好友申请项里渲染留言 + 图片（点击缩略图放大）
+  function appendRequestNote(info, req) {
+    if (!req.note && !(req.images && req.images.length)) return;
+    var nb = el('div', 'fr-note-box');
+    if (req.note) nb.appendChild(el('div', 'fr-note-text', req.note));
+    if (req.images && req.images.length) {
+      var g = el('div', 'fr-note-imgs');
+      req.images.forEach(function (p) {
+        var im = el('img'); im.className = 'fr-note-thumb'; im.alt = '申请图片';
+        im.onclick = (function (path) {
+          return function (e) {
+            e.stopPropagation();
+            signedUrl(path).then(function (u) { if (u) openReportPreview(u, false); });
+          };
+        })(p);
+        g.appendChild(im);
+        signedUrl(p).then(function (u) { if (u) im.src = u; });
+      });
+      nb.appendChild(g);
+    }
+    info.appendChild(nb);
+  }
+
+  function buildRequestItem(req, isIncoming) {
+    var li = el('li');
+    var av = el('div', 'avatar sm');
+    setAvatar(av, { nickname: req.user.nickname, phone: req.user.phone, avatarPath: req.user.avatar_path });
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'nm', req.user.nickname || '(无昵称)'));
+    info.appendChild(el('div', 'ph', maskPhone(req.user.phone)));
+    appendRequestNote(info, req);
+    li.appendChild(av); li.appendChild(info);
+
+    if (isIncoming) {
+      var ok = el('button', 'mini-ok', '同意');
+      var no = el('button', 'mini-no', '拒绝');
+      ok.onclick = function () { respond(req.rowId, 'accepted'); };
+      no.onclick = function () { respond(req.rowId, 'rejected'); };
+      li.appendChild(ok); li.appendChild(no);
+    } else {
+      // 我发出的：被同意不显示；等待中→撤回；被拒绝→重新发送
+      if (req.status === 'pending') {
+        var st = el('div', 'fr-status', '等待确认');
+        var cancel = el('button', 'mini-no', '撤回');
+        cancel.onclick = function () { cancelFriendRequest(req.rowId); };
+        li.appendChild(st); li.appendChild(cancel);
+      } else {
+        var rej = el('div', 'fr-status', '对方已拒绝');
+        var resend = el('button', 'mini-ok', '重新发送');
+        resend.onclick = function () { closeFriendRequestsPage(); openFriendRequestModal(req.user, null); };
+        li.appendChild(rej); li.appendChild(resend);
+      }
+    }
+    return li;
+  }
+
+  function renderFriendRequestsPage() {
+    var inList = $('fr-in-list'), outList = $('fr-out-list');
+    if (!inList || !outList) return;
+    inList.innerHTML = ''; outList.innerHTML = '';
+
+    var inc = state.incoming || [];
+    $('fr-in-count').textContent = inc.length;
+    if (!inc.length) {
+      var e1 = el('li', 'fr-empty', '暂无收到的申请');
+      inList.appendChild(e1);
+    } else {
+      inc.forEach(function (req) { inList.appendChild(buildRequestItem(req, true)); });
+    }
+
+    var out = state.outgoing || [];
+    $('fr-out-count').textContent = out.length;
+    if (!out.length) {
+      var e2 = el('li', 'fr-empty', '暂无发出的申请');
+      outList.appendChild(e2);
+    } else {
+      out.forEach(function (req) { outList.appendChild(buildRequestItem(req, false)); });
+    }
+    updateFriendRequestBadge();
+  }
+
+  function cancelFriendRequest(rowId) {
+    sb.from('friendships').delete().eq('id', rowId)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已撤回申请');
+        return loadRelations();
+      })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
 
   // 统一会话列表：好友 + 群聊合并渲染到 #chat-list
   /* 会话列表项里的“草稿”预览（仅在有草稿时显示） */
@@ -6057,6 +6184,11 @@
   $('new-group-close').addEventListener('click', function () { hideModal('new-group-modal'); });
   $('new-group-cancel').addEventListener('click', function () { hideModal('new-group-modal'); });
   $('new-group-modal').addEventListener('click', function (e) { if (e.target === this) hideModal('new-group-modal'); });
+
+  /* ---------- 好友申请页面事件绑定 ---------- */
+  $('friend-requests-btn').addEventListener('click', openFriendRequestsPage);
+  $('fr-page-close').addEventListener('click', closeFriendRequestsPage);
+  $('friend-requests-page').addEventListener('click', function (e) { if (e.target === this) closeFriendRequestsPage(); });
 
   $('group-info-btn').addEventListener('click', openGroupInfo);
   $('group-info-close').addEventListener('click', function () { hideModal('group-info-modal'); });
