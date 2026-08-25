@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v271 loaded');
+  console.log('[chatapp] app.js build v272 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1103,6 +1103,23 @@
     if (nm) addTitleBadge(nm, state.uid);
   }
 
+  // 新称号红点：用 localStorage 记录该账号已看过的称号 id，与当前拥有的对比
+  function seenTitlesKey() { return 'chatapp_seen_titles_' + (state.uid || ''); }
+  function loadSeenTitles() {
+    try { return JSON.parse(localStorage.getItem(seenTitlesKey()) || '[]'); } catch (e) { return []; }
+  }
+  function saveSeenTitles(arr) {
+    try { localStorage.setItem(seenTitlesKey(), JSON.stringify(arr || [])); } catch (e) {}
+  }
+  function updateTitleBadge() {
+    var badge = $('settings-badge');
+    if (!badge) return;
+    var ids = state.myTitles || [];
+    var seen = loadSeenTitles();
+    var hasNew = ids.some(function (id) { return seen.indexOf(id) < 0; });
+    badge.hidden = !hasNew;
+  }
+
   // 个人设置：列出当前用户已拥有的称号，并支持切换佩戴
   function loadMyTitles() {
     var box = $('my-titles-list');
@@ -1129,6 +1146,8 @@
         box.innerHTML = '';
         if (!rows.length) {
           if (empty) empty.hidden = false;
+          state.myTitles = [];
+          updateTitleBadge();
           return;
         }
         // 名额提示：自选称号 n / 2
@@ -1193,6 +1212,17 @@
           }
           box.appendChild(card);
         });
+        // 记录当前拥有的称号 id，并刷新「新称号」红点
+        state.myTitles = rows.map(function (x) { return x.t.id; });
+        // 首次加载该账号称号时，把已有称号标记为已看，避免存量称号误报「新称号」
+        if (localStorage.getItem(seenTitlesKey()) === null) {
+          saveSeenTitles(state.myTitles);
+        }
+        // 打开设置时加载，则视为已查看，清空红点
+        if ($('settings-modal') && $('settings-modal').classList.contains('open') && !state.forceChangePwd) {
+          saveSeenTitles(state.myTitles);
+        }
+        updateTitleBadge();
         refreshAdminStatus();
       })
       .catch(function () { box.innerHTML = '<div class="title-loading">称号加载失败</div>'; });
@@ -1701,6 +1731,7 @@
       .then(loadForbiddenWords)
       .then(loadMyDrafts)            // 登录即拉取我的全部草稿（跨设备/退出网页后仍在）
       .then(loadUnreadFromDb)        // 登录即按 DB 计算离线/跨设备未读
+      .then(loadMyTitles)            // 计算「新称号」红点（设置弹窗未开时不标记已读）
       .then(function () {
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
         // —— subscribeRealtime 没有 return，会返回 undefined，导致 .then(startPoll) 抛错、
@@ -2516,7 +2547,6 @@
     });
     resetPwdFields();
     loadDeviceSessions();
-    loadMyTitles();
     loadMyCodes();
     var hp = $('hide-phone-toggle');
     if (hp) hp.checked = !!state.hidePhone;
@@ -2529,6 +2559,8 @@
     var gob = $('gm-open-btn');
     if (gob) gob.hidden = !isGmAdmin() || !!state.forceChangePwd;
     showModal('settings-modal');
+    // 在弹窗打开后再加载称号，便于把已看过的称号标记为已读（清除红点）
+    loadMyTitles();
   }
 
   function closeSettings() {
