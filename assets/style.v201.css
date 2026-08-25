@@ -327,7 +327,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* 会话列表上方的“新建群聊”按钮 */
 .new-group-bar {
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: calc(100% - 28px); margin: 8px 14px 4px;
+  width: calc(100% - 28px); margin: 4px 14px 4px;
   padding: 10px 12px; border: none; border-radius: 10px;
   background: var(--brand); color: #fff;
   font-size: 14px; font-weight: 600; cursor: pointer;
@@ -358,7 +358,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 
 /* 合并后的统一搜索框（顶部） */
-.unified-search { padding: 6px 14px 6px; }
+.unified-search { padding: 4px 14px 4px; }
 .unified-search .friend-search { margin: 0; }
 .unified-search .search-result { margin: 8px 0 0; max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
@@ -1443,7 +1443,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* v265：好友申请入口与违禁接收入口并排 */
 .side-top-actions {
   display: flex;
-  margin: 0 14px 4px;
+  margin: 0 14px 3px;
 }
 .side-top-actions .friend-req-btn,
 .side-top-actions .side-admin-entry {
@@ -1452,7 +1452,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   padding: 10px 8px;
 }
 .side-top-actions .friend-req-btn {
-  margin-right: 6px;
+  margin-right: 4px;
 }
 .side-top-actions .side-admin-entry .sae-sub {
   display: none;
