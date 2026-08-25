@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v269 loaded');
+  console.log('[chatapp] app.js build v270 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -4012,7 +4012,13 @@
     var body = $('gm-chat-body');
     body.innerHTML = '';
     if (!rows || !rows.length) { body.appendChild(el('div', 'gm-empty', '暂无聊天记录')); return; }
+    var lastDay = '';
     rows.forEach(function (m) {
+      var dk = dayKey(m.created_at);
+      if (dk && dk !== lastDay) {
+        lastDay = dk;
+        body.appendChild(el('div', 'gm-chat-date-divider', dayLabel(m.created_at)));
+      }
       var node = renderGmMessage(m, ctx);
       if (node) body.appendChild(node);
     });
