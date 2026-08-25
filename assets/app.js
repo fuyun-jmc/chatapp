@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v272 loaded');
+  console.log('[chatapp] app.js build v273 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -8199,6 +8199,19 @@
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'mute_appeals'
       }, onAdminFeedInsert)
+      // 个人称号变更（GM 授予 / 收回）：实时刷新「新称号」红点
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'user_titles'
+      }, function (payload) {
+        var uid = (payload.new && payload.new.user_id) || (payload.old && payload.old.user_id);
+        if (uid && uid !== state.uid) return;   // 只看自己的称号变化
+        // 节流：500ms 内只刷新一次，避免批量授予时反复拉取
+        if (state._titleRtTimer) return;
+        state._titleRtTimer = setTimeout(function () {
+          state._titleRtTimer = null;
+          loadMyTitles();   // 重新拉取；设置弹窗未开时不标记已读 → 新称号立即亮红点
+        }, 500);
+      })
       .subscribe(function (status) {
         // 实时通道（重）连上后，用 DB 已读游标重新校准未读，避免离线期间漏算
         if (status === 'SUBSCRIBED') { loadUnreadFromDb(); checkFeedbackReplyBadge(); return; }
