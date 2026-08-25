@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v268 loaded');
+  console.log('[chatapp] app.js build v269 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3396,7 +3396,7 @@
 
   // GM 删除某条反馈的开发者回复
   function gmDeleteFeedbackReply(id) {
-    if (!confirm('确定删除该回复？')) return;
+    if (!window.confirm('确定删除该回复？')) return;
     sb.rpc('gm_delete_feedback_reply', { p_pwd: gmPwd, p_id: id })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -3405,15 +3405,17 @@
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        if (/FEEDBACK_NOT_FOUND/.test(m)) toast('反馈不存在或已删除');
-        else if (/PGRST201|function.*not found/.test(m)) toast('请先执行 20260824_delete_feedback_reply.sql');
-        else toast('删除失败：' + friendlyError(e));
+        if (/FEEDBACK_NOT_FOUND/.test(m)) return toast('反馈不存在或已删除');
+        if (/PGRST201|function.*not found|Could not find|schema.*cache/.test(m)) {
+          return window.alert('删除失败：后端函数 gm_delete_feedback_reply 不存在。\n请在 Supabase SQL Editor 执行 20260824_delete_feedback_reply.sql 后再试。');
+        }
+        toast('删除失败：' + friendlyError(e));
       });
   }
 
   // GM 后台标记用户举报为已处理
   function gmHandleUserReport(id) {
-    if (!confirm('确定将该举报标记为已处理？')) return;
+    if (!window.confirm('确定将该举报标记为已处理？')) return;
     sb.rpc('gm_handle_user_report', { p_pwd: gmPwd, p_id: id })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -3422,9 +3424,11 @@
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        if (/REPORT_NOT_FOUND/.test(m)) toast('举报不存在或已删除');
-        else if (/PGRST201|function.*not found/.test(m)) toast('请先执行 20260824_gm_user_report_handle.sql');
-        else toast('处理失败：' + friendlyError(e));
+        if (/REPORT_NOT_FOUND/.test(m)) return toast('举报不存在或已删除');
+        if (/PGRST201|function.*not found|Could not find|schema.*cache/.test(m)) {
+          return window.alert('处理失败：后端函数 gm_handle_user_report 不存在。\n请在 Supabase SQL Editor 执行 20260824_gm_user_report_handle.sql 后再试。');
+        }
+        toast('处理失败：' + friendlyError(e));
       });
   }
 
