@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v270 loaded');
+  console.log('[chatapp] app.js build v271 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1891,6 +1891,7 @@
 
   function openFriendRequestsPage() {
     state.frPageOpen = true;
+    clearFrAddSearch();
     showModal('friend-requests-page');
     loadRelations().then(function () { renderFriendRequestsPage(); });
   }
@@ -2383,27 +2384,7 @@
 
     renderGroupedFriends(panel, local, pickConv);
 
-    var fcCode = kw.toLowerCase();
-    if (/^[a-z0-9]{8}$/.test(fcCode)) {
-      addFriendByCode(fcCode);
-    } else if (PHONE_RE.test(kw)) {
-      sb.from('profiles').select('id,phone,nickname,avatar_path,hide_phone').eq('phone', kw).eq('hide_phone', false).maybeSingle()
-        .then(function (r) {
-          if (r.error) { toast(friendlyError(r.error)); return; }
-          if (!r.data) {
-            if (local.length === 0 && localG.length === 0) panel.appendChild(el('div', 'note', '没有找到该手机号的用户，可能还没注册。'));
-            return;
-          }
-          if (r.data.id === state.uid) return;
-          if (state.friends.some(function (f) { return f.id === r.data.id; })) return;
-          var row = makeResultRow(r.data);
-          var add = el('button', 'btn-mini', '加为好友');
-          add.style.padding = '6px 12px';
-          add.onclick = function (ev) { ev.stopPropagation(); sendRequest(r.data, add); };
-          row.appendChild(add);
-          panel.appendChild(row);
-        });
-    } else if (local.length === 0 && localG.length === 0) {
+    if (local.length === 0 && localG.length === 0) {
       panel.appendChild(el('div', 'note', '没有找到相关好友或群聊'));
     }
   }
@@ -6300,6 +6281,17 @@
   $('fr-page-close').addEventListener('click', closeFriendRequestsPage);
   $('friend-requests-page').addEventListener('click', function (e) { if (e.target === this) closeFriendRequestsPage(); });
 
+  var frAddSearch = $('fr-add-search');
+  if (frAddSearch) {
+    frAddSearch.addEventListener('input', onFrAddSearch);
+    frAddSearch.addEventListener('keydown', function (e) { if (e.key === 'Enter') onFrAddSearch(); });
+  }
+  var frAddClear = $('fr-add-clear');
+  if (frAddClear) {
+    frAddClear.addEventListener('click', clearFrAddSearch);
+    frAddClear.addEventListener('touchstart', function (e) { e.preventDefault(); clearFrAddSearch(); }, { passive: false });
+  }
+
   $('group-info-btn').addEventListener('click', openGroupInfo);
   $('group-info-close').addEventListener('click', function () { hideModal('group-info-modal'); });
   // 注意：#group-info-modal 是 div 不是 <dialog>，没有 close()，必须走 hideModal
@@ -6622,8 +6614,8 @@
    * ============================================================ */
   // 在搜索框输入 8 位好友码 → 向对方发起好友申请（临时码会被消耗并自动换新）
   function addFriendByCode(code) {
-    var panel = $('search-result');
-    if (panel) panel.innerHTML = '<div class="note">正在通过好友码添加…</div>';
+    var panel = $('fr-add-result');
+    if (panel) { panel.hidden = false; panel.innerHTML = '<div class="note">正在通过好友码添加…</div>'; }
     sb.rpc('add_friend_by_code', { p_code: code, p_note: null })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -6633,20 +6625,79 @@
         if (outcome === 'already_pending') toast('好友申请已发送，等待对方同意');
         else if (outcome === 'they_pending') toast('对方已向你发起申请，请到「新的好友」同意');
         else toast('已向「' + name + '」发送好友申请');
-        var box = $('search-box'); if (box) box.value = '';
-        onUnifiedSearch();
+        var box = $('fr-add-search'); if (box) box.value = '';
+        if (panel) { panel.innerHTML = ''; panel.hidden = true; }
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        if (/CODE_EMPTY/.test(m)) toast('请输入好友码');
-        else if (/CODE_NOT_FOUND/.test(m)) toast('好友码无效或已失效');
-        else if (/CANNOT_ADD_SELF/.test(m)) toast('不能添加自己为好友');
-        else if (/ALREADY_FRIEND/.test(m)) toast('已经是好友了');
-        else if (/NOT_AUTH/.test(m)) toast('请先登录');
-        else toast('添加失败：' + friendlyError(e));
-        var box = $('search-box'); if (box) box.value = '';
-        onUnifiedSearch();
+        if (/CODE_EMPTY/.test(m)) renderFrAddNote('请输入好友码');
+        else if (/CODE_NOT_FOUND/.test(m)) renderFrAddNote('好友码无效或已失效');
+        else if (/CANNOT_ADD_SELF/.test(m)) renderFrAddNote('不能添加自己为好友');
+        else if (/ALREADY_FRIEND/.test(m)) renderFrAddNote('已经是好友了');
+        else if (/NOT_AUTH/.test(m)) renderFrAddNote('请先登录');
+        else renderFrAddNote('添加失败：' + friendlyError(e));
+        var box = $('fr-add-search'); if (box) box.value = '';
       });
+  }
+
+  function renderFrAddNote(text) {
+    var panel = $('fr-add-result');
+    if (!panel) return;
+    panel.hidden = false;
+    panel.innerHTML = '';
+    panel.appendChild(el('div', 'note', text));
+  }
+
+  function clearFrAddSearch() {
+    var box = $('fr-add-search');
+    if (box) box.value = '';
+    var panel = $('fr-add-result');
+    if (panel) { panel.innerHTML = ''; panel.hidden = true; }
+    try { $('fr-add-search').focus(); } catch (e) {}
+  }
+
+  function onFrAddSearch() {
+    var kw = ($('fr-add-search') && $('fr-add-search').value || '').trim();
+    var panel = $('fr-add-result');
+    if (!panel) return;
+    if (!kw) { panel.innerHTML = ''; panel.hidden = true; return; }
+
+    var fcCode = kw.toLowerCase();
+    if (/^[a-z0-9]{8}$/.test(fcCode)) {
+      addFriendByCode(fcCode);
+      return;
+    }
+
+    if (PHONE_RE.test(kw)) {
+      panel.hidden = false;
+      panel.innerHTML = '<div class="note">正在查找…</div>';
+      sb.from('profiles').select('id,phone,nickname,avatar_path,hide_phone').eq('phone', kw).eq('hide_phone', false).maybeSingle()
+        .then(function (r) {
+          if (r.error) { renderFrAddNote('查找失败：' + friendlyError(r.error)); return; }
+          panel.innerHTML = '';
+          if (!r.data) {
+            renderFrAddNote('没有找到该手机号的用户，可能还没注册。');
+            return;
+          }
+          if (r.data.id === state.uid) { renderFrAddNote('不能添加自己为好友'); return; }
+          if (state.friends.some(function (f) { return f.id === r.data.id; })) {
+            renderFrAddNote('「' + (r.data.nickname || r.data.phone) + '」已经是你的好友');
+            return;
+          }
+          var row = makeResultRow(r.data);
+          var add = el('button', 'btn-mini', '加为好友');
+          add.style.padding = '6px 12px';
+          add.onclick = function (ev) { ev.stopPropagation(); sendRequest(r.data, add); };
+          row.appendChild(add);
+          panel.appendChild(row);
+          panel.hidden = false;
+        })
+        .catch(function (e) { renderFrAddNote('查找失败：' + friendlyError(e)); });
+      return;
+    }
+
+    panel.innerHTML = '';
+    panel.hidden = true;
   }
 
   // 读取并渲染本人好友码
