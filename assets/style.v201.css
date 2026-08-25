@@ -358,7 +358,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 
 /* 合并后的统一搜索框（顶部） */
-.unified-search { padding: 12px 14px 6px; }
+.unified-search { padding: 6px 14px 6px; }
 .unified-search .friend-search { margin: 0; }
 .unified-search .search-result { margin: 8px 0 0; max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
@@ -1443,7 +1443,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* v265：好友申请入口与违禁接收入口并排 */
 .side-top-actions {
   display: flex;
-  margin: 0 14px 8px;
+  margin: 0 14px 4px;
 }
 .side-top-actions .friend-req-btn,
 .side-top-actions .side-admin-entry {
