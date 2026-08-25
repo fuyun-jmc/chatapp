@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v264 loaded');
+  console.log('[chatapp] app.js build v268 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1714,7 +1714,7 @@
   }
 
   function loadProfile() {
-    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until,hide_dev_title,user_number').eq('id', state.uid).maybeSingle()
+    return sb.from('profiles').select('id,phone,nickname,avatar_path,muted_until,hide_dev_title,hide_phone,user_number').eq('id', state.uid).maybeSingle()
       .then(function (r) {
         if (r.error) throw r.error;
         if (!r.data) {
@@ -1741,7 +1741,7 @@
         state.hidePhone = !!p.hide_phone;
         state.profilesById[state.uid] = Object.assign(state.profilesById[state.uid] || {}, { user_number: p.user_number, hide_phone: p.hide_phone });
         $('me-name').textContent = p.nickname;
-        $('me-phone').textContent = p.phone;
+        $('me-phone').textContent = p.hide_phone ? '手机号已隐藏' : (p.phone || '');
         $('me-number').textContent = (p.user_number != null) ? ('编号 #' + p.user_number) : '未分配编号';
         setAvatar($('me-avatar'), { nickname: p.nickname, phone: p.phone, avatarPath: p.avatar_path });
       });
@@ -5895,6 +5895,7 @@
         if (hpToggle) {
           state.profile.hide_phone = !!hpToggle.checked;
           state.hidePhone = !!hpToggle.checked;
+          $('me-phone').textContent = hpToggle.checked ? '手机号已隐藏' : (state.profile.phone || '');
         }
         if (pendingAvatar !== null) {
           state.profile.avatar_path = pendingAvatar;
