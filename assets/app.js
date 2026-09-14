@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v282 loaded');
+  console.log('[chatapp] app.js build v283 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -9045,6 +9045,14 @@
     var sClr = $('sq-search-clear'); if (sClr) sClr.onclick = function () { clearSquareSearch(); };
     var tPost = $('sq-tab-post'); if (tPost) tPost.onclick = function () { sqSetSearchTab('post'); };
     var tUser = $('sq-tab-user'); if (tUser) tUser.onclick = function () { sqSetSearchTab('user'); };
+    // v283：手机端全屏时没有可点的遮罩，必须有显式关闭按钮
+    var sqClose = $('sq-close'); if (sqClose) sqClose.onclick = function () { closeSquare(); };
   }
-  initSquareBindings();
+  // v283：#square-modal 的 HTML 位于本脚本之后，必须等 DOM 就绪再绑定，
+  // 否则 $() 全为 null，所有按钮与关闭方式都会失效。
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSquareBindings);
+  } else {
+    initSquareBindings();
+  }
 })();
