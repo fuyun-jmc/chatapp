@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=274">
+<link rel="stylesheet" href="assets/style.v201.css?v=282">
 </head>
 <body>
 
@@ -59,6 +59,7 @@
         <span>手机号</span>
         <input type="tel" id="reg-phone" inputmode="numeric" maxlength="11" placeholder="11 位手机号，作为你的账号" autocomplete="username" required>
       </label>
+      <p class="form-hint" id="reg-phone-status" hidden></p>
       <label class="field">
         <span>昵称</span>
         <input type="text" id="reg-nickname" maxlength="20" placeholder="好友看到的名字" required>
@@ -105,6 +106,13 @@
         <span class="sae-title">违禁接收</span>
         <span class="sae-badge" id="admin-violation-badge"></span>
         <span class="sae-sub">查看违禁词违规详情</span>
+      </button>
+    </div>
+
+    <div class="side-top-actions">
+      <button class="friend-req-btn" id="square-entry-btn" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        <span>交友广场</span>
       </button>
     </div>
 
@@ -1039,11 +1047,35 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v273.js"></script>
+<script src="assets/app.v282.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
   <video id="lightbox-video" controls playsInline hidden></video>
+</div>
+
+<!-- 交友广场（v280） -->
+<div class="modal sq-panel" id="square-modal" hidden>
+  <div class="sq-inner" id="sq-inner">
+    <div class="sq-header">
+      <button class="sq-back" id="sq-back" type="button" hidden>‹ 返回</button>
+      <div class="sq-title" id="sq-title">交友广场</div>
+      <div class="sq-header-actions">
+        <button class="sq-btn" id="sq-my-profile" type="button">我的主页</button>
+        <button class="sq-btn sq-btn-primary" id="sq-compose-btn" type="button">发帖</button>
+      </div>
+    </div>
+    <div class="sq-searchbar" id="sq-searchbar">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="text" id="sq-search-input" placeholder="搜索广场内的帖子 / 用户" autocomplete="off">
+      <button type="button" class="sq-search-clear" id="sq-search-clear" aria-label="清空搜索" hidden>×</button>
+    </div>
+    <div class="sq-search-tabs" id="sq-search-tabs" hidden>
+      <button type="button" class="sq-tab is-active" id="sq-tab-post">帖子</button>
+      <button type="button" class="sq-tab" id="sq-tab-user">用户</button>
+    </div>
+    <div class="sq-body" id="sq-body"></div>
+  </div>
 </div>
 </body>
 </html>
