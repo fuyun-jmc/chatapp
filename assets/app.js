@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v273 loaded');
+  console.log('[chatapp] app.js build v282 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1631,6 +1631,37 @@
       .then(function () { btn.disabled = false; btn.textContent = '注册并登录'; });
   });
 
+  // 注册时手机号实时校验：边输入边提示格式是否有效（避免点提交才被发现）
+  var regPhone = $('reg-phone');
+  var regPhoneStatus = $('reg-phone-status');
+  if (regPhone && regPhoneStatus) {
+    regPhone.addEventListener('input', function () {
+      var v = (regPhone.value || '').trim();
+      if (!v) { regPhoneStatus.hidden = true; regPhoneStatus.textContent = ''; return; }
+      if (PHONE_RE.test(v)) {
+        regPhoneStatus.hidden = false;
+        regPhoneStatus.textContent = '✓ 手机号格式正确';
+        regPhoneStatus.style.color = '#16a34a';
+      } else if (v.length >= 11) {
+        regPhoneStatus.hidden = false;
+        regPhoneStatus.textContent = '手机号格式不正确，请输入 11 位有效号码';
+        regPhoneStatus.style.color = '#dc2626';
+      } else {
+        regPhoneStatus.hidden = true;
+        regPhoneStatus.textContent = '';
+      }
+    });
+    // 切换/离开时若格式无效且非空，给一次明确提示
+    regPhone.addEventListener('blur', function () {
+      var v = (regPhone.value || '').trim();
+      if (v && !PHONE_RE.test(v) && regPhoneStatus) {
+        regPhoneStatus.hidden = false;
+        regPhoneStatus.textContent = '手机号格式不正确，请输入 11 位有效号码';
+        regPhoneStatus.style.color = '#dc2626';
+      }
+    });
+  }
+
   $('logout-btn').addEventListener('click', function () {
     // 退出前清理本机设备记录
     if (state.deviceToken) {
@@ -2863,10 +2894,17 @@
               return sb.rpc('gm_list_user_chat_peers', { p_pwd: gmPwd, p_user_id: uid })
                 .then(function (pr) {
                   var peers = pr.error ? [] : (pr.data || []);
-                  renderGmDetail(uid, name, phone, gr.data || [], friends, peers, lastActive, friendOnlineMap);
+                  return sb.rpc('gm_get_user_friend_code', { p_pwd: gmPwd, p_user_id: uid })
+                    .then(function (cr) {
+                      var permCode = (cr.data && cr.data[0] && cr.data[0].perm_code) || '';
+                      renderGmDetail(uid, name, phone, gr.data || [], friends, peers, lastActive, friendOnlineMap, permCode);
+                    })
+                    .catch(function () {
+                      renderGmDetail(uid, name, phone, gr.data || [], friends, peers, lastActive, friendOnlineMap, '');
+                    });
                 })
                 .catch(function () {
-                  renderGmDetail(uid, name, phone, gr.data || [], friends, [], lastActive, friendOnlineMap);
+                  renderGmDetail(uid, name, phone, gr.data || [], friends, [], lastActive, friendOnlineMap, '');
                 });
             });
           });
@@ -2878,7 +2916,7 @@
       });
   }
 
-  function renderGmDetail(uid, name, phone, groups, friends, peers, lastActive, friendOnlineMap) {
+  function renderGmDetail(uid, name, phone, groups, friends, peers, lastActive, friendOnlineMap, permCode) {
     var box = $('gm-detail');
     box.innerHTML = '';
     var userNo = gmCurrent ? gmCurrent.userNo : null;
@@ -2895,6 +2933,24 @@
     accBtn.onclick = function () { gmForceDeleteAccount(uid, name); };
     head.appendChild(accBtn);
     box.appendChild(head);
+
+    // 永久好友码（GM 专属查看，仅本人/GM 可见；带复制按钮）
+    if (permCode) {
+      var codeRow = el('div', 'gm-detail-code');
+      codeRow.appendChild(el('span', 'gm-detail-code-label', '永久好友码：'));
+      codeRow.appendChild(el('span', 'gm-detail-code-val', permCode));
+      var copyBtn = el('button', 'btn-mini gm-code-copy', '复制');
+      copyBtn.type = 'button';
+      copyBtn.onclick = function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(permCode).then(function () { toast('已复制好友码'); }, function () { toast('复制失败'); });
+        } else {
+          toast('当前环境不支持复制');
+        }
+      };
+      codeRow.appendChild(copyBtn);
+      box.appendChild(codeRow);
+    }
 
     // 搜索框：过滤该用户的好友 / 群聊
     var search = el('input', 'gm-detail-search');
@@ -3879,7 +3935,7 @@
       dot.classList.add(onlineFromIso(m.last_active) ? 'online' : 'offline');
       av.appendChild(dot);
       var info = el('div', 'gm-user-info');
-      info.appendChild(el('div', 'gm-user-name', (m.nickname || '(无昵称)') + (m.is_owner ? '（群主）' : '')));
+      info.appendChild(el('div', 'gm-user-name', (m.nickname || '(无昵称)') + (m.is_owner ? '（群主）' : (m.is_admin ? '（管理员）' : ''))));
       info.appendChild(el('div', 'gm-user-phone', (m.phone || '') + ' · ' + onlineText(m.last_active)));
       main.appendChild(av); main.appendChild(info);
       row.appendChild(main);
@@ -3966,7 +4022,8 @@
 
     var bubble;
     if (m.kind === 'text') {
-      bubble = el('div', 'gm-msg-bubble', m.content || '');
+      bubble = el('div', 'gm-msg-bubble');
+      bubble.appendChild(renderTextWithLinks(m.content || ''));
     } else if (m.kind === 'image') {
       bubble = el('div', 'gm-msg-bubble gm-msg-media');
       var img = document.createElement('img');
@@ -5959,33 +6016,36 @@
   }
 
   function loadGroups() {
-    // 逐级降级：avatar_path / pinned 列若尚未建立（SQL 未执行），自动退回可用的查询，
+    // 逐级降级：avatar_path / pinned / is_admin 列若尚未建立（SQL 未执行），自动退回可用的查询，
     // 保证群列表永远能显示，不会因为缺列整块空掉。
-    function fetchGroups(withAvatar, withPin) {
+    // 注意：pinned 与 is_admin 在同一 embedded select 中一起取，缺其一即整体降级（老库未跑迁移）。
+    function fetchGroups(withAvatar, withExtra) {
       var cols = 'id,name,owner_id' + (withAvatar ? ',avatar_path' : '') +
-                 ', group_members(user_id' + (withPin ? ', pinned' : '') + ')';
+                 ', group_members(user_id' + (withExtra ? ', pinned, is_admin' : '') + ')';
       return sb.from('groups').select(cols).order('created_at', { ascending: false });
     }
     return fetchGroups(true, true).then(function (r) {
       if (!r.error) return parseGroups(true, true, r);
       var msg = (r.error.message || '') + ' ' + (r.error.details || '') + ' ' + (r.error.hint || '');
-      var noAvatar = msg.indexOf('avatar_path') !== -1;
-      var noPin    = msg.indexOf('pinned') !== -1;
-      if (!noAvatar && !noPin) throw r.error;
-      return fetchGroups(!noAvatar, !noPin).then(function (r2) {
-        if (!r2.error) return parseGroups(!noAvatar, !noPin, r2);
+      // pinned / is_admin 任一缺失都降级到不取额外列
+      if (msg.indexOf('pinned') === -1 && msg.indexOf('is_admin') === -1) throw r.error;
+      return fetchGroups(true, false).then(function (r2) {
+        if (!r2.error) return parseGroups(true, false, r2);
         // 两列都缺时，第二次查询仍可能报另一个列名，再退到最小集合
         return fetchGroups(false, false).then(function (r3) { return parseGroups(false, false, r3); });
       });
     });
   }
 
-  function parseGroups(withAvatar, withPin, r) {
+  function parseGroups(withAvatar, withExtra, r) {
     if (r.error) throw r.error;
     state.groups = (r.data || []).map(function (g) {
-      var members = (g.group_members || []).map(function (m) { return m.user_id; });
-      var mine = (g.group_members || []).filter(function (m) { return m.user_id === state.uid; })[0];
-      var pinned = withPin && mine ? !!mine.pinned : false;
+      var mbrs = (g.group_members || []);
+      var members = mbrs.map(function (m) { return m.user_id; });
+      var mine = mbrs.filter(function (m) { return m.user_id === state.uid; })[0];
+      var pinned = withExtra && mine ? !!mine.pinned : false;
+      var admins = {};
+      if (withExtra) mbrs.forEach(function (m) { if (m.is_admin) admins[m.user_id] = true; });
       return {
         type: 'group',
         id: g.id,
@@ -5995,6 +6055,8 @@
         memberIds: members,
         memberCount: members.length,
         iAmOwner: g.owner_id === state.uid,
+        iAmAdmin: withExtra ? !!admins[state.uid] : false,
+        memberAdmins: admins,
         pinned: pinned,
         remark: state.groupRemarks[g.id] || null
       };
@@ -6114,15 +6176,17 @@
         }
       });
     }
-    $('group-info-name').disabled = !g.iAmOwner;
-    $('group-name-field').hidden = !g.iAmOwner;
-    $('group-info-save').hidden = !g.iAmOwner;
-    $('group-info-add').hidden = !g.iAmOwner;
+    // 群主或群管理员均可改名 / 添加成员；群图标与解散仍仅群主可操作
+    var isMgr = g.iAmOwner || g.iAmAdmin;
+    $('group-info-name').disabled = !isMgr;
+    $('group-name-field').hidden = !isMgr;
+    $('group-info-save').hidden = !isMgr;
+    $('group-info-add').hidden = !isMgr;
     // 群图标：仅群主可改，非群主只看不改
     setGroupAvatar($('group-info-avatar'), g);
     $('group-avatar-btn').hidden = !g.iAmOwner;
     $('group-avatar-clear').hidden = !g.iAmOwner || !g.avatar;
-    // 群主显示「解散群聊」、隐藏「退出群聊」；普通成员反之
+    // 群主显示「解散群聊」、隐藏「退出群聊」；普通成员 / 管理员反之
     $('group-info-dissolve').hidden = !g.iAmOwner;
     $('group-info-leave').hidden = g.iAmOwner;
     renderMemberList(g);
@@ -6197,7 +6261,9 @@
       setAvatar(av, { nickname: disp, phone: p.phone, avatarPath: p.avatar_path });
       applyTitleFrame(av, uid);
       var info = el('div', 'info');
-      var tag = (uid === g.ownerId) ? '（群主）' : (uid === state.uid ? '（我）' : '');
+      var isAdmin = !!(g.memberAdmins && g.memberAdmins[uid]);
+      var tag = (uid === g.ownerId) ? '（群主）'
+              : (isAdmin ? '（管理员）' : (uid === state.uid ? '（我）' : ''));
       var nm = el('div', 'nm');
       nm.appendChild(el('span', '', disp + tag));
       info.appendChild(nm);
@@ -6205,12 +6271,29 @@
       var on = isOnline(uid);
       info.appendChild(el('div', 'online-status ' + (on ? 'on' : 'off'), on ? '在线' : '离线'));
       li.appendChild(av); li.appendChild(info);
-      if (g.iAmOwner && uid !== g.ownerId) {
+      // 转让给群主：仅群主可操作，目标不能是群主 / 自己
+      if (g.iAmOwner && uid !== g.ownerId && uid !== state.uid) {
         var tr = el('button', 'mini-ok', '转让'); tr.type = 'button';
         tr.onclick = function () { transferOwner(g, uid); };
         li.appendChild(tr);
       }
+      // 设为 / 取消管理员：仅群主可操作，目标不能是群主 / 自己
       if (g.iAmOwner && uid !== g.ownerId && uid !== state.uid) {
+        var admb = el('button', isAdmin ? 'mini-no' : 'mini-ok', isAdmin ? '取消管理员' : '设为管理员');
+        admb.type = 'button';
+        admb.onclick = function () { setGroupAdmin(g, uid, !isAdmin); };
+        li.appendChild(admb);
+      }
+      // 移除成员权限：
+      //   群主：可移除任何他人（含管理员），不能移除自己
+      //   管理员：可移除普通成员，不能移除群主 / 其他管理员 / 自己
+      //   普通成员：只能通过底部「退出群聊」退群，无逐人移除权限
+      var canRemove = false;
+      if (uid !== state.uid) {
+        if (g.iAmOwner) canRemove = true;
+        else if (g.iAmAdmin && !isAdmin && uid !== g.ownerId) canRemove = true;
+      }
+      if (canRemove) {
         var rm = el('button', 'mini-no', '移除'); rm.type = 'button';
         rm.onclick = function () { removeMember(g, uid); };
         li.appendChild(rm);
@@ -6285,6 +6368,31 @@
       .catch(function (e) { toast(friendlyError(e)); });
   }
 
+  // 授予 / 剥夺群管理员：仅群主可操作，前端二次确认
+  function setGroupAdmin(g, uid, makeAdmin) {
+    if (!g || !g.iAmOwner) { toast('只有群主可以管理管理员'); return; }
+    var p = state.profilesById[uid] || {};
+    var name = groupNicknameOf(g.id, uid) || p.nickname || '该成员';
+    var tip = makeAdmin
+      ? '将「' + name + '」设为群管理员？\n管理员可添加/移除成员、修改群名称，但不能移除群主。'
+      : '取消「' + name + '」的管理员权限？';
+    if (!window.confirm(tip)) return;
+    sb.rpc('set_group_admin', { p_group_id: g.id, p_user_id: uid, p_is_admin: makeAdmin })
+      .then(function (r) { if (r.error) throw r.error; toast(makeAdmin ? '已设为群管理员' : '已取消管理员'); return loadGroups(); })
+      .then(function () {
+        var ng = groupById(g.id);
+        if (ng) { state.active = ng; renderMemberList(ng); }
+      })
+      .catch(function (e) {
+        var msg = (e && e.message) || '';
+        if (/set_group_admin|does not exist|PGRST202/i.test(msg)) {
+          toast('群管理员功能需要先在 Supabase 执行 20260914_group_admin.sql');
+          return;
+        }
+        toast(friendlyError(e));
+      });
+  }
+
   function leaveGroup() {
     if (!state.active || state.active.type !== 'group') return;
     var g = state.active;
@@ -6316,7 +6424,7 @@
   var frAddSearch = $('fr-add-search');
   if (frAddSearch) {
     frAddSearch.addEventListener('input', onFrAddSearch);
-    frAddSearch.addEventListener('keydown', function (e) { if (e.key === 'Enter') onFrAddSearch(); });
+    frAddSearch.addEventListener('keydown', function (e) { if (e.key === 'Enter') onFrAddSearch(true); });
   }
   var frAddClear = $('fr-add-clear');
   if (frAddClear) {
@@ -6376,12 +6484,14 @@
   });
 
   $('group-info-save').addEventListener('click', function () {
-    if (!state.active || !state.active.iAmOwner) return;
+    var g = state.active;
+    if (!g || (!g.iAmOwner && !g.iAmAdmin)) return;
     var name = $('group-info-name').value.trim();
     if (!name) { toast('群名称不能为空'); return; }
-    var gid = state.active.id;
+    var gid = g.id;
     var args = { p_group_id: gid, p_name: name };
-    if (pendingGroupAvatar !== null) args.p_avatar_path = pendingGroupAvatar;
+    // 群图标仅群主可改；管理员改名时不传头像（后端也会忽略）
+    if (g.iAmOwner && pendingGroupAvatar !== null) args.p_avatar_path = pendingGroupAvatar;
 
     var btn = $('group-info-save');
     btn.disabled = true; btn.textContent = '保存中…';
@@ -6688,22 +6798,33 @@
     try { $('fr-add-search').focus(); } catch (e) {}
   }
 
-  function onFrAddSearch() {
+  function onFrAddSearch(forceSubmit) {
     var kw = ($('fr-add-search') && $('fr-add-search').value || '').trim();
     var panel = $('fr-add-result');
     if (!panel) return;
     if (!kw) { panel.innerHTML = ''; panel.hidden = true; return; }
 
-    var fcCode = kw.toLowerCase();
-    if (/^[a-z0-9]{8}$/.test(fcCode)) {
-      addFriendByCode(fcCode);
-      return;
-    }
-
+    // 11 位手机号优先：直接按手机号查找，绝不被好友码逻辑拦截或清空输入框。
     if (PHONE_RE.test(kw)) {
       panel.hidden = false;
       panel.innerHTML = '<div class="note">正在查找…</div>';
-      sb.from('profiles').select('id,phone,nickname,avatar_path,hide_phone').eq('phone', kw).eq('hide_phone', false).maybeSingle()
+      // 开发者（持有「开发者」称号）可突破 hide_phone 限制，按手机号找到并添加隐藏手机号的用户；
+      // 普通用户保持隐私过滤，无法搜到隐藏手机号的用户。
+      // 开发者走 SECURITY DEFINER RPC（绕过 RLS），普通用户仍受 hide_phone=false 过滤。
+      var searchPromise;
+      if (state.isDev) {
+        searchPromise = sb.rpc('search_user_by_phone_for_dev', { p_phone: kw }).then(function (r) {
+          if (r.error) throw r.error;
+          return { data: (r.data && r.data[0]) || null, error: null };
+        });
+      } else {
+        searchPromise = sb.from('profiles')
+          .select('id,phone,nickname,avatar_path,hide_phone')
+          .eq('phone', kw)
+          .eq('hide_phone', false)
+          .maybeSingle();
+      }
+      searchPromise
         .then(function (r) {
           if (r.error) { renderFrAddNote('查找失败：' + friendlyError(r.error)); return; }
           panel.innerHTML = '';
@@ -6725,6 +6846,19 @@
           panel.hidden = false;
         })
         .catch(function (e) { renderFrAddNote('查找失败：' + friendlyError(e)); });
+      return;
+    }
+
+    var fcCode = kw.toLowerCase();
+    // 好友码为 8 位 [a-z0-9]。纯数字 8 位会与「正在输入的手机号前缀」冲突，
+    // 故仅当包含字母时才在输入时自动提交；纯数字 8 位需回车（forceSubmit）显式提交，
+    // 这样既保留好友码自动添加，又不会在输手机号到一半时被误判并清空输入框。
+    if (/^[a-z0-9]{8}$/.test(fcCode)) {
+      if (/[a-z]/.test(fcCode) || forceSubmit) {
+        addFriendByCode(fcCode);
+      } else {
+        renderFrAddNote('继续输入到 11 位即按手机号查找；若这是纯数字好友码，按回车添加');
+      }
       return;
     }
 
@@ -7405,6 +7539,32 @@
     return bubble;
   }
 
+  // 把消息文本中的 URL 渲染为可点击链接；手动构建节点，杜绝 innerHTML 注入。
+  function renderTextWithLinks(text) {
+    var frag = document.createDocumentFragment();
+    if (!text) return frag;
+    // 匹配 http(s):// 与 www. 开头的链接；排除常见结尾标点，避免把句末标点吞进链接
+    var re = /(https?:\/\/[^\s<>"'）)]+|www\.[^\s<>"'）)]+)/gi;
+    var last = 0, mt;
+    while ((mt = re.exec(text)) !== null) {
+      if (mt.index > last) frag.appendChild(document.createTextNode(text.slice(last, mt.index)));
+      var raw = mt[0];
+      var href = /^https?:\/\//i.test(raw) ? raw : ('https://' + raw);
+      var a = document.createElement('a');
+      a.className = 'chat-link';
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = raw;
+      // 阻止冒泡，避免误触发消息级操作（如长按菜单）
+      a.addEventListener('click', function (e) { e.stopPropagation(); });
+      frag.appendChild(a);
+      last = re.lastIndex;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    return frag;
+  }
+
   function renderMessage(m) {
     var out = m.sender_id === state.uid;
     var wrap = el('div', 'msg ' + (out ? 'out' : 'in'));
@@ -7442,7 +7602,8 @@
 
     var bubble;
     if (m.kind === 'text') {
-      bubble = el('div', 'bubble', m.content || '');
+      bubble = el('div', 'bubble');
+      bubble.appendChild(renderTextWithLinks(m.content || ''));
     } else if (m.kind === 'image') {
       bubble = el('div', 'bubble media');
       var img = document.createElement('img');
@@ -8278,4 +8439,612 @@
     if (document.hidden) flushDraft();
   });
   window.addEventListener('beforeunload', function () { flushDraft(); });
+
+  /* ============================================================
+   *  交友广场（v280）：帖子 / 图片视频链接 / 嵌套回复 / 关注 / 个人主页
+   * ============================================================ */
+  var sq = {
+    view: 'home', postId: null, profileId: null, followType: null,
+    composerMode: 'create', editPostId: null, _editPostObj: null,
+    replyTo: null, media: [], stack: [],
+    query: '', searchTab: 'post'   // v282：广场内搜索
+  };
+
+  function sqPush() {
+    sq.stack.push({
+      view: sq.view, postId: sq.postId, profileId: sq.profileId,
+      followType: sq.followType, editPost: sq._editPostObj
+    });
+  }
+  function sqBack() {
+    if (!sq.stack.length) { openSquare(); return; }
+    var prev = sq.stack.pop();
+    sq.view = prev.view; sq.postId = prev.postId; sq.profileId = prev.profileId;
+    sq.followType = prev.followType; sq._editPostObj = prev.editPost; sq.replyTo = null;
+    if (prev.view === 'home') renderSquareHome();
+    else if (prev.view === 'post') renderSquarePost(prev.postId);
+    else if (prev.view === 'profile') openSquareProfile(prev.profileId, true);
+    else if (prev.view === 'followlist') openSquareFollowList(prev.followType, prev.profileId, true);
+    else if (prev.view === 'compose') openSquareCompose(prev.editPost, true);
+    else if (prev.view === 'search') renderSquareSearch(sq.query, sq.searchTab);
+    else renderSquareHome();
+  }
+  function sqSetTitle(t) { var e = $('sq-title'); if (e) e.textContent = t; }
+  function sqBackBtn(show) { var b = $('sq-back'); if (b) b.hidden = !show; }
+
+  function openSquare() {
+    sq.stack = []; sq.view = 'home'; sq.replyTo = null; sq.media = [];
+    resetSquareSearch();
+    showModal('square-modal');
+    renderSquareHome();
+  }
+  function closeSquare() {
+    sq.stack = []; sq.media = []; sq.replyTo = null;
+    resetSquareSearch();
+    hideModal('square-modal');
+  }
+
+  function sqTime(iso) {
+    var d = new Date(iso); if (isNaN(d.getTime())) return '';
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function sqProfile(uid) {
+    return sb.from('profiles').select('id,nickname,phone,avatar_path,user_number').eq('id', uid).maybeSingle();
+  }
+  function sqName(u) { return (u && (u.nickname || (u.phone ? maskPhone(u.phone) : ''))) || '用户'; }
+  function sqCount(table, col, val) {
+    return sb.from(table).select('*', { count: 'exact', head: true }).eq(col, val)
+      .then(function (r) { return r.error ? 0 : (r.count || 0); });
+  }
+  function sqIsFollowing(target) {
+    return sb.from('user_follows').select('*', { count: 'exact', head: true })
+      .eq('follower_id', state.uid).eq('followee_id', target)
+      .then(function (r) { return !r.error && r.count > 0; });
+  }
+
+  function sqRenderMedia(container, media) {
+    if (!container) return; container.innerHTML = '';
+    (media || []).forEach(function (m) {
+      if (m.media_type === 'video') {
+        var v = document.createElement('video');
+        v.controls = true; v.playsInline = true; v.preload = 'metadata';
+        v.onclick = function () { signedUrl(m.url).then(function (u) { if (u) openReportPreview(u, true); }); };
+        container.appendChild(v);
+        signedUrl(m.url).then(function (u) { if (u) v.src = u; });
+      } else {
+        var im = document.createElement('img'); im.alt = '图片'; im.loading = 'lazy';
+        im.onclick = function () { signedUrl(m.url).then(function (u) { if (u) openReportPreview(u, false); }); };
+        container.appendChild(im);
+        signedUrl(m.url).then(function (u) { if (u) im.src = u; });
+      }
+    });
+  }
+
+  /* ---------- 广场首页 ---------- */
+  function renderSquareHome() {
+    sq.view = 'home'; sqBackBtn(false); sqSetTitle('交友广场');
+    var body = $('sq-body'); if (!body) return;
+    body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载中…'));
+    loadSquarePosts().then(function (posts) {
+      body.innerHTML = '';
+      if (!posts.length) { body.appendChild(el('div', 'sq-empty', '还没有帖子，点右上角「发帖」抢沙发吧')); return; }
+      posts.forEach(function (p) { body.appendChild(makePostCard(p)); });
+    }).catch(function (e) {
+      body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载失败：' + friendlyError(e)));
+    });
+  }
+  function loadSquarePosts() {
+    return sb.from('forum_posts').select('id,author_id,title,body,link,created_at')
+      .order('created_at', { ascending: false }).limit(50)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var posts = r.data || [];
+        var ids = posts.map(function (p) { return p.author_id; });
+        if (!ids.length) return posts;
+        return sb.from('profiles').select('id,nickname,phone,avatar_path').in('id', ids)
+          .then(function (pr) {
+            if (pr.error) throw pr.error;
+            var map = {}; (pr.data || []).forEach(function (u) { map[u.id] = u; });
+            posts.forEach(function (p) { p.author = map[p.author_id]; });
+            return posts;
+          });
+      });
+  }
+  function makePostCard(p) {
+    var card = el('div', 'sq-post');
+    var head = el('div', 'sq-post-head');
+    var av = el('div', 'avatar sm'); setAvatar(av, { nickname: p.author && p.author.nickname, phone: p.author && p.author.phone, avatarPath: p.author && p.author.avatar_path });
+    av.onclick = function (e) { e.stopPropagation(); sqPush(); openSquareProfile(p.author_id); };
+    var nm = el('div', 'sq-post-author', sqName(p.author)); nm.onclick = function (e) { e.stopPropagation(); sqPush(); openSquareProfile(p.author_id); };
+    var tm = el('div', 'sq-post-time', sqTime(p.created_at));
+    head.appendChild(av); head.appendChild(nm); head.appendChild(tm);
+    card.appendChild(head);
+    if (p.title) card.appendChild(el('div', 'sq-post-title', p.title));
+    if (p.body) { var b = el('div', 'sq-post-body'); b.appendChild(renderTextWithLinks(p.body)); card.appendChild(b); }
+    if (p.link) { var lk = el('a', 'sq-post-link', p.link); lk.href = p.link; lk.target = '_blank'; lk.rel = 'noopener noreferrer'; lk.onclick = function (e) { e.stopPropagation(); }; card.appendChild(lk); }
+    var foot = el('div', 'sq-post-foot', '');
+    sb.from('forum_replies').select('*', { count: 'exact', head: true }).eq('post_id', p.id)
+      .then(function (rc) { if (!rc.error) foot.textContent = rc.count + ' 条回复'; });
+    card.appendChild(foot);
+    card.onclick = function () { sqPush(); openSquarePost(p.id); };
+    return card;
+  }
+
+  /* ---------- 帖子详情 ---------- */
+  function openSquarePost(id, skipPush) {
+    if (!skipPush) sqPush();
+    sq.view = 'post'; sq.postId = id; sq.replyTo = null;
+    renderSquarePost(id);
+  }
+  function renderSquarePost(id) {
+    sqSetTitle('帖子详情'); sqBackBtn(true);
+    var body = $('sq-body'); if (!body) return;
+    body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载中…'));
+    loadSquarePostData(id).then(function (data) {
+      body.innerHTML = '';
+      if (!data.post) { body.appendChild(el('div', 'sq-empty', '帖子不存在或已删除')); return; }
+      var p = data.post;
+      var head = el('div', 'sq-post-head');
+      var av = el('div', 'avatar'); av.style.width = '40px'; av.style.height = '40px'; av.style.fontSize = '16px';
+      setAvatar(av, { nickname: p.author && p.author.nickname, phone: p.author && p.author.phone, avatarPath: p.author && p.author.avatar_path });
+      av.onclick = function (e) { e.stopPropagation(); sqPush(); openSquareProfile(p.author_id); };
+      var nm = el('div', 'sq-post-author', sqName(p.author)); nm.onclick = function (e) { e.stopPropagation(); sqPush(); openSquareProfile(p.author_id); };
+      var tm = el('div', 'sq-post-time', sqTime(p.created_at));
+      head.appendChild(av); head.appendChild(nm); head.appendChild(tm);
+      body.appendChild(head);
+      if (p.title) body.appendChild(el('div', 'sq-post-title', p.title));
+      if (p.body) { var b = el('div', 'sq-post-body'); b.appendChild(renderTextWithLinks(p.body)); body.appendChild(b); }
+      if (p.link) { var lk = el('a', 'sq-post-link', p.link); lk.href = p.link; lk.target = '_blank'; lk.rel = 'noopener noreferrer'; body.appendChild(lk); }
+      if (data.media && data.media.length) { var mw = el('div', 'sq-detail-media'); sqRenderMedia(mw, data.media); body.appendChild(mw); }
+      if (p.author_id === state.uid) {
+        var acts = el('div', 'sq-detail-actions');
+        var edit = el('button', 'sq-btn', '编辑'); edit.onclick = function () { openSquareCompose(p); };
+        var del = el('button', 'sq-btn', '删除'); del.onclick = function () { deletePost(p.id); };
+        acts.appendChild(edit); acts.appendChild(del); body.appendChild(acts);
+      }
+      body.appendChild(el('div', 'section-title', '回复'));
+      var rlist = el('div', 'sq-reply-list');
+      var roots = buildReplyTree(data.replies);
+      if (!roots.length) rlist.appendChild(el('div', 'sq-empty', '还没有回复，来抢沙发'));
+      roots.forEach(function (r) { rlist.appendChild(renderReplyNode(r, p.author_id, 0)); });
+      body.appendChild(rlist);
+      var rbox = el('div', 'sq-reply-box');
+      var hint = el('div', 'sq-reply-hint'); hint.id = 'sq-reply-hint'; hint.textContent = '回复楼主';
+      var ta = el('textarea'); ta.id = 'sq-reply-text'; ta.placeholder = '写下你的回复…';
+      var send = el('button', 'sq-btn sq-btn-primary', '发布回复'); send.type = 'button'; send.id = 'sq-reply-send';
+      send.onclick = function () { submitSquareReply(); };
+      rbox.appendChild(hint); rbox.appendChild(ta); rbox.appendChild(send);
+      body.appendChild(rbox);
+    }).catch(function (e) {
+      body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载失败：' + friendlyError(e)));
+    });
+  }
+  function loadSquarePostData(id) {
+    return sb.from('forum_posts').select('id,author_id,title,body,link,created_at').eq('id', id).maybeSingle()
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data) return { post: null };
+        var p = r.data;
+        return Promise.all([
+          sb.from('profiles').select('id,nickname,phone,avatar_path').eq('id', p.author_id).maybeSingle(),
+          sb.from('forum_post_media').select('id,url,media_type,sort_order').eq('post_id', id).order('sort_order'),
+          sb.from('forum_replies').select('id,post_id,author_id,parent_id,body,created_at,deleted_by').eq('post_id', id).order('created_at')
+        ]).then(function (res) {
+          var replies = res[2].data || [];
+          var authorIds = replies.map(function (x) { return x.author_id; }); authorIds.push(p.author_id);
+          return sb.from('profiles').select('id,nickname,phone,avatar_path').in('id', authorIds).then(function (pr) {
+            var map = {}; (pr.data || []).forEach(function (u) { map[u.id] = u; });
+            p.author = map[p.author_id] || { nickname: null, phone: null };
+            replies.forEach(function (x) { x.author = map[x.author_id] || { nickname: null, phone: null }; });
+            return { post: p, media: res[1].data || [], replies: replies };
+          });
+        });
+      });
+  }
+  function buildReplyTree(flat) {
+    var byId = {}, roots = [];
+    flat.forEach(function (r) { r._children = []; byId[r.id] = r; });
+    flat.forEach(function (r) {
+      if (r.parent_id && byId[r.parent_id]) byId[r.parent_id]._children.push(r);
+      else roots.push(r);
+    });
+    function sortRec(list) {
+      list.sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at); });
+      list.forEach(function (x) { sortRec(x._children); });
+    }
+    sortRec(roots);
+    return roots;
+  }
+  function renderReplyNode(r, postAuthorId, depth) {
+    var node = el('div', 'sq-reply');
+    var head = el('div', 'sq-reply-head');
+    var av = el('div', 'avatar sm'); setAvatar(av, { nickname: r.author && r.author.nickname, phone: r.author && r.author.phone, avatarPath: r.author && r.author.avatar_path });
+    av.onclick = function (e) { e.stopPropagation(); sqPush(); openSquareProfile(r.author_id); };
+    var nm = el('div', 'sq-reply-author', sqName(r.author)); nm.onclick = function (e) { e.stopPropagation(); sqPush(); openSquareProfile(r.author_id); };
+    var tm = el('div', 'sq-reply-time', sqTime(r.created_at));
+    head.appendChild(av); head.appendChild(nm); head.appendChild(tm);
+    node.appendChild(head);
+    if (r.deleted_by && r.deleted_by.indexOf(state.uid) >= 0) {
+      node.appendChild(el('div', 'sq-reply-body sq-reply-deleted', '(已删除)'));
+    } else {
+      var bodyEl = el('div', 'sq-reply-body'); bodyEl.appendChild(renderTextWithLinks(r.body || '')); node.appendChild(bodyEl);
+      var acts = el('div', 'sq-reply-actions');
+      var rep = el('span', 'sq-link-btn', '回复'); rep.onclick = function (e) { e.stopPropagation(); setReplyTo(r); }; acts.appendChild(rep);
+      if (r.author_id === state.uid) {
+        var del = el('span', 'sq-link-btn', '删除'); del.onclick = function (e) { e.stopPropagation(); deleteReply(r.id); }; acts.appendChild(del);
+      }
+      node.appendChild(acts);
+    }
+    if (r._children && r._children.length && depth < 3) {
+      var kids = el('div', 'sq-reply-children');
+      r._children.forEach(function (c) { kids.appendChild(renderReplyNode(c, postAuthorId, depth + 1)); });
+      node.appendChild(kids);
+    }
+    return node;
+  }
+  function setReplyTo(r) {
+    sq.replyTo = { replyId: r.id, name: sqName(r.author) };
+    var hint = $('sq-reply-hint'); if (hint) hint.textContent = '回复 @' + sq.replyTo.name;
+    var ta = $('sq-reply-text'); if (ta) try { ta.focus(); } catch (e) {}
+  }
+  function submitSquareReply() {
+    var ta = $('sq-reply-text'); if (!ta) return;
+    var body = ta.value.trim(); if (!body) { toast('回复不能为空'); return; }
+    var btn = $('sq-reply-send'); if (btn) btn.disabled = true;
+    sb.from('forum_replies').insert({ post_id: sq.postId, author_id: state.uid, parent_id: sq.replyTo ? sq.replyTo.replyId : null, body: body })
+      .then(function (r) { if (r.error) throw r.error; ta.value = ''; sq.replyTo = null; renderSquarePost(sq.postId); })
+      .catch(function (e) { toast(friendlyError(e)); if (btn) btn.disabled = false; });
+  }
+  function deleteReply(id) {
+    if (!window.confirm('确定删除这条回复吗？')) return;
+    sb.from('forum_replies').update({ deleted_by: [state.uid] }).eq('id', id).eq('author_id', state.uid)
+      .then(function (r) { if (r.error) throw r.error; renderSquarePost(sq.postId); })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+  function deletePost(id) {
+    if (!window.confirm('确定删除这篇帖子吗？删除后所有人不可见。')) return;
+    sb.from('forum_posts').update({ deleted_by: [state.uid] }).eq('id', id).eq('author_id', state.uid)
+      .then(function (r) { if (r.error) throw r.error; toast('已删除'); renderSquareHome(); })
+      .catch(function (e) { toast(friendlyError(e)); });
+  }
+
+  /* ---------- 发帖 / 编辑 ---------- */
+  function openSquareCompose(editPost, skipPush) {
+    if (!skipPush) sqPush();
+    sq.view = 'compose'; sq.composerMode = editPost ? 'edit' : 'create';
+    sq.editPostId = editPost ? editPost.id : null; sq._editPostObj = editPost || null; sq.replyTo = null;
+    sqSetTitle(editPost ? '编辑帖子' : '发帖'); sqBackBtn(true);
+    var body = $('sq-body'); if (!body) return; body.innerHTML = '';
+    var form = el('div', 'sq-form');
+    var tLabel = el('label', null, '标题');
+    var tInput = el('input'); tInput.type = 'text'; tInput.maxLength = 80; tInput.placeholder = '给你的帖子起个标题'; tInput.id = 'sq-title-input';
+    var bLabel = el('label', null, '正文');
+    var bArea = el('textarea'); bArea.id = 'sq-body-input'; bArea.placeholder = '说点什么…';
+    var lLabel = el('label', null, '链接（可选）');
+    var lInput = el('input'); lInput.type = 'text'; lInput.placeholder = 'https://…'; lInput.id = 'sq-link-input';
+    var mLabel = el('label', null, '图片 / 视频');
+    var fileBtn = el('button', 'sq-btn', '选择图片/视频'); fileBtn.type = 'button';
+    var fileInput = el('input'); fileInput.type = 'file'; fileInput.accept = 'image/*,video/*'; fileInput.multiple = true; fileInput.style.display = 'none'; fileInput.id = 'sq-file-input';
+    var mediaWrap = el('div', 'sq-form-media'); mediaWrap.id = 'sq-media-wrap';
+    var actions = el('div', 'sq-form-actions');
+    var submit = el('button', 'sq-btn sq-btn-primary', editPost ? '保存' : '发布'); submit.type = 'button'; submit.id = 'sq-submit';
+    var cancel = el('button', 'sq-btn', '取消'); cancel.type = 'button';
+    form.appendChild(tLabel); form.appendChild(tInput);
+    form.appendChild(bLabel); form.appendChild(bArea);
+    form.appendChild(lLabel); form.appendChild(lInput);
+    form.appendChild(mLabel); form.appendChild(fileBtn); form.appendChild(fileInput); form.appendChild(mediaWrap);
+    form.appendChild(actions); actions.appendChild(submit); actions.appendChild(cancel);
+    body.appendChild(form);
+    // 编辑时把已有媒体预填
+    sq.media = [];
+    if (editPost) {
+      var mq = sb.from('forum_post_media').select('id,url,media_type').eq('post_id', editPost.id).order('sort_order');
+      mq.then(function (mr) {
+        if (!mr.error && mr.data) {
+          sq.media = mr.data.map(function (m) { return { existing: true, path: m.url, type: m.media_type, url: null }; });
+          renderSqMediaPreview();
+        }
+      });
+      tInput.value = editPost.title || ''; bArea.value = editPost.body || ''; lInput.value = editPost.link || '';
+    }
+    fileBtn.onclick = function () { fileInput.click(); };
+    fileInput.onchange = function () { onSqFilesPicked(fileInput); };
+    renderSqMediaPreview();
+    submit.onclick = function () { submitSquarePost(editPost); };
+    cancel.onclick = function () { sqBack(); };
+  }
+  function onSqFilesPicked(input) {
+    var files = input.files; if (!files || !files.length) return;
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (f.size > 50 * 1024 * 1024) { toast('单个文件请小于 50MB'); continue; }
+      var url = URL.createObjectURL(f);
+      var type = f.type.indexOf('video') === 0 ? 'video' : 'image';
+      sq.media.push({ file: f, url: url, type: type });
+    }
+    input.value = '';
+    renderSqMediaPreview();
+  }
+  function renderSqMediaPreview() {
+    var wrap = $('sq-media-wrap'); if (!wrap) return; wrap.innerHTML = '';
+    sq.media.forEach(function (m, idx) {
+      var cell = el('div');
+      if (m.type === 'video') {
+        var v = document.createElement('video'); v.src = m.url || ''; v.controls = true; cell.appendChild(v);
+      } else {
+        var im = document.createElement('img'); im.alt = '预览'; cell.appendChild(im);
+        if (m.url) im.src = m.url;
+        else if (m.existing) signedUrl(m.path).then(function (u) { if (u) im.src = u; });
+      }
+      var x = el('button', 'sq-media-x', '×'); x.type = 'button';
+      x.onclick = function () {
+        if (m.url && m.url.indexOf('blob:') === 0) { try { URL.revokeObjectURL(m.url); } catch (e) {} }
+        sq.media.splice(idx, 1); renderSqMediaPreview();
+      };
+      cell.appendChild(x); wrap.appendChild(cell);
+    });
+  }
+  function uploadSqMediaList(list) {
+    var paths = [];
+    return Promise.all((list || []).map(function (m) {
+      if (m.existing && m.path) { paths.push(m.path); return; }
+      var file = m.file;
+      var ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+      var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+      var path = state.uid + '/square/' + rand + (ext ? '.' + ext : '');
+      return sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
+        .then(function (r) { if (r.error) throw r.error; paths.push(path); });
+    })).then(function () { return paths; });
+  }
+  function submitSquarePost(editPost) {
+    var tInput = $('sq-title-input'), bArea = $('sq-body-input'), lInput = $('sq-link-input');
+    var title = (tInput ? tInput.value : '').trim();
+    var body = (bArea ? bArea.value : '').trim();
+    var link = (lInput ? lInput.value : '').trim();
+    if (!title && !body) { toast('标题和正文至少填一项'); return; }
+    var btn = $('sq-submit'); if (btn) { btn.disabled = true; btn.textContent = '发布中…'; }
+    if (editPost) {
+      var newMedia = sq.media.filter(function (m) { return !m.existing; });
+      uploadSqMediaList(newMedia).then(function (paths) {
+        return sb.from('forum_posts').update({ title: title, body: body, link: link || null, updated_at: new Date().toISOString() })
+          .eq('id', editPost.id).eq('author_id', state.uid)
+          .then(function (r) {
+            if (r.error) throw r.error;
+            if (paths.length) {
+              var rows = paths.map(function (p, idx) { return { post_id: editPost.id, url: p, media_type: newMedia[idx].type, sort_order: 100 + idx }; });
+              return sb.from('forum_post_media').insert(rows);
+            }
+          }).then(function () { return editPost.id; });
+      }).then(function (pid) { toast('已保存'); openSquarePost(pid, true); })
+        .catch(function (e) { toast(friendlyError(e)); var b = $('sq-submit'); if (b) { b.disabled = false; b.textContent = '保存'; } });
+    } else {
+      uploadSqMediaList(sq.media).then(function (paths) {
+        return sb.from('forum_posts').insert({ author_id: state.uid, title: title, body: body, link: link || null }).select('id').single()
+          .then(function (r) {
+            if (r.error) throw r.error;
+            var pid = r.data.id;
+            if (paths.length) {
+              var rows = paths.map(function (p, idx) { return { post_id: pid, url: p, media_type: sq.media[idx].type, sort_order: idx }; });
+              return sb.from('forum_post_media').insert(rows).then(function () { return pid; });
+            }
+            return pid;
+          });
+      }).then(function (pid) { toast('已发布'); openSquarePost(pid, true); })
+        .catch(function (e) {
+          toast(friendlyError(e));
+          var b = $('sq-submit'); if (b) { b.disabled = false; b.textContent = '发布'; }
+        });
+    }
+  }
+
+  /* ---------- 个人主页 / 关注 ---------- */
+  function openSquareProfile(uid, skipPush) {
+    if (!skipPush) sqPush();
+    sq.view = 'profile'; sq.profileId = uid;
+    sqSetTitle(uid === state.uid ? '我的主页' : '用户主页'); sqBackBtn(true);
+    var body = $('sq-body'); if (!body) return; body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载中…'));
+    Promise.all([
+      sqProfile(uid),
+      sqCount('forum_posts', 'author_id', uid),
+      sb.from('user_follows').select('*', { count: 'exact', head: true }).eq('followee_id', uid),
+      sb.from('user_follows').select('*', { count: 'exact', head: true }).eq('follower_id', uid),
+      sqIsFollowing(uid)
+    ]).then(function (res) {
+      var prof = res[0], pc = res[1], fc = res[2], ing = res[3], following = res[4];
+      if (prof.error) throw prof.error;
+      renderProfileBody(uid, prof.data, pc, fc.count || 0, ing.count || 0, following);
+    }).catch(function (e) {
+      body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载失败：' + friendlyError(e)));
+    });
+  }
+  function renderProfileBody(uid, prof, postCount, followers, following, isFollowing) {
+    var body = $('sq-body'); if (!body) return; body.innerHTML = '';
+    var head = el('div', 'sq-profile-head');
+    var av = el('div', 'avatar'); av.style.width = '56px'; av.style.height = '56px'; av.style.fontSize = '22px';
+    setAvatar(av, { nickname: prof.nickname, phone: prof.phone, avatarPath: prof.avatar_path });
+    var info = el('div');
+    info.appendChild(el('div', 'sq-profile-name', prof.nickname || maskPhone(prof.phone) || '用户'));
+    if (prof.user_number) info.appendChild(el('div', 'sq-profile-no', '编号 #' + prof.user_number));
+    head.appendChild(av); head.appendChild(info);
+    body.appendChild(head);
+    var stats = el('div', 'sq-profile-stats');
+    var s1 = el('div'); s1.innerHTML = '<b>' + postCount + '</b> 帖子'; s1.onclick = function () {};
+    var s2 = el('div'); s2.innerHTML = '<b>' + followers + '</b> 粉丝'; s2.onclick = function () { sqPush(); openSquareFollowList('followers', uid); };
+    var s3 = el('div'); s3.innerHTML = '<b>' + following + '</b> 关注'; s3.onclick = function () { sqPush(); openSquareFollowList('following', uid); };
+    stats.appendChild(s1); stats.appendChild(s2); stats.appendChild(s3);
+    body.appendChild(stats);
+    if (uid !== state.uid) {
+      var acts = el('div', 'sq-profile-actions');
+      var add = el('button', 'sq-btn', '添加好友'); add.onclick = function () { sendRequest({ id: uid, nickname: prof.nickname, phone: prof.phone }, null); };
+      var fol = el('button', 'sq-btn', isFollowing ? '已关注' : '关注');
+      fol.onclick = function () { toggleFollow(uid, fol); };
+      acts.appendChild(add); acts.appendChild(fol); body.appendChild(acts);
+    }
+    body.appendChild(el('div', 'section-title', 'TA 的帖子'));
+    var list = el('div', 'sq-reply-list');
+    body.appendChild(list);
+    sb.from('forum_posts').select('id,author_id,title,body,link,created_at').eq('author_id', uid)
+      .order('created_at', { ascending: false }).limit(50)
+      .then(function (r) {
+        if (r.error) { list.appendChild(el('div', 'sq-empty', '加载失败')); return; }
+        var posts = r.data || [];
+        if (!posts.length) { list.appendChild(el('div', 'sq-empty', '还没有发过帖子')); return; }
+        posts.forEach(function (p) { p.author = prof; list.appendChild(makePostCard(p)); });
+      });
+  }
+  function toggleFollow(target, btn) {
+    if (btn) btn.disabled = true;
+    sqIsFollowing(target).then(function (yes) {
+      if (yes) {
+        return sb.from('user_follows').delete().eq('follower_id', state.uid).eq('followee_id', target)
+          .then(function (r) { if (r.error) throw r.error; toast('已取消关注'); openSquareProfile(target, true); });
+      }
+      return sb.from('user_follows').insert({ follower_id: state.uid, followee_id: target })
+        .then(function (r) { if (r.error) throw r.error; toast('已关注'); openSquareProfile(target, true); });
+    }).catch(function (e) { toast(friendlyError(e)); if (btn) btn.disabled = false; });
+  }
+  function openSquareFollowList(type, uid, skipPush) {
+    if (!skipPush) sqPush();
+    sq.view = 'followlist'; sq.followType = type; sq.profileId = uid;
+    sqSetTitle(type === 'followers' ? '粉丝' : '关注'); sqBackBtn(true);
+    var body = $('sq-body'); if (!body) return; body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载中…'));
+    var q = type === 'followers'
+      ? sb.from('user_follows').select('follower_id').eq('followee_id', uid)
+      : sb.from('user_follows').select('followee_id').eq('follower_id', uid);
+    q.then(function (r) {
+      if (r.error) throw r.error;
+      var ids = (r.data || []).map(function (x) { return x.follower_id || x.followee_id; });
+      if (!ids.length) { body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', type === 'followers' ? '还没有粉丝' : '还没有关注任何人')); return; }
+      return sb.from('profiles').select('id,nickname,phone,avatar_path').in('id', ids).then(function (pr) {
+        if (pr.error) throw pr.error; body.innerHTML = '';
+        if (!pr.data || !pr.data.length) { body.appendChild(el('div', 'sq-empty', '还没有关注任何人')); return; }
+        pr.data.forEach(function (u) { body.appendChild(makeUserRow(u)); });
+      });
+    }).catch(function (e) { body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载失败：' + friendlyError(e))); });
+  }
+  function makeUserRow(u) {
+    var row = el('div', 'sq-user-row');
+    var av = el('div', 'avatar sm'); setAvatar(av, { nickname: u.nickname, phone: u.phone, avatarPath: u.avatar_path });
+    var nm = el('div', null, u.nickname || maskPhone(u.phone) || '用户');
+    row.appendChild(av); row.appendChild(nm);
+    row.onclick = function () { sqPush(); openSquareProfile(u.id); };
+    return row;
+  }
+
+  /* ---------- 广场内搜索（v282）：模糊搜帖子 / 用户 ---------- */
+  var sqSearchTimer = null;
+
+  // 过滤 PostgREST or / ilike 语法里的危险字符：
+  // 逗号会把 `a,b` 拆成两个条件，括号会破坏 or 表达式，星号 / 反斜杠 / 引号同理
+  function sqSafeKw(kw) {
+    return String(kw || '').replace(/[,()*\\%"']/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function sqMarkTab(tab) {
+    var tp = $('sq-tab-post'), tu = $('sq-tab-user');
+    if (tp) tp.className = 'sq-tab' + (tab === 'post' ? ' is-active' : '');
+    if (tu) tu.className = 'sq-tab' + (tab === 'user' ? ' is-active' : '');
+  }
+  function resetSquareSearch() {
+    sq.query = ''; sq.searchTab = 'post';
+    if (sqSearchTimer) { clearTimeout(sqSearchTimer); sqSearchTimer = null; }
+    var inp = $('sq-search-input'); if (inp) inp.value = '';
+    var clr = $('sq-search-clear'); if (clr) clr.hidden = true;
+    var tabs = $('sq-search-tabs'); if (tabs) tabs.hidden = true;
+    sqMarkTab('post');
+  }
+  function onSqSearchInput() {
+    var inp = $('sq-search-input'); if (!inp) return;
+    var raw = inp.value.trim();
+    var clr = $('sq-search-clear'); if (clr) clr.hidden = !raw;
+    if (sqSearchTimer) { clearTimeout(sqSearchTimer); sqSearchTimer = null; }
+    if (!raw) { if (sq.view === 'search') sqBack(); return; }
+    sqSearchTimer = setTimeout(function () {
+      sqSearchTimer = null;
+      renderSquareSearch(raw, sq.searchTab);
+    }, 350);
+  }
+  function clearSquareSearch() {
+    var inp = $('sq-search-input'); if (inp) inp.value = '';
+    var clr = $('sq-search-clear'); if (clr) clr.hidden = true;
+    if (sqSearchTimer) { clearTimeout(sqSearchTimer); sqSearchTimer = null; }
+    if (sq.view === 'search') sqBack();
+  }
+  function sqSetSearchTab(tab) {
+    sq.searchTab = tab; sqMarkTab(tab);
+    var inp = $('sq-search-input');
+    var kw = inp ? inp.value.trim() : '';
+    if (kw) renderSquareSearch(kw, tab);
+  }
+  function renderSquareSearch(kw, tab) {
+    if (sq.view !== 'search') sqPush();
+    sq.view = 'search'; sq.query = kw; sq.searchTab = tab || 'post';
+    sqSetTitle('搜索结果'); sqBackBtn(true);
+    var tabs = $('sq-search-tabs'); if (tabs) tabs.hidden = false;
+    sqMarkTab(sq.searchTab);
+    var body = $('sq-body'); if (!body) return;
+    body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '搜索中…'));
+    var safe = sqSafeKw(kw);
+    if (!safe) {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'sq-empty', '请输入有效关键词'));
+      return;
+    }
+    var task = sq.searchTab === 'user' ? squareSearchUsers(safe) : squareSearchPosts(safe);
+    task.then(function (list) {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'sq-result-count', sq.searchTab === 'user'
+        ? '找到 ' + list.length + ' 位用户' : '找到 ' + list.length + ' 篇帖子'));
+      if (!list.length) {
+        body.appendChild(el('div', 'sq-empty', sq.searchTab === 'user' ? '没有匹配的用户' : '没有匹配的帖子'));
+        return;
+      }
+      list.forEach(function (it) {
+        body.appendChild(sq.searchTab === 'user' ? makeUserRow(it) : makePostCard(it));
+      });
+    }).catch(function (e) {
+      body.innerHTML = '';
+      body.appendChild(el('div', 'sq-empty', '搜索失败：' + friendlyError(e)));
+    });
+  }
+  function squareSearchPosts(kw) {
+    var pat = 'title.ilike.%' + kw + '%,body.ilike.%' + kw + '%';
+    return sb.from('forum_posts').select('id,author_id,title,body,link,created_at')
+      .or(pat).order('created_at', { ascending: false }).limit(50)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var posts = r.data || [];
+        var ids = posts.map(function (p) { return p.author_id; });
+        if (!ids.length) return posts;
+        return sb.from('profiles').select('id,nickname,phone,avatar_path').in('id', ids)
+          .then(function (pr) {
+            if (pr.error) throw pr.error;
+            var map = {}; (pr.data || []).forEach(function (u) { map[u.id] = u; });
+            posts.forEach(function (p) { p.author = map[p.author_id]; });
+            return posts;
+          });
+      });
+  }
+  function squareSearchUsers(kw) {
+    var parts = ['nickname.ilike.%' + kw + '%'];
+    if (/^\d+$/.test(kw)) parts.push('user_number.eq.' + kw);
+    return sb.from('profiles').select('id,nickname,phone,avatar_path,user_number')
+      .or(parts.join(','))
+      .order('nickname', { ascending: true }).limit(50)
+      .then(function (r) { if (r.error) throw r.error; return r.data || []; });
+  }
+
+  function initSquareBindings() {
+    var entry = $('square-entry-btn'); if (entry) entry.onclick = function () { openSquare(); };
+    var back = $('sq-back'); if (back) back.onclick = function () { sqBack(); };
+    var mine = $('sq-my-profile'); if (mine) mine.onclick = function () { sqPush(); openSquareProfile(state.uid); };
+    var compose = $('sq-compose-btn'); if (compose) compose.onclick = function () { openSquareCompose(null); };
+    var modal = $('square-modal'); if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeSquare(); });
+    // v282：广场内搜索
+    var sInp = $('sq-search-input'); if (sInp) sInp.oninput = onSqSearchInput;
+    var sClr = $('sq-search-clear'); if (sClr) sClr.onclick = function () { clearSquareSearch(); };
+    var tPost = $('sq-tab-post'); if (tPost) tPost.onclick = function () { sqSetSearchTab('post'); };
+    var tUser = $('sq-tab-user'); if (tUser) tUser.onclick = function () { sqSetSearchTab('user'); };
+  }
+  initSquareBindings();
 })();
