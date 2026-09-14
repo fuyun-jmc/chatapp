@@ -196,4 +196,37 @@ end;
 $$;
 grant execute on function public.gm_list_group_members(text, uuid) to authenticated;
 
-select '群管理员（set_group_admin / is_group_admin_or_owner / add_group_members / remove_group_member / update_group / gm_list_group_members）已就绪' as result;
+-- 8) GM 后台：设置 / 取消群管理员（绕过「仅群主」限制，走 GM 口令校验；
+--    目标须为成员且不能是群主）
+drop function if exists public.gm_set_group_admin(text, uuid, uuid, boolean);
+create function public.gm_set_group_admin(
+  p_pwd      text,
+  p_group_id uuid,
+  p_user_id  uuid,
+  p_is_admin boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.gm_check(p_pwd);
+  if not exists (
+    select 1 from public.group_members m where m.group_id = p_group_id and m.user_id = p_user_id
+  ) then
+    raise exception '该用户不是群成员';
+  end if;
+  if exists (
+    select 1 from public.groups g where g.id = p_group_id and g.owner_id = p_user_id
+  ) then
+    raise exception '群主默认拥有管理员权限，无需设置';
+  end if;
+  update public.group_members
+    set is_admin = coalesce(p_is_admin, false)
+  where group_id = p_group_id and user_id = p_user_id;
+end;
+$$;
+grant execute on function public.gm_set_group_admin(text, uuid, uuid, boolean) to authenticated;
+
+select '群管理员（set_group_admin / is_group_admin_or_owner / add_group_members / remove_group_member / update_group / gm_list_group_members / gm_set_group_admin）已就绪' as result;
