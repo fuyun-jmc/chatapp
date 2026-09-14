@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v286 loaded');
+  console.log('[chatapp] app.js build v287 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2844,8 +2844,8 @@
           var card = el('div', 'gm-user');
           var main = el('div', 'gm-user-main');
           var av = el('div', 'avatar sm');
-          av.style.background = colorOf(u.nickname || u.phone);
-          av.textContent = initialOf(u.nickname || u.phone);
+          // v287：用户管理列表显示真实头像；无头像/加载失败仍回退首字母占位
+          setAvatar(av, { nickname: u.nickname, phone: u.phone, avatarPath: u.avatar_path });
           var info = el('div', 'gm-user-info');
           info.appendChild(el('div', 'gm-user-name', u.nickname || '(无昵称)'));
           info.appendChild(el('div', 'gm-user-phone', u.phone || ''));
