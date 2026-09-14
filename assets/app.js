@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v283 loaded');
+  console.log('[chatapp] app.js build v284 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -9047,6 +9047,17 @@
     var tUser = $('sq-tab-user'); if (tUser) tUser.onclick = function () { sqSetSearchTab('user'); };
     // v283：手机端全屏时没有可点的遮罩，必须有显式关闭按钮
     var sqClose = $('sq-close'); if (sqClose) sqClose.onclick = function () { closeSquare(); };
+    // v284：事件委托兜底（关闭操作幂等，重复执行无副作用）
+    // 即使直连绑定因时序 / 旧缓存失效，点 ✕ 或点遮罩依然能关掉面板。
+    document.addEventListener('click', function (e) {
+      var m = $('square-modal');
+      if (m && e.target === m) { closeSquare(); return; }
+      var t = e.target;
+      while (t && t !== document) {
+        if (t.id === 'sq-close') { closeSquare(); return; }
+        t = t.parentNode;
+      }
+    });
   }
   // v283：#square-modal 的 HTML 位于本脚本之后，必须等 DOM 就绪再绑定，
   // 否则 $() 全为 null，所有按钮与关闭方式都会失效。
