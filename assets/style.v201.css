@@ -1703,6 +1703,20 @@ input, textarea { font-family: inherit; font-size: 15px; }
   cursor: pointer;
   text-align: center;
 }
+/* v283：广场面板关闭按钮（手机全屏时没有遮罩可点，必须显式关闭） */
+.sq-close {
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
+  margin-left: 8px;
+  padding: 0;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 17px; line-height: 1;
+  cursor: pointer;
+}
+.sq-close:active { background: var(--bg); }
+
 .friend-req-btn#square-entry-btn:hover { background: rgba(79,124,247,.2); }
 .friend-req-btn#square-entry-btn:active { opacity: .85; }
 .friend-req-btn#square-entry-btn > svg { margin-right: 6px; }
