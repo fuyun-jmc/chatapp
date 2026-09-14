@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v284 loaded');
+  console.log('[chatapp] app.js build v285 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -7083,55 +7083,92 @@
     state.activeMessages = [];   // 重置当前会话消息缓存，供举报选择器使用
     box.appendChild(el('div', 'day-sep', '加载中…'));
 
-    var query = sb.from('messages')
-      .select('*, sender:profiles!messages_sender_id_fkey(id,nickname,avatar_path)');
     if (isGroup) {
-      query = query.eq('group_id', peer.id);
       loadGroupMemberProfiles(peer.id);
       // 拉取群内昵称（对全群可见），加载完后刷新当前群消息发送者名
       loadGroupNicknames(peer.id).then(function () { refreshGroupNicknameDisplays(peer.id); });
-    } else {
-      query = query.or('and(sender_id.eq.' + state.uid + ',receiver_id.eq.' + peer.id + '),' +
-                        'and(sender_id.eq.' + peer.id + ',receiver_id.eq.' + state.uid + ')');
     }
 
-    query.order('created_at', { ascending: false }).limit(LIMIT)
-      .then(function (r) {
-        if (r.error) throw r.error;
-        if (!state.active || state.active.id !== peer.id) return;
-        box.innerHTML = '';
-        var rows = (r.data || []).slice().reverse();
-        var lastDay = null;
-        rows.forEach(function (m) {
-          var node = renderMessage(m);
-          if (!node) return; // 本端已删除的消息不渲染，也不生成日期分隔
-          var k = dayKey(m.created_at);
-          if (k !== lastDay) { box.appendChild(el('div', 'day-sep', dayLabel(m.created_at))); lastDay = k; }
-          box.appendChild(node);
+    // v285：消息加载失败不再只弹 toast（会永远卡在「加载中…」），
+    // 自动重试 2 次，仍失败就在聊天区给出明确错误 + 重试按钮
+    function loadActiveMessages(p, box, attempt) {
+      var query = sb.from('messages')
+        .select('*, sender:profiles!messages_sender_id_fkey(id,nickname,avatar_path)');
+      if (p.type === 'group') {
+        query = query.eq('group_id', p.id);
+      } else {
+        query = query.or('and(sender_id.eq.' + state.uid + ',receiver_id.eq.' + p.id + '),' +
+                          'and(sender_id.eq.' + p.id + ',receiver_id.eq.' + state.uid + ')');
+      }
+      query.order('created_at', { ascending: false }).limit(LIMIT)
+        .then(function (r) {
+          if (r.error) throw r.error;
+          if (!state.active || state.active.id !== p.id) return;
+          box.innerHTML = '';
+          var rows = (r.data || []).slice().reverse();
+          var lastDay = null;
+          rows.forEach(function (m) {
+            var node = null;
+            // v285：单条消息渲染异常只降级该条，绝不拖垮整个会话
+            try { node = renderMessage(m); } catch (re) {
+              try {
+                node = el('div', 'msg ' + (m.sender_id === state.uid ? 'out' : 'in'));
+                var fb = el('div', 'bubble'); fb.textContent = m.content || '[消息渲染失败]';
+                node.appendChild(fb);
+                node.appendChild(el('div', 'msg-time', fmtTime(m.created_at)));
+              } catch (e2) { node = null; }
+            }
+            if (!node) return; // 本端已删除的消息不渲染，也不生成日期分隔
+            var k = dayKey(m.created_at);
+            if (k !== lastDay) { box.appendChild(el('div', 'day-sep', dayLabel(m.created_at))); lastDay = k; }
+            box.appendChild(node);
+          });
+          // 若全部消息都已本端删除（如刚清空），给出空态提示，避免一片空白像出错
+          if (!box.querySelector('.msg')) {
+            box.appendChild(el('div', 'day-sep', EMPTY_TIP));
+          }
+          // 缓存当前会话消息（供举报选择器筛选「信息/图片/视频」），剔除本端已删除
+          state.activeMessages = rows.filter(function (m) {
+            return !(m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0);
+          });
+          // 记录当前会话所有发言者，供「称号实时同步」关心范围使用（群聊成员互相可见对方称号变化）
+          rows.forEach(function (m) { if (m.sender_id) state.activeSenderIds[m.sender_id] = 1; });
+          scrollBottom();
+          // 消息加载完成、titlesMap 已就绪，再次确认聊天头称号（兜底同步段过早渲染的情况）
+          var ha = $('peer-avatar'); if (ha) applyTitleFrame(ha, p.id);
+          addTitleBadge($('peer-name'), p.id);
+          // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
+          state.lastSeenTs = rows.reduce(function (mx, x) {
+            var t = x.created_at ? new Date(x.created_at).getTime() : 0;
+            return t > mx ? t : mx;
+          }, 0);
+          if (state.recallTimer) clearInterval(state.recallTimer);
+          state.recallTimer = setInterval(refreshRecallButtons, 15000);
+        })
+        .catch(function (e) {
+          if (!state.active || state.active.id !== p.id) return;
+          if ((attempt || 0) < 2) {
+            setTimeout(function () {
+              if (state.active && state.active.id === p.id) loadActiveMessages(p, box, (attempt || 0) + 1);
+            }, 1200);
+            return;
+          }
+          box.innerHTML = '';
+          box.appendChild(el('div', 'day-sep', '消息加载失败：' + friendlyError(e)));
+          var retry = el('button', 'sq-btn', '重试');
+          retry.type = 'button';
+          retry.style.margin = '10px auto';
+          retry.style.display = 'block';
+          retry.onclick = function () {
+            box.innerHTML = '';
+            box.appendChild(el('div', 'day-sep', '加载中…'));
+            loadActiveMessages(p, box, 0);
+          };
+          box.appendChild(retry);
+          toast(friendlyError(e));
         });
-        // 若全部消息都已本端删除（如刚清空），给出空态提示，避免一片空白像出错
-        if (!box.querySelector('.msg')) {
-          box.appendChild(el('div', 'day-sep', EMPTY_TIP));
-        }
-        // 缓存当前会话消息（供举报选择器筛选「信息/图片/视频」），剔除本端已删除
-        state.activeMessages = rows.filter(function (m) {
-          return !(m.deleted_by && m.deleted_by.indexOf(state.uid) >= 0);
-        });
-        // 记录当前会话所有发言者，供「称号实时同步」关心范围使用（群聊成员互相可见对方称号变化）
-        rows.forEach(function (m) { if (m.sender_id) state.activeSenderIds[m.sender_id] = 1; });
-        scrollBottom();
-        // 消息加载完成、titlesMap 已就绪，再次确认聊天头称号（兜底同步段过早渲染的情况）
-        var ha = $('peer-avatar'); if (ha) applyTitleFrame(ha, peer.id);
-        addTitleBadge($('peer-name'), peer.id);
-        // 记录当前会话已渲染消息的最大时间戳，供兜底轮询拉取「差量新消息」
-        state.lastSeenTs = rows.reduce(function (mx, x) {
-          var t = x.created_at ? new Date(x.created_at).getTime() : 0;
-          return t > mx ? t : mx;
-        }, 0);
-        if (state.recallTimer) clearInterval(state.recallTimer);
-        state.recallTimer = setInterval(refreshRecallButtons, 15000);
-      })
-      .catch(function (e) { toast(friendlyError(e)); });
+    }
+    loadActiveMessages(peer, box, 0);
   }
 
   $('back-btn').addEventListener('click', function () {
@@ -8213,6 +8250,7 @@
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'messages'
       }, function (payload) {
+        try {   // v285：单条实时事件异常不能打断实时通道的后续处理
         var box = $('messages');
 
         // 历史消息被违禁词全局隐藏（hidden_forbidden=true）后，RLS 会转为 DELETE 事件；
@@ -8283,6 +8321,7 @@
             if (from) toast(from.nickname + ' 发来一条消息');
           }
         }
+        } catch (e) { try { console.warn('[chatapp] realtime event error:', e); } catch (_e) {} }
       })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'friendships'
@@ -8439,6 +8478,14 @@
     if (document.hidden) flushDraft();
   });
   window.addEventListener('beforeunload', function () { flushDraft(); });
+
+  // v285：全局错误上报（排查「群聊闪退 / 白屏」时看控制台 [chatapp] 前缀即可定位）
+  window.addEventListener('error', function (ev) {
+    try { console.error('[chatapp] global error:', ev.message, '@', (ev.filename || '') + ':' + (ev.lineno || 0)); } catch (e) {}
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    try { console.error('[chatapp] unhandled rejection:', ev.reason); } catch (e) {}
+  });
 
   /* ============================================================
    *  交友广场（v280）：帖子 / 图片视频链接 / 嵌套回复 / 关注 / 个人主页
