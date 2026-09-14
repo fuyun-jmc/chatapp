@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v285 loaded');
+  console.log('[chatapp] app.js build v286 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3946,6 +3946,11 @@
         ownerBtn.type = 'button';
         ownerBtn.onclick = function () { gmGmSetOwner(gid, m.user_id, m.nickname); };
         acts.appendChild(ownerBtn);
+        // v286：GM 可直接授予 / 剥夺群管理员
+        var admBtn = el('button', 'btn-mini', m.is_admin ? '取消管理员' : '设为管理员');
+        admBtn.type = 'button';
+        admBtn.onclick = function () { gmGmSetAdmin(gid, m.user_id, m.nickname, !m.is_admin); };
+        acts.appendChild(admBtn);
       }
       var rmBtn = el('button', 'btn-mini gm-danger', '移除');
       rmBtn.type = 'button';
@@ -3961,6 +3966,28 @@
     sb.rpc('gm_set_group_owner', { p_pwd: gmPwd, p_group_id: gid, p_new_owner_id: uid })
       .then(function (r) { if (r.error) throw r.error; toast('已转让群主'); gmLoadGroupDetail(gid, (gmGroupCurrent && gmGroupCurrent.name) || ''); })
       .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  // v286：GM 授予 / 剥夺群管理员（走 GM 口令，不受「仅群主」限制）
+  function gmGmSetAdmin(gid, uid, name, makeAdmin) {
+    var tip = makeAdmin
+      ? '将「' + (name || uid) + '」设为群管理员？'
+      : '取消「' + (name || uid) + '」的群管理员？';
+    if (!window.confirm(tip)) return;
+    sb.rpc('gm_set_group_admin', { p_pwd: gmPwd, p_group_id: gid, p_user_id: uid, p_is_admin: makeAdmin })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast(makeAdmin ? '已设为管理员' : '已取消管理员');
+        gmLoadGroupDetail(gid, (gmGroupCurrent && gmGroupCurrent.name) || '');
+      })
+      .catch(function (e) {
+        var msg = (e && e.message) || '';
+        if (/gm_set_group_admin|does not exist|PGRST202/i.test(msg)) {
+          toast('需先在 Supabase 执行 20260914_group_admin.sql');
+          return;
+        }
+        toast('操作失败：' + friendlyError(e));
+      });
   }
 
   function gmGmRemoveMember(gid, uid, name) {
