@@ -1703,19 +1703,24 @@ input, textarea { font-family: inherit; font-size: 15px; }
   cursor: pointer;
   text-align: center;
 }
-/* v283：广场面板关闭按钮（手机全屏时没有遮罩可点，必须显式关闭） */
+/* v283/v284：广场面板关闭按钮（手机全屏时没有遮罩可点，必须显式关闭）
+   v284 改为绝对定位到头部右上角 + 38px 大热区，避免被头部其它按钮挤掉或挤出屏幕 */
 .sq-close {
-  flex: 0 0 auto;
-  width: 30px; height: 30px;
-  margin-left: 8px;
+  position: absolute;
+  top: 5px; right: 6px;
+  width: 38px; height: 38px;
+  margin: 0;
   padding: 0;
   border: 0; border-radius: 50%;
   background: transparent;
   color: var(--text-2);
-  font-size: 17px; line-height: 1;
+  font-size: 18px; line-height: 1;
   cursor: pointer;
+  z-index: 6;
 }
 .sq-close:active { background: var(--bg); }
+/* 给绝对定位的 ✕ 让出位置 */
+.sq-header { padding-right: 52px; }
 
 .friend-req-btn#square-entry-btn:hover { background: rgba(79,124,247,.2); }
 .friend-req-btn#square-entry-btn:active { opacity: .85; }
