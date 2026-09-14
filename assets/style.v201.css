@@ -523,6 +523,12 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .msg.in  .bubble { background: var(--bubble-in); border-top-left-radius: 5px; }
 .msg.out .bubble { background: var(--bubble-out); color: #fff; border-top-right-radius: 5px; }
 
+/* 聊天内容中的链接：可点击打开；收消息蓝字、发消息白字（靠下划线区分） */
+.bubble a.chat-link, .gm-msg-bubble a.chat-link {
+  color: #1a73e8; text-decoration: underline; word-break: break-all;
+}
+.msg.out .bubble a.chat-link { color: #fff; }
+
 .bubble.media { padding: 5px; background: var(--panel); }
 .msg.out .bubble.media { background: var(--panel); }
 .bubble.media img, .bubble.media video {
@@ -989,6 +995,10 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-detail-online.on  { color: var(--ok); }
 .gm-detail-online.off { color: #98a0ad; }
 .gm-detail-no { font-size: 13px; color: var(--accent, #4f7cf7); font-weight: 600; }
+.gm-detail-code { display: flex; align-items: center; gap: 6px; margin: 2px 0 4px; font-size: 13px; color: var(--text-2); flex-wrap: wrap; }
+.gm-detail-code-label { color: var(--text-3); }
+.gm-detail-code-val { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+.gm-code-copy { flex: 0 0 auto; padding: 4px 10px; font-size: 12px; }
 .gm-acc-del { flex: 0 0 auto; padding: 7px 10px; font-size: 12px; justify-content: center; }
 .gm-subtitle { margin: 8px 0 2px; font-size: 13px; font-weight: 600; color: var(--text-2); }
 .gm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
@@ -1568,6 +1578,192 @@ input, textarea { font-family: inherit; font-size: 15px; }
   justify-content: flex-start;
   color: var(--text-3);
   font-size: 13px;
+}
+
+/* ---------- 交友广场（v280） ---------- */
+.sq-panel.open { padding: 0; align-items: stretch; justify-content: flex-start; }
+.sq-inner {
+  position: relative; width: 100%; height: 100%; max-height: 100%;
+  background: var(--panel); display: flex; flex-direction: column; overflow: hidden;
+}
+@media (min-width: 720px) {
+  .sq-panel.open { padding: 24px 16px; align-items: center; }
+  .sq-inner { max-width: 600px; height: calc(100vh - 48px); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+}
+@media (max-width: 719px) {
+  .sq-panel .sq-inner { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .sq-panel .sq-body { flex: none; overflow: visible; }
+}
+.sq-header {
+  position: relative; display: flex; align-items: center;
+  padding: 12px 14px; border-bottom: 1px solid var(--line); flex: 0 0 auto;
+}
+.sq-title { font-size: 16px; font-weight: 600; }
+.sq-back {
+  border: 0; background: transparent; color: var(--accent, #4f7cf7);
+  font-size: 15px; padding: 4px 6px; margin-right: 8px; cursor: pointer;
+}
+.sq-header-actions { margin-left: auto; display: flex; }
+.sq-header-actions > .sq-btn { margin-left: 8px; }
+.sq-body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 14px; }
+.sq-btn {
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  padding: 7px 12px; border-radius: 10px; font-size: 14px; cursor: pointer;
+}
+.sq-btn-primary { background: var(--accent, #4f7cf7); border-color: var(--accent, #4f7cf7); color: #fff; }
+.sq-btn:active { filter: brightness(.95); }
+.sq-btn:disabled { opacity: .6; cursor: default; }
+
+.sq-post { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: var(--panel); cursor: pointer; }
+.sq-post:hover { background: var(--bg); }
+.sq-post-head { display: flex; align-items: center; margin-bottom: 8px; }
+.sq-post-head .avatar { margin-right: 8px; cursor: pointer; }
+.sq-post-author { font-size: 14px; font-weight: 600; cursor: pointer; }
+.sq-post-time { font-size: 12px; color: var(--text-3); margin-left: 6px; }
+.sq-post-title { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.sq-post-body { font-size: 14px; line-height: 1.5; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.sq-post-link { color: var(--accent, #4f7cf7); text-decoration: underline; word-break: break-all; display: inline-block; margin-top: 4px; }
+.sq-post-media { display: flex; flex-wrap: wrap; margin-top: 8px; }
+.sq-post-media > * { margin: 4px; }
+.sq-post-media img, .sq-post-media video { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+.sq-post-foot { margin-top: 8px; font-size: 12px; color: var(--text-3); }
+
+.sq-detail-media { display: flex; flex-wrap: wrap; margin-top: 10px; }
+.sq-detail-media > * { margin: 6px; }
+.sq-detail-media img, .sq-detail-media video { max-width: 100%; max-height: 320px; border-radius: 10px; cursor: pointer; }
+.sq-detail-actions { margin-top: 10px; }
+.sq-detail-actions > .sq-btn { margin-right: 8px; }
+
+.sq-reply-box { margin-top: 14px; }
+.sq-reply-box textarea {
+  width: 100%; min-height: 60px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px; font-size: 14px; resize: vertical; background: var(--bg); color: var(--text); box-sizing: border-box;
+}
+.sq-reply-hint { font-size: 12px; color: var(--text-3); margin: 4px 0; }
+.sq-reply-list { margin-top: 12px; }
+.sq-reply { border-top: 1px solid var(--line); padding: 10px 0; }
+.sq-reply-head { display: flex; align-items: center; }
+.sq-reply-head .avatar { margin-right: 8px; cursor: pointer; }
+.sq-reply-author { font-size: 13px; font-weight: 600; cursor: pointer; }
+.sq-reply-time { font-size: 12px; color: var(--text-3); margin-left: 6px; }
+.sq-reply-body { font-size: 14px; line-height: 1.5; margin: 4px 0 4px 40px; white-space: pre-wrap; word-break: break-word; }
+.sq-reply-actions { margin-left: 40px; font-size: 12px; }
+.sq-reply-actions .sq-link-btn { color: var(--accent, #4f7cf7); cursor: pointer; margin-right: 12px; }
+.sq-reply-children { margin-left: 40px; }
+.sq-reply-deleted { color: var(--text-3); font-style: italic; }
+
+.sq-profile-head { display: flex; align-items: center; padding: 8px 0 14px; }
+.sq-profile-head .avatar { margin-right: 14px; }
+.sq-profile-name { font-size: 18px; font-weight: 700; }
+.sq-profile-no { font-size: 12px; color: var(--text-3); }
+.sq-profile-stats { display: flex; margin: 6px 0 12px; }
+.sq-profile-stats > div { margin-right: 18px; font-size: 13px; cursor: pointer; }
+.sq-profile-stats b { font-size: 15px; }
+.sq-profile-actions { margin-bottom: 12px; }
+.sq-profile-actions > .sq-btn { margin-right: 8px; }
+.sq-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 30px 0; }
+
+.sq-form label { display: block; font-size: 13px; color: var(--text-2); margin: 10px 0 4px; }
+.sq-form input[type=text], .sq-form textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px;
+  font-size: 14px; box-sizing: border-box; background: var(--bg); color: var(--text);
+}
+.sq-form textarea { min-height: 90px; resize: vertical; }
+.sq-form-media { display: flex; flex-wrap: wrap; margin-top: 8px; }
+.sq-form-media > * { margin: 4px; position: relative; }
+.sq-form-media img, .sq-form-media video { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; }
+.sq-media-x {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--danger); color: #fff; border: 0; cursor: pointer; font-size: 12px;
+}
+.sq-form-actions { margin-top: 14px; display: flex; }
+.sq-form-actions > .sq-btn { margin-right: 8px; }
+.sq-user-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.sq-user-row .avatar { margin-right: 10px; }
+.sq-user-row > div { font-size: 14px; }
+
+/* ============================================================
+ * v282
+ * ============================================================ */
+
+/* v282：交友广场入口按钮 —— 配色 / 描边 / 字号与「添加好友」按钮完全一致 */
+.friend-req-btn#square-entry-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 10px 8px;
+  border: 1px solid rgba(79,124,247,.4);
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(79,124,247,.14), rgba(79,124,247,.06));
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.friend-req-btn#square-entry-btn:hover { background: rgba(79,124,247,.2); }
+.friend-req-btn#square-entry-btn:active { opacity: .85; }
+.friend-req-btn#square-entry-btn > svg { margin-right: 6px; }
+
+/* v282：交友广场内搜索 */
+.sq-searchbar {
+  display: flex;
+  align-items: center;
+  margin: 0 12px 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text-3);
+}
+.sq-searchbar input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.sq-search-clear {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sq-search-tabs {
+  display: flex;
+  margin: 0 12px 8px;
+}
+.sq-tab {
+  flex: 1 1 0;
+  margin-right: 8px;
+  padding: 7px 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.sq-tab:last-child { margin-right: 0; }
+.sq-tab.is-active {
+  border-color: rgba(79,124,247,.5);
+  background: rgba(79,124,247,.12);
+  color: var(--brand);
+  font-weight: 600;
+}
+.sq-result-count {
+  padding: 0 2px 8px;
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 
