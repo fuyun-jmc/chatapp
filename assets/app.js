@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v288 loaded');
+  console.log('[chatapp] app.js build v289 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -984,7 +984,15 @@
   }
 
   // 强制佩戴的特殊称号名称（前端按名称精确匹配，不可自行取消佩戴）
-  var FORCED_TITLES = ['开发者', '管理员'];
+  var FORCED_TITLES = ['开发者', '次级开发者', '管理员'];
+  // v289：与「开发者」效果完全相同的称号（权限、强制展示、专属头像框、隐藏开关一致）
+  var DEV_TITLE_NAMES = ['开发者', '次级开发者'];
+  function isDevTitleName(n) { return DEV_TITLE_NAMES.indexOf(normTitleName(n)) >= 0; }
+  // 判断称号名数组里是否含任一开发者称号
+  function isDevTitleNameIn(list) {
+    for (var i = 0; i < (list || []).length; i++) { if (isDevTitleName(list[i])) return true; }
+    return false;
+  }
   // 归一化称号名：去掉半角/全角空格、零宽字符、BOM，避免 DB 里名称带隐藏字符导致匹配失败
   function normTitleName(name) {
     return String(name == null ? '' : name)
@@ -1001,7 +1009,8 @@
   function isDevSlot(t) {
     if (!t) return false;
     if (state.devTitleId && t.titleId === state.devTitleId) return true;
-    return normTitleName(t.titleName) === '开发者';
+    // v289：次级开发者与开发者同等
+    return isDevTitleName(t.titleName);
   }
 
   // 把展示槽位合并成有序列表：开发者 > 管理员 > 自选1 > 自选2（按 titleId 去重）
@@ -1141,7 +1150,7 @@
         rows.forEach(function (x) {
           var nn = normTitleName(x.t && x.t.name);
           if (nn === '管理员') state.adminTitleId = x.t.id;
-          if (nn === '开发者') state.devTitleId  = x.t.id;
+          if (isDevTitleName(nn)) state.devTitleId = x.t.id;   // v289：含「次级开发者」
         });
         box.innerHTML = '';
         if (!rows.length) {
@@ -1157,7 +1166,7 @@
         rows.forEach(function (x) {
           var t = x.t;
           var n = normTitleName(t.name);
-          var isDevTitle = (n === '开发者') || (t.id && t.id === state.devTitleId); // 开发者：专属头像框
+          var isDevTitle = isDevTitleName(n) || (t.id && t.id === state.devTitleId); // 开发者/次级开发者：专属头像框
           var forced = isForcedTitleRow(t);         // 开发者 / 管理员：强制佩戴，不可取消
           var worn = forced ? true : (wornIds.indexOf(t.id) >= 0);
           var card = el('div', 'title-card' + (worn ? ' worn' : ''));
@@ -4328,8 +4337,8 @@
         var names = rows.map(function (t) { return (t.name || '').trim(); }).filter(Boolean);
         state.ownedTitles = names;
         // 开发者拥有管理员全部权限与能力：开发者同样视为管理员（违禁接收入口/面板对开发者开放）
-        state.isAdmin = names.indexOf('管理员') >= 0 || names.indexOf('开发者') >= 0;
-        state.isDev = names.indexOf('开发者') >= 0;
+        state.isAdmin = names.indexOf('管理员') >= 0 || isDevTitleNameIn(names);
+        state.isDev = isDevTitleNameIn(names);   // v289：次级开发者同权
         // 「管理员」称号专属标记（公告/撤销规则只针对「管理员」称号，不含纯开发者）
         state.hasAdminTitle = names.indexOf('管理员') >= 0;
         updateAdminCard();
@@ -4344,7 +4353,7 @@
           return hit;
         }
         var adminRow = pick('管理员');
-        var devRow   = pick('开发者');
+        var devRow   = pick('开发者') || pick('次级开发者');   // v289
         state.titlesMap = state.titlesMap || {};
         var slot = state.titlesMap[state.uid] || { primary: null, primary2: null, admin: null, dev: null };
         slot.admin = adminRow ? {
