@@ -4,10 +4,35 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v289 loaded');
+  console.log('[chatapp] app.js build v290 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
+
+  // v290：运营商已放号号段（中国大陆）。号段未分配 = 该号码不可能在运营商注册过。
+  // 注意：这里做的是「号段有效性」校验；真正的实号/实名开户状态查询需第三方
+  // 号码认证 API（阿里云 / 腾讯云），需密钥与企业实名，暂未接入。
+  var CARRIER_SEG = {
+    '中国移动': ['134', '135', '136', '137', '138', '139', '147', '148', '150', '151', '152',
+                 '157', '158', '159', '172', '178', '182', '183', '184', '187', '188',
+                 '195', '197', '198'],
+    '中国联通': ['130', '131', '132', '145', '146', '155', '156', '166', '167',
+                 '175', '176', '185', '186', '196'],
+    '中国电信': ['133', '149', '153', '162', '173', '174', '177', '180', '181',
+                 '189', '190', '191', '193', '199'],
+    '中国广电': ['192'],
+    '虚拟运营商': ['165', '170', '171']
+  };
+  // 返回运营商名称；号码不属于任何已分配号段时返回 null（= 无效号）
+  function phoneCarrierName(phone) {
+    var p = String(phone || '').replace(/\D/g, '');
+    if (p.length < 3) return null;
+    var p3 = p.slice(0, 3);
+    for (var k in CARRIER_SEG) {
+      if (Object.prototype.hasOwnProperty.call(CARRIER_SEG, k) && CARRIER_SEG[k].indexOf(p3) >= 0) return k;
+    }
+    return null;
+  }
   var AVATAR_COLORS = ['#4f7cf7', '#1d9e75', '#d85a30', '#7f77dd', '#d4537e', '#ba7517', '#378add'];
 
   var $ = function (id) { return document.getElementById(id); };
@@ -1619,6 +1644,9 @@
     $('reg-error').hidden = true;
 
     if (!PHONE_RE.test(phone)) return showErr('reg-error', '请输入正确的 11 位手机号');
+    // v290：号段未分配 = 该号在运营商不存在，直接拦截注册
+    var carrier = phoneCarrierName(phone);
+    if (!carrier) return showErr('reg-error', '该手机号号段不存在，请填写已在运营商注册的真实手机号');
     if (!nick) return showErr('reg-error', '请填写昵称');
     if (pwd.length < 6) return showErr('reg-error', '密码至少 6 位');
 
@@ -1647,13 +1675,17 @@
     regPhone.addEventListener('input', function () {
       var v = (regPhone.value || '').trim();
       if (!v) { regPhoneStatus.hidden = true; regPhoneStatus.textContent = ''; return; }
-      if (PHONE_RE.test(v)) {
+      // v290：格式 + 运营商号段双重校验，实时提示归属地运营商
+      var cv = phoneCarrierName(v);
+      if (PHONE_RE.test(v) && cv) {
         regPhoneStatus.hidden = false;
-        regPhoneStatus.textContent = '✓ 手机号格式正确';
+        regPhoneStatus.textContent = '✓ ' + cv + '（号段有效）';
         regPhoneStatus.style.color = '#16a34a';
       } else if (v.length >= 11) {
         regPhoneStatus.hidden = false;
-        regPhoneStatus.textContent = '手机号格式不正确，请输入 11 位有效号码';
+        regPhoneStatus.textContent = PHONE_RE.test(v)
+          ? '该手机号号段不存在，请填写已在运营商注册的真实手机号'
+          : '手机号格式不正确，请输入 11 位有效号码';
         regPhoneStatus.style.color = '#dc2626';
       } else {
         regPhoneStatus.hidden = true;
@@ -1663,9 +1695,15 @@
     // 切换/离开时若格式无效且非空，给一次明确提示
     regPhone.addEventListener('blur', function () {
       var v = (regPhone.value || '').trim();
-      if (v && !PHONE_RE.test(v) && regPhoneStatus) {
+      var vb = (regPhone.value || '').trim();
+      if (v && !PHONE_RE.test(v)) {
         regPhoneStatus.hidden = false;
         regPhoneStatus.textContent = '手机号格式不正确，请输入 11 位有效号码';
+        regPhoneStatus.style.color = '#dc2626';
+      } else if (v && !phoneCarrierName(vb)) {
+        // v290：11 位但号段不存在
+        regPhoneStatus.hidden = false;
+        regPhoneStatus.textContent = '该手机号号段不存在，请填写已在运营商注册的真实手机号';
         regPhoneStatus.style.color = '#dc2626';
       }
     });
