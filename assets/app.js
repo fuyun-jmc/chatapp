@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v287 loaded');
+  console.log('[chatapp] app.js build v288 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1877,7 +1877,10 @@
         refreshOnline(); // 好友加载完后立即拉一次在线状态
 
         // 当前会话对象被删除好友时收起聊天窗
-        if (state.active && !friends.some(function (f) { return f.id === state.active.id; })) {
+        // v288：仅限私聊！群聊 id 永远不在好友列表里，原逻辑会把打开中的群聊
+        // 误判为「好友已删除」强行收起（发图/视频上传期间最易触发 → 表现为闪退）
+        if (state.active && state.active.type !== 'group' &&
+            !friends.some(function (f) { return f.id === state.active.id; })) {
           state.active = null;
           state.chatVisible = false;
           $('chat-room').hidden = true;
@@ -8243,7 +8246,10 @@
           file_name: file.name,
           file_size: file.size
         };
-        if (state.active.type === 'group') fpayload.group_id = target.id;
+        // v288：用发送时捕获的 target 判断，不再读 state.active.type ——
+        // 上传耗时数秒，期间若会话被关闭（state.active 置 null）会抛
+        // 「Cannot read properties of null (reading 'type')」且消息丢失
+        if (target.type === 'group') fpayload.group_id = target.id;
         else fpayload.receiver_id = target.id;
         return sb.from('messages').insert(fpayload).select().single();
       })
