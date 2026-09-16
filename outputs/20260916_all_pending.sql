@@ -863,7 +863,7 @@ notify pgrst, 'reload schema';
 
 
 -- ============================================================
---  v291：次级开发者可被开发者授予 + 简易 GM 后台
+--  v291/v292：次级开发者授予 + 简易 GM 后台（免密码 + 称号管理）
 --  来源：supabase/migrations/20260916_subdev_gm.sql
 -- ============================================================
 -- ============================================================
@@ -910,6 +910,9 @@ $$;
 grant execute on function public.gm2_role() to authenticated;
 
 -- 2) 统一鉴权：返回本次调用者的角色，无权/口令错直接抛异常
+--    v291.1：口令可省略（p_pwd 为 null 或空串时不校验口令）。
+--    简易后台对开发者 / 次级开发者免密码进入，身份由 Supabase 登录会话
+--    （auth.uid()）保证，gm2_role() 已强制要求调用者的确持有对应称号。
 create or replace function public.gm2_auth(p_pwd text)
 returns text
 language plpgsql
@@ -919,12 +922,12 @@ as $$
 declare
   v_role text;
 begin
-  if p_pwd is distinct from public.gm_password() then
-    raise exception 'GM_AUTH_FAIL';
-  end if;
   v_role := public.gm2_role();
   if v_role is null then
     raise exception 'GM_FORBIDDEN';
+  end if;
+  if p_pwd is not null and p_pwd <> '' and p_pwd is distinct from public.gm_password() then
+    raise exception 'GM_AUTH_FAIL';
   end if;
   return v_role;
 end;
@@ -1224,5 +1227,141 @@ begin
 end;
 $$;
 grant execute on function public.gm2_set_group_admin(text, uuid, uuid, boolean) to authenticated;
+
+-- 11) 称号管理（v291.1）：开发者 / 次级开发者可以
+--       ① 创建称号
+--       ② 授予 / 撤销任意称号 —— 仅「开发者」「次级开发者」两个开发者类称号不可操作
+--       后缀 _v2911 用于同上兼容；这里全部是新名字，无需 drop。
+
+drop function if exists public.gm2_list_titles(text) cascade;
+
+create or replace function public.gm2_list_titles(p_pwd text)
+returns table (
+  id          uuid,
+  name        text,
+  description text,
+  frame_color text,
+  frame_style text,
+  cond_type   text,
+  usage_count bigint,
+  locked      boolean,
+  created_at  timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.gm2_check(p_pwd);
+  return query
+    select t.id, t.name, t.description, t.frame_color, t.frame_style, t.cond_type,
+           (select count(*) from public.user_titles ut where ut.title_id = t.id),
+           (t.name in ('开发者', '次级开发者')),
+           t.created_at
+      from public.titles t
+     order by (t.name in ('开发者', '次级开发者')) asc, t.created_at desc;
+end;
+$$;
+grant execute on function public.gm2_list_titles(text) to authenticated;
+
+-- 12) 某账号的称号清单（owned=true 表示已拥有，locked=true 表示不可操作）
+drop function if exists public.gm2_list_titles_of_user(text, uuid) cascade;
+
+create or replace function public.gm2_list_titles_of_user(p_pwd text, p_user_id uuid)
+returns table (
+  id          uuid,
+  name        text,
+  frame_color text,
+  frame_style text,
+  owned       boolean,
+  locked      boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.gm2_check(p_pwd);
+  return query
+    select t.id, t.name, t.frame_color, t.frame_style,
+           exists (select 1 from public.user_titles ut
+                    where ut.user_id = p_user_id and ut.title_id = t.id),
+           (t.name in ('开发者', '次级开发者'))
+      from public.titles t
+     order by (t.name in ('开发者', '次级开发者')) asc, t.name asc;
+end;
+$$;
+grant execute on function public.gm2_list_titles_of_user(text, uuid) to authenticated;
+
+-- 13) 创建称号（走 gm2 鉴权，开发者 / 次级开发者可用）
+drop function if exists public.gm2_create_title(text, text, text, text, text, text, int) cascade;
+
+create or replace function public.gm2_create_title(
+  p_pwd text, p_name text, p_desc text, p_color text,
+  p_style text, p_cond_type text, p_value int
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_id uuid;
+begin
+  perform public.gm2_check(p_pwd);
+  p_name := nullif(btrim(coalesce(p_name, '')), '');
+  if p_name is null then raise exception '请输入称号名称'; end if;
+  if p_name in ('开发者', '次级开发者') then
+    raise exception '该称号为系统保留，不可创建';
+  end if;
+  if exists (select 1 from public.titles t where t.name = p_name) then
+    raise exception '已存在同名称号';
+  end if;
+  insert into public.titles (name, description, frame_color, frame_style, cond_type, cond_value)
+  values (
+    p_name,
+    nullif(btrim(coalesce(p_desc, '')), ''),
+    coalesce(nullif(btrim(coalesce(p_color, '')), ''), '#ffd700'),
+    coalesce(nullif(btrim(coalesce(p_style, '')), ''), 'ring'),
+    coalesce(nullif(btrim(coalesce(p_cond_type, '')), ''), 'manual'),
+    case when coalesce(p_cond_type, 'manual') in ('streak','total_login','clean_streak')
+         then greatest(coalesce(p_value, 7), 1) else null end
+  )
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+grant execute on function public.gm2_create_title(text, text, text, text, text, text, int) to authenticated;
+
+-- 14) 授予 / 撤销称号（开发者类称号不可操作，交由 dev_grant_subdev 处理）
+create or replace function public.gm2_set_user_title(p_pwd text, p_user_id uuid, p_title_id uuid, p_grant boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_name text;
+begin
+  perform public.gm2_check(p_pwd);
+  select t.name into v_name from public.titles t where t.id = p_title_id;
+  if v_name is null then raise exception '称号不存在'; end if;
+  if v_name in ('开发者', '次级开发者') then
+    raise exception '开发者类称号请通过「设为 / 撤销次级开发者」操作';
+  end if;
+
+  if coalesce(p_grant, true) then
+    insert into public.user_titles (user_id, title_id, source, granted_by)
+    values (p_user_id, p_title_id, 'manual', auth.uid())
+    on conflict (user_id, title_id) do nothing;
+    perform public.auto_equip_free_slot(p_user_id, p_title_id);
+  else
+    delete from public.user_titles where user_id = p_user_id and title_id = p_title_id;
+    update public.profiles
+       set display_title_id  = case when display_title_id  = p_title_id then null else display_title_id  end,
+           display_title_id2 = case when display_title_id2 = p_title_id then null else display_title_id2 end
+     where id = p_user_id;
+  end if;
+end;
+$$;
+grant execute on function public.gm2_set_user_title(text, uuid, uuid, boolean) to authenticated;
 
 notify pgrst, 'reload schema';
