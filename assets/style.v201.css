@@ -1799,3 +1799,15 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .sgm-body { flex: 0 0 auto; overflow: visible; }
   .sgm-body .gm-results { overflow: visible; }
 }
+
+/* v291.1：简易后台称号管理表单 */
+.sgm-title-form { flex-wrap: wrap; row-gap: 0; }
+.sgm-title-form .sgm-fld { flex: 0 0 auto; font-size: 13px; color: var(--text-3); align-self: center; }
+.sgm-title-form .sgm-color { flex: 0 0 auto; width: 44px; min-width: 44px; padding: 2px; }
+.sgm-title-form .sgm-select { flex: 0 0 auto; width: 96px; min-width: 96px; padding: 9px 6px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; background: var(--bg); color: var(--text); }
+.sgm-title-form .sgm-create-btn { flex: 0 0 auto; white-space: nowrap; }
+.sgm-title-form #sgm-title-name, .sgm-title-form #sgm-title-desc { flex: 1 1 120px; min-width: 0; }
+#sgm-title-error { margin: 0 14px 6px; }
+.sgm-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 6px; margin-left: 6px; vertical-align: middle; color: #fff; }
+.sgm-tag.locked { background: #98a0ad; }
+.sgm-tag.on { background: var(--ok); }
