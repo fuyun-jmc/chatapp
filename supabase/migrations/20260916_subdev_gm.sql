@@ -355,6 +355,6 @@ begin
    where group_id = p_group_id and user_id = p_user_id;
 end;
 $$;
-grant execute on function public.gm2_set_group_admin(text, uuid, boolean) to authenticated;
+grant execute on function public.gm2_set_group_admin(text, uuid, uuid, boolean) to authenticated;
 
 notify pgrst, 'reload schema';
