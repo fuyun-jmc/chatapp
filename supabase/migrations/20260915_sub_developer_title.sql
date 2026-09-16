@@ -152,7 +152,7 @@ grant execute on function public.auto_equip_free_slot(uuid, uuid) to authenticat
 -- --------------------------------------------------------------------
 -- 重建函数：public.set_my_titles（开发者判定扩展为 开发者 / 次级开发者）
 -- --------------------------------------------------------------------
-create function public.set_my_titles(p_ids uuid[])
+create or replace function public.set_my_titles(p_ids uuid[])
 returns void
 language plpgsql
 security definer
@@ -209,7 +209,7 @@ grant execute on function public.set_my_titles(uuid[]) to authenticated;
 -- --------------------------------------------------------------------
 -- 重建函数：public.get_profiles_titles（开发者判定扩展为 开发者 / 次级开发者）
 -- --------------------------------------------------------------------
-create function public.get_profiles_titles(p_ids uuid[])
+create or replace function public.get_profiles_titles(p_ids uuid[])
 returns table (
   user_id            uuid,
   title_id           uuid,
@@ -279,7 +279,7 @@ grant execute on function public.get_profiles_titles(uuid[]) to authenticated;
 -- --------------------------------------------------------------------
 -- 重建函数：public.set_hide_dev_title（开发者判定扩展为 开发者 / 次级开发者）
 -- --------------------------------------------------------------------
-create function public.set_hide_dev_title(p_hide boolean)
+create or replace function public.set_hide_dev_title(p_hide boolean)
 returns boolean
 language plpgsql
 security definer
