@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v290 loaded');
+  console.log('[chatapp] app.js build v291 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2639,6 +2639,9 @@
     if (dab) dab.hidden = !!state.forceChangePwd;
     var gob = $('gm-open-btn');
     if (gob) gob.hidden = !isGmAdmin() || !!state.forceChangePwd;
+    // v291：开发者 / 次级开发者（state.isDev 已含两者）可进入简易后台
+    var sob = $('sgm-open-btn');
+    if (sob) sob.hidden = !state.isDev || !!state.forceChangePwd;
     showModal('settings-modal');
     // 在弹窗打开后再加载称号，便于把已看过的称号标记为已读（清除红点）
     loadMyTitles();
@@ -5879,8 +5882,9 @@
   $('gm-open-btn').addEventListener('click', openGmEntry);
   $('gm-pwd-close').addEventListener('click', function () { hideModal('gm-pwd-modal'); });
   $('gm-pwd-cancel').addEventListener('click', function () { hideModal('gm-pwd-modal'); });
-  $('gm-pwd-confirm').addEventListener('click', gmTryAuth);
-  $('gm-pwd-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') gmTryAuth(); });
+  // v291：口令弹窗由 onGmPwdSubmit 统一分发（GM 后台 / 简易后台共用同一弹窗）
+  $('gm-pwd-confirm').addEventListener('click', onGmPwdSubmit);
+  $('gm-pwd-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') onGmPwdSubmit(); });
   $('gm-close').addEventListener('click', closeGm);
   $('gm-panel').addEventListener('click', function (e) { if (e.target === this) closeGm(); });
   $('gm-search-btn').addEventListener('click', gmSearch);
@@ -9192,5 +9196,351 @@
     document.addEventListener('DOMContentLoaded', initSquareBindings);
   } else {
     initSquareBindings();
+  }
+
+  // ============================================================
+  //  v291：简易 GM 后台（开发者 / 次级开发者）
+  //    入口：设置页「进入简易后台」→ 管理员口令 → rpc gm2_auth 返回角色
+  //    能力：① 全部用户在线状态 ② 注销用户账号
+  //          ③ 群聊状态（成员在线）④ 修改群主 / 群管理员
+  //    权限边界（后端强制，前端仅做展示控制）：
+  //      仅「开发者」或站长可授予 / 撤销「次级开发者」称号；
+  //      站长与「开发者」为受保护账号，次级开发者不能注销他们。
+  // ============================================================
+  var sgmPending = false;    // 口令弹窗当前是否为「简易后台」服务
+  var sgmPwd = '';           // 本次会话口令（仅内存）
+  var sgmRole = 'subdev';    // 'admin' | 'dev' | 'subdev'
+  var sgmTab = 'users';      // 'users' | 'groups'
+  var sgmTimer = null;
+  var sgmCurGroup = null;    // 当前展开成员的群 { group_id, name }
+
+  function sgmCanGrant() { return sgmRole === 'admin' || sgmRole === 'dev'; }
+  function sgmRoleText() {
+    return sgmRole === 'admin' ? '站长' : (sgmRole === 'dev' ? '开发者' : '次级开发者');
+  }
+  function sgmIsMissingFn(e) {
+    var m = (e && (e.message || '')) || '';
+    return /PGRST202|could not find the function|function .* does not exist|does not exist/i.test(m);
+  }
+
+  // 口令弹窗提交分发：按入口决定进入哪个后台
+  function onGmPwdSubmit() {
+    if (sgmPending) sgmTryAuth();
+    else gmTryAuth();
+  }
+
+  function openSgmEntry() {
+    sgmPending = true;
+    $('gm-pwd-input').value = '';
+    $('gm-pwd-error').hidden = true;
+    var btn = $('gm-pwd-confirm');
+    if (btn) { btn.disabled = false; btn.textContent = '进入'; }
+    showModal('gm-pwd-modal');
+    try { $('gm-pwd-input').focus(); } catch (e) {}
+  }
+
+  function sgmTryAuth() {
+    var pwd = ($('gm-pwd-input').value || '').trim();
+    var err = $('gm-pwd-error');
+    var btn = $('gm-pwd-confirm');
+    function resetBtn() { if (btn) { btn.disabled = false; btn.textContent = '进入'; } }
+    err.hidden = true;
+    if (!pwd) { err.textContent = '请输入口令'; err.hidden = false; return; }
+    btn.disabled = true; btn.textContent = '验证中…';
+    sb.rpc('gm2_auth', { p_pwd: pwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        sgmRole = r.data || 'subdev';
+        sgmPwd = pwd;
+        sgmPending = false;
+        hideModal('gm-pwd-modal');
+        closeSettings();
+        openSgmPanel();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/GM_AUTH_FAIL/.test(m)) err.textContent = '口令错误，无法进入';
+        else if (/GM_FORBIDDEN/.test(m)) err.textContent = '当前账号无权进入简易后台';
+        else if (sgmIsMissingFn(e)) err.textContent = '缺少 v291 后端 SQL，请先在 Supabase 执行 20260916_subdev_gm.sql';
+        else err.textContent = '验证失败：' + friendlyError(e);
+        err.hidden = false;
+      })
+      .then(resetBtn, resetBtn);
+  }
+
+  function openSgmPanel() {
+    showModal('sgm-panel');
+    var lbl = $('sgm-role-label');
+    if (lbl) lbl.textContent = sgmRoleText();
+    sgmSetTab('users');
+    startSgmPolling();
+  }
+
+  function closeSgmPanel() {
+    stopSgmPolling();
+    hideModal('sgm-panel');
+  }
+
+  function startSgmPolling() {
+    stopSgmPolling();
+    sgmTimer = setInterval(function () {
+      var p = $('sgm-panel');
+      if (!p || !p.classList || !p.classList.contains('open')) return;
+      if (sgmTab === 'users') sgmLoadUsers(true);
+      else sgmLoadGroups(true);
+    }, 20000);
+  }
+  function stopSgmPolling() {
+    if (sgmTimer) { clearInterval(sgmTimer); sgmTimer = null; }
+  }
+
+  function sgmSetTab(tab) {
+    sgmTab = tab;
+    var tu = $('sgm-tab-users'), tg = $('sgm-tab-groups');
+    if (tu) { if (tab === 'users') tu.classList.add('active'); else tu.classList.remove('active'); }
+    if (tg) { if (tab === 'groups') tg.classList.add('active'); else tg.classList.remove('active'); }
+    var vu = $('sgm-users-view'), vg = $('sgm-groups-view');
+    if (vu) vu.hidden = (tab !== 'users');
+    if (vg) vg.hidden = (tab !== 'groups');
+    if (tab === 'users') sgmLoadUsers();
+    else sgmLoadGroups();
+  }
+
+  function sgmAuthLost(box, e) {
+    var m = (e && (e.message || '')) || '';
+    if (/GM_AUTH_FAIL/.test(m)) box.innerHTML = '<div class="gm-empty">口令已失效，请重新进入</div>';
+    else if (/GM_FORBIDDEN/.test(m)) box.innerHTML = '<div class="gm-empty">当前角色无权执行该操作</div>';
+    else if (sgmIsMissingFn(e)) box.innerHTML = '<div class="gm-empty">缺少 v291 后端 SQL，请先在 Supabase 执行 20260916_subdev_gm.sql</div>';
+    else box.innerHTML = '<div class="gm-empty">加载失败：' + friendlyError(e) + '</div>';
+  }
+
+  /* ---------- ①/② 用户在线状态 + 注销账号 + 授予次级开发者 ---------- */
+  function sgmLoadUsers(silent) {
+    var box = $('sgm-results');
+    if (!box) return;
+    if (!silent) box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    var q = ($('sgm-search-input') && $('sgm-search-input').value || '').trim();
+    sb.rpc('gm2_list_users', { p_pwd: sgmPwd, p_query: q })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">没有匹配的用户</div>'; return; }
+        var onlineCnt = 0;
+        var head = el('div', 'gm-subtitle', '');
+        rows.forEach(function (u) { if (onlineFromIso(u.last_active)) onlineCnt++; });
+        head.textContent = '共 ' + rows.length + ' 人 · 在线 ' + onlineCnt + ' 人';
+        box.appendChild(head);
+        rows.forEach(function (u) {
+          var on = onlineFromIso(u.last_active);
+          var card = el('div', 'gm-user');
+          var main = el('div', 'gm-user-main');
+          var av = el('div', 'avatar sm');
+          setAvatar(av, { nickname: u.nickname, phone: u.phone, avatarPath: u.avatar_path });
+          var info = el('div', 'gm-user-info');
+          info.appendChild(el('div', 'gm-user-name', u.nickname || '(无昵称)'));
+          if (u.phone) info.appendChild(el('div', 'gm-user-phone', u.phone));
+          info.appendChild(el('div', 'gm-user-online ' + (on ? 'on' : 'off'), onlineText(u.last_active)));
+          var meta = '';
+          if (u.user_number != null) meta += '编号 #' + u.user_number;
+          if (u.roles) meta += (meta ? ' · ' : '') + u.roles;
+          if (u.is_protected) meta += (meta ? ' · ' : '') + '受保护';
+          if (meta) info.appendChild(el('div', 'gm-user-no', meta));
+          main.appendChild(av);
+          main.appendChild(info);
+          card.appendChild(main);
+
+          var acts = el('div', 'gm-row-acts');
+          // 授予 / 撤销次级开发者：仅开发者与站长
+          if (sgmCanGrant() && !u.is_protected) {
+            var gb = el('button', 'btn-mini', u.is_subdev ? '撤销次级开发者' : '设为次级开发者');
+            gb.type = 'button';
+            gb.onclick = function () { sgmToggleSubdev(u); };
+            acts.appendChild(gb);
+          }
+          var locked = !!(u.is_protected && sgmRole !== 'admin');
+          var db = el('button', 'btn-mini gm-danger', locked ? '受保护账号' : '注销账号');
+          db.type = 'button';
+          if (locked) db.disabled = true;
+          else db.onclick = function () { sgmDeleteAccount(u); };
+          acts.appendChild(db);
+          card.appendChild(acts);
+          box.appendChild(card);
+        });
+      })
+      .catch(function (e) { sgmAuthLost(box, e); });
+  }
+
+  function sgmToggleSubdev(u) {
+    var grant = !u.is_subdev;
+    var who = u.nickname || u.phone || '该用户';
+    if (!window.confirm((grant ? '确认授予「次级开发者」称号给 ' : '确认撤销 ') + who + '？')) return;
+    sb.rpc('dev_grant_subdev', { p_pwd: sgmPwd, p_user_id: u.id, p_grant: grant })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast(grant ? '已授予「次级开发者」' : '已撤销「次级开发者」');
+        sgmLoadUsers(true);
+      })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  function sgmDeleteAccount(u) {
+    var who = u.nickname || u.phone || '该用户';
+    if (!window.confirm('确认注销「' + who + '」的账号？\n该操作不可恢复，账号、好友关系、群成员身份将全部删除。')) return;
+    if (!window.confirm('再次确认：注销后无法找回，确定继续？')) return;
+    sb.rpc('gm2_delete_account', { p_pwd: sgmPwd, p_user_id: u.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已注销账号：' + who);
+        sgmLoadUsers(true);
+      })
+      .catch(function (e) { toast('注销失败：' + friendlyError(e)); });
+  }
+
+  /* ---------- ③/④ 群聊状态 + 修改群主 / 管理员 ---------- */
+  function sgmLoadGroups(silent) {
+    var box = $('sgm-group-results');
+    if (!box) return;
+    if (!silent) box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    var q = ($('sgm-group-search-input') && $('sgm-group-search-input').value || '').trim();
+    sb.rpc('gm2_list_groups', { p_pwd: sgmPwd, p_query: q })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">没有匹配的群聊</div>'; return; }
+        var head = el('div', 'gm-subtitle', '共 ' + rows.length + ' 个群聊');
+        box.appendChild(head);
+        rows.forEach(function (g) {
+          var card = el('div', 'gm-user');
+          var main = el('div', 'gm-user-main');
+          var av = el('div', 'avatar sm');
+          setAvatar(av, { nickname: g.name });
+          var info = el('div', 'gm-user-info');
+          info.appendChild(el('div', 'gm-user-name', g.name || '(未命名群)'));
+          var ownerOnline = !!g.owner_online;
+          info.appendChild(el('div', 'gm-user-online ' + (ownerOnline ? 'on' : 'off'),
+            '群主：' + (g.owner_nickname || '未知') + '（' + (ownerOnline ? '在线' : '离线') + '）'));
+          var cnt = (g.member_count || 0) + ' 人 · ' + (g.admin_count || 0) + ' 名管理员';
+          if (g.created_at) cnt += ' · ' + String(g.created_at).slice(0, 10);
+          info.appendChild(el('div', 'gm-user-no', cnt));
+          main.appendChild(av); main.appendChild(info);
+          card.appendChild(main);
+          var acts = el('div', 'gm-row-acts');
+          var mb = el('button', 'btn-mini', (sgmCurGroup && sgmCurGroup.group_id === g.group_id) ? '收起成员' : '查看成员');
+          mb.type = 'button';
+          mb.onclick = function () {
+            if (sgmCurGroup && sgmCurGroup.group_id === g.group_id) sgmCurGroup = null;
+            else sgmCurGroup = { group_id: g.group_id, name: g.name || '(未命名群)' };
+            sgmLoadGroups(true);
+          };
+          acts.appendChild(mb);
+          card.appendChild(acts);
+          box.appendChild(card);
+        });
+        if (sgmCurGroup) {
+          var mb2 = el('div', 'sgm-member-box');
+          mb2.id = 'sgm-member-box';
+          mb2.appendChild(el('div', 'gm-subtitle', '「' + sgmCurGroup.name + '」成员'));
+          box.appendChild(mb2);
+          sgmLoadMembers(mb2);
+        }
+      })
+      .catch(function (e) { sgmAuthLost(box, e); });
+  }
+
+  function sgmLoadMembers(box) {
+    if (!sgmCurGroup) return;
+    box.appendChild(el('div', 'gm-empty', '加载中…'));
+    sb.rpc('gm2_list_group_members', { p_pwd: sgmPwd, p_group_id: sgmCurGroup.group_id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        var holder = $('sgm-member-box');
+        if (!holder) return;
+        holder.innerHTML = '';
+        holder.appendChild(el('div', 'gm-subtitle', '「' + sgmCurGroup.name + '」成员（' + rows.length + '）'));
+        if (!rows.length) { holder.appendChild(el('div', 'gm-empty', '该群暂无成员')); return; }
+        rows.forEach(function (m) {
+          var row = el('div', 'gm-row');
+          var tx = el('div', 'gm-row-text');
+          tx.appendChild(el('div', 'gm-row-name',
+            (m.nickname || '(无昵称)') + (m.is_owner ? '（群主）' : (m.is_admin ? '（管理员）' : ''))));
+          var on = onlineFromIso(m.last_active);
+          tx.appendChild(el('div', 'gm-row-sub',
+            (m.phone || '') + ' · ' + onlineText(m.last_active) + (on ? '' : '')));
+          row.appendChild(tx);
+          var acts = el('div', 'gm-row-acts');
+          if (!m.is_owner) {
+            var ob = el('button', 'btn-mini', '设为群主');
+            ob.type = 'button';
+            ob.onclick = function () { sgmSetOwner(m); };
+            acts.appendChild(ob);
+            var ab = el('button', 'btn-mini', m.is_admin ? '取消管理员' : '设为管理员');
+            ab.type = 'button';
+            ab.onclick = function () { sgmSetAdmin(m, !m.is_admin); };
+            acts.appendChild(ab);
+          }
+          row.appendChild(acts);
+          holder.appendChild(row);
+        });
+      })
+      .catch(function (e) {
+        var holder = $('sgm-member-box');
+        if (holder) sgmAuthLost(holder, e);
+      });
+  }
+
+  function sgmSetOwner(m) {
+    if (!sgmCurGroup) return;
+    if (!window.confirm('确认把「' + sgmCurGroup.name + '」的群主转让给 ' + (m.nickname || '该成员') + '？')) return;
+    sb.rpc('gm2_set_group_owner', { p_pwd: sgmPwd, p_group_id: sgmCurGroup.group_id, p_new_owner_id: m.user_id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('群主已更换');
+        sgmLoadGroups(true);
+      })
+      .catch(function (e) { toast('设置失败：' + friendlyError(e)); });
+  }
+
+  function sgmSetAdmin(m, want) {
+    if (!sgmCurGroup) return;
+    sb.rpc('gm2_set_group_admin', { p_pwd: sgmPwd, p_group_id: sgmCurGroup.group_id, p_user_id: m.user_id, p_is_admin: want })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast(want ? '已设为管理员' : '已取消管理员');
+        sgmLoadGroups(true);
+      })
+      .catch(function (e) { toast('设置失败：' + friendlyError(e)); });
+  }
+
+  function sgmOn(id, ev, fn) { var e = $(id); if (e) e.addEventListener(ev, fn); }
+
+  function initSgmBindings() {
+    sgmOn('sgm-open-btn', 'click', openSgmEntry);
+    sgmOn('sgm-close', 'click', closeSgmPanel);
+    var panel = $('sgm-panel');
+    if (panel) panel.addEventListener('click', function (e) { if (e.target === panel) closeSgmPanel(); });
+    sgmOn('sgm-tab-users', 'click', function () { sgmSetTab('users'); });
+    sgmOn('sgm-tab-groups', 'click', function () { sgmSetTab('groups'); });
+    sgmOn('sgm-search-btn', 'click', function () { sgmLoadUsers(); });
+    sgmOn('sgm-refresh-btn', 'click', function () { sgmLoadUsers(); });
+    sgmOn('sgm-search-input', 'keydown', function (e) { if (e && e.key === 'Enter') sgmLoadUsers(); });
+    sgmOn('sgm-group-search-btn', 'click', function () { sgmLoadGroups(); });
+    sgmOn('sgm-group-refresh-btn', 'click', function () { sgmLoadGroups(); });
+    sgmOn('sgm-group-search-input', 'keydown', function (e) { if (e && e.key === 'Enter') sgmLoadGroups(); });
+    // v283 红线兜底：全屏面板在手机端没有可点遮罩，必须保证 ✕ 一定能关闭
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== document) {
+        if (t.id === 'sgm-close') { closeSgmPanel(); return; }
+        t = t.parentNode;
+      }
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSgmBindings);
+  } else {
+    initSgmBindings();
   }
 })();
