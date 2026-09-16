@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v291 loaded');
+  console.log('[chatapp] app.js build v292 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -9213,6 +9213,7 @@
   var sgmTab = 'users';      // 'users' | 'groups'
   var sgmTimer = null;
   var sgmCurGroup = null;    // 当前展开成员的群 { group_id, name }
+  var sgmCurTitleUser = null; // 当前展开称号编辑的用户 uid
 
   function sgmCanGrant() { return sgmRole === 'admin' || sgmRole === 'dev'; }
   function sgmRoleText() {
@@ -9229,14 +9230,29 @@
     else gmTryAuth();
   }
 
+  // v291.1：开发者 / 次级开发者免密码进入 —— 身份由登录会话保证，
+  // 后端 gm2_role() 只认当前 uid 是否真的持有「开发者」/「次级开发者」称号。
+  // 若新 SQL 尚未执行（gm2_role 不存在），自动回退到口令验证。
   function openSgmEntry() {
-    sgmPending = true;
-    $('gm-pwd-input').value = '';
-    $('gm-pwd-error').hidden = true;
-    var btn = $('gm-pwd-confirm');
-    if (btn) { btn.disabled = false; btn.textContent = '进入'; }
-    showModal('gm-pwd-modal');
-    try { $('gm-pwd-input').focus(); } catch (e) {}
+    sb.rpc('gm2_role')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data) throw new Error('GM_FORBIDDEN');
+        sgmRole = r.data;
+        sgmPwd = '';
+        sgmPending = false;
+        closeSettings();
+        openSgmPanel();
+      })
+      .catch(function (e) {
+        sgmPending = true;
+        $('gm-pwd-input').value = '';
+        $('gm-pwd-error').hidden = true;
+        var btn = $('gm-pwd-confirm');
+        if (btn) { btn.disabled = false; btn.textContent = '进入'; }
+        showModal('gm-pwd-modal');
+        try { $('gm-pwd-input').focus(); } catch (e2) {}
+      });
   }
 
   function sgmTryAuth() {
@@ -9287,7 +9303,8 @@
       var p = $('sgm-panel');
       if (!p || !p.classList || !p.classList.contains('open')) return;
       if (sgmTab === 'users') sgmLoadUsers(true);
-      else sgmLoadGroups(true);
+      else if (sgmTab === 'groups') sgmLoadGroups(true);
+      else sgmLoadTitles(true);
     }, 20000);
   }
   function stopSgmPolling() {
@@ -9296,14 +9313,23 @@
 
   function sgmSetTab(tab) {
     sgmTab = tab;
-    var tu = $('sgm-tab-users'), tg = $('sgm-tab-groups');
-    if (tu) { if (tab === 'users') tu.classList.add('active'); else tu.classList.remove('active'); }
-    if (tg) { if (tab === 'groups') tg.classList.add('active'); else tg.classList.remove('active'); }
-    var vu = $('sgm-users-view'), vg = $('sgm-groups-view');
-    if (vu) vu.hidden = (tab !== 'users');
-    if (vg) vg.hidden = (tab !== 'groups');
+    ['users', 'groups', 'titles'].forEach(function (k) {
+      var t = $('sgm-tab-' + k);
+      if (!t) return;
+      if (k === tab) t.classList.add('active');
+      else t.classList.remove('active');
+      var v = $('sgm-' + k + '-view');
+      if (v) v.hidden = (k !== tab);
+    });
     if (tab === 'users') sgmLoadUsers();
-    else sgmLoadGroups();
+    else if (tab === 'groups') sgmLoadGroups();
+    else sgmLoadTitles();
+  }
+
+  function sgmRefreshCurrent(silent) {
+    if (sgmTab === 'users') sgmLoadUsers(silent);
+    else if (sgmTab === 'groups') sgmLoadGroups(silent);
+    else sgmLoadTitles(silent);
   }
 
   function sgmAuthLost(box, e) {
@@ -9351,6 +9377,14 @@
           card.appendChild(main);
 
           var acts = el('div', 'gm-row-acts');
+          // 称号管理（除开发者 / 次级开发者外的所有称号）
+          var tb = el('button', 'btn-mini', (sgmCurTitleUser === u.id) ? '收起称号' : '称号');
+          tb.type = 'button';
+          tb.onclick = function () {
+            sgmCurTitleUser = (sgmCurTitleUser === u.id) ? null : u.id;
+            sgmLoadUsers(true);
+          };
+          acts.appendChild(tb);
           // 授予 / 撤销次级开发者：仅开发者与站长
           if (sgmCanGrant() && !u.is_protected) {
             var gb = el('button', 'btn-mini', u.is_subdev ? '撤销次级开发者' : '设为次级开发者');
@@ -9366,9 +9400,149 @@
           acts.appendChild(db);
           card.appendChild(acts);
           box.appendChild(card);
+          if (sgmCurTitleUser === u.id) {
+            var tb2 = el('div', 'sgm-member-box');
+            tb2.id = 'sgm-title-box';
+            box.appendChild(tb2);
+            sgmLoadTitlesOfUser(u, tb2);
+          }
         });
       })
       .catch(function (e) { sgmAuthLost(box, e); });
+  }
+
+  /* ---------- ⑤ 称号：查看 / 授予 / 撤销（开发者类称号除外） ---------- */
+  function sgmLoadTitlesOfUser(u, holder) {
+    if (!holder) return;
+    holder.appendChild(el('div', 'gm-empty', '加载中…'));
+    sb.rpc('gm2_list_titles_of_user', { p_pwd: sgmPwd, p_user_id: u.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        var h = $('sgm-title-box');
+        if (!h) return;
+        h.innerHTML = '';
+        h.appendChild(el('div', 'gm-subtitle', '「' + (u.nickname || u.phone || '用户') + '」的称号（' + rows.length + '）'));
+        if (!rows.length) { h.appendChild(el('div', 'gm-empty', '暂无可选称号，可到「称号管理」新建')); return; }
+        rows.forEach(function (t) {
+          var row = el('div', 'gm-row');
+          var tx = el('div', 'gm-row-text');
+          var nm = el('div', 'gm-row-name', '');
+          nm.appendChild(document.createTextNode(t.name));
+          if (t.locked) nm.appendChild(el('span', 'sgm-tag locked', '不可用'));
+          if (t.owned) nm.appendChild(el('span', 'sgm-tag on', '已拥有'));
+          tx.appendChild(nm);
+          var sw = el('div', 'gm-row-sub', '');
+          sw.style.width = '24px';
+          sw.style.height = '24px';
+          sw.style.borderRadius = '50%';
+          sw.style.border = '3px solid ' + (t.frame_color || '#ffd700');
+          var sub = el('div', 'gm-row-sub', '');
+          sub.appendChild(sw);
+          tx.appendChild(sub);
+          row.appendChild(tx);
+          var acts = el('div', 'gm-row-acts');
+          if (t.locked) {
+            var lk = el('button', 'btn-mini', '开发者类');
+            lk.type = 'button';
+            lk.disabled = true;
+            acts.appendChild(lk);
+          } else {
+            var b = el('button', 'btn-mini' + (t.owned ? ' gm-danger' : ''), t.owned ? '撤销' : '授予');
+            b.type = 'button';
+            b.onclick = function () { sgmToggleTitleOfUser(u, t, !t.owned); };
+            acts.appendChild(b);
+          }
+          row.appendChild(acts);
+          h.appendChild(row);
+        });
+      })
+      .catch(function (e) {
+        var h = $('sgm-title-box');
+        if (h) sgmAuthLost(h, e);
+      });
+  }
+
+  function sgmToggleTitleOfUser(u, t, want) {
+    sb.rpc('gm2_set_user_title', { p_pwd: sgmPwd, p_user_id: u.id, p_title_id: t.id, p_grant: want })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast((want ? '已授予「' : '已撤销「') + t.name + '」');
+        sgmLoadUsers(true);
+      })
+      .catch(function (e) { toast('操作失败：' + friendlyError(e)); });
+  }
+
+  /* ---------- ⑥ 称号管理：创建称号 + 全量清单 ---------- */
+  function sgmLoadTitles(silent) {
+    var box = $('sgm-title-list');
+    if (!box) return;
+    if (!silent) box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    sb.rpc('gm2_list_titles', { p_pwd: sgmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        box.innerHTML = '';
+        if (!rows.length) { box.innerHTML = '<div class="gm-empty">还没有称号，可在上方新建</div>'; return; }
+        box.appendChild(el('div', 'gm-subtitle', '共 ' + rows.length + ' 个称号'));
+        rows.forEach(function (t) {
+          var row = el('div', 'gm-row');
+          var tx = el('div', 'gm-row-text');
+          var nm = el('div', 'gm-row-name', '');
+          nm.appendChild(document.createTextNode(t.name));
+          if (t.locked) nm.appendChild(el('span', 'sgm-tag locked', '开发者类 · 不可操作'));
+          var sw = el('span', 'sgm-swatch', '');
+          sw.style.display = 'inline-block';
+          sw.style.width = '14px';
+          sw.style.height = '14px';
+          sw.style.borderRadius = '50%';
+          sw.style.marginRight = '6px';
+          sw.style.border = '2px solid ' + (t.frame_color || '#ffd700');
+          sw.style.verticalAlign = 'middle';
+          nm.insertBefore(sw, nm.firstChild);
+          tx.appendChild(nm);
+          var subTxt = (t.description || '无描述') + ' · ' + (t.usage_count || 0) + ' 人持有'
+            + (t.cond_type && t.cond_type !== 'manual' ? ' · 自动条件：' + t.cond_type : ' · 手动授予');
+          tx.appendChild(el('div', 'gm-row-sub', subTxt));
+          row.appendChild(tx);
+          box.appendChild(row);
+        });
+      })
+      .catch(function (e) { sgmAuthLost(box, e); });
+  }
+
+  function sgmCreateTitle() {
+    var err = $('sgm-title-error');
+    var name = ($('sgm-title-name').value || '').trim();
+    var desc = ($('sgm-title-desc').value || '').trim();
+    var color = ($('sgm-title-color').value || '#ffd700');
+    var style = ($('sgm-title-style').value || 'ring');
+    if (err) err.hidden = true;
+    if (!name) { if (err) { err.textContent = '请输入称号名称'; err.hidden = false; } return; }
+    var btn = $('sgm-title-create');
+    if (btn) { btn.disabled = true; btn.textContent = '创建中…'; }
+    function reset() { if (btn) { btn.disabled = false; btn.textContent = '创建称号'; } }
+    sb.rpc('gm2_create_title', {
+      p_pwd: sgmPwd, p_name: name, p_desc: desc, p_color: color,
+      p_style: style, p_cond_type: 'manual', p_value: null
+    })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('称号「' + name + '」已创建');
+        $('sgm-title-name').value = '';
+        $('sgm-title-desc').value = '';
+        sgmLoadTitles();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (err) {
+          err.textContent = (/GM_FORBIDDEN/.test(m) ? '当前角色无权创建称号'
+            : /duplicate key|已存在/.test(m) ? '已存在同名称号'
+            : '创建失败：' + m) || '创建失败';
+          err.hidden = false;
+        }
+      })
+      .then(reset, reset);
   }
 
   function sgmToggleSubdev(u) {
@@ -9529,6 +9703,9 @@
     sgmOn('sgm-group-search-btn', 'click', function () { sgmLoadGroups(); });
     sgmOn('sgm-group-refresh-btn', 'click', function () { sgmLoadGroups(); });
     sgmOn('sgm-group-search-input', 'keydown', function (e) { if (e && e.key === 'Enter') sgmLoadGroups(); });
+    sgmOn('sgm-tab-titles', 'click', function () { sgmSetTab('titles'); });
+    sgmOn('sgm-title-create', 'click', sgmCreateTitle);
+    sgmOn('sgm-title-name', 'keydown', function (e) { if (e && e.key === 'Enter') sgmCreateTitle(); });
     // v283 红线兜底：全屏面板在手机端没有可点遮罩，必须保证 ✕ 一定能关闭
     document.addEventListener('click', function (e) {
       var t = e.target;
