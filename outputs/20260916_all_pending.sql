@@ -863,7 +863,7 @@ notify pgrst, 'reload schema';
 
 
 -- ============================================================
---  v291/v292：次级开发者授予 + 简易 GM 后台（免密码 + 称号管理）
+--  v291-v293：次级开发者授予 + 管理后台（免密码、同 GM 后台、无聊天记录、不可授开发者类称号）
 --  来源：supabase/migrations/20260916_subdev_gm.sql
 -- ============================================================
 -- ============================================================
@@ -1363,5 +1363,246 @@ begin
 end;
 $$;
 grant execute on function public.gm2_set_user_title(text, uuid, uuid, boolean) to authenticated;
+
+-- ============================================================
+--  v293：简易后台并入 GM 后台
+--    ① gm_check 放宽：持有开发者类称号（含次级开发者）即可通过，口令可省略；
+--       次级开发者从此拥有与站长相同的 GM 后台 RPC 能力。
+--    ② 例外（改用 gm_check_admin，仅站长）：
+--         gm_get_group_messages / gm_get_dm_messages（聊天记录）
+--    ③ 例外（函数内加保护，仅站长可操作开发者类称号）：
+--         gm_grant_title / gm_revoke_title / gm_delete_title / gm_update_title
+-- ============================================================
+
+-- 15) 放宽 gm_check：角色 + 可选口令
+create or replace function public.gm_check(p_pwd text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_role text;
+begin
+  v_role := public.gm2_role();
+  if v_role is null then
+    raise exception 'GM_FORBIDDEN';
+  end if;
+  if p_pwd is not null and p_pwd <> '' and p_pwd is distinct from public.gm_password() then
+    raise exception 'GM_AUTH_FAIL';
+  end if;
+end;
+$$;
+grant execute on function public.gm_check(text) to authenticated;
+
+-- 16) 严格校验：仅站长 + 口令必填（聊天记录等敏感操作专用）
+create or replace function public.gm_check_admin(p_pwd text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if (auth.uid()::uuid) is distinct from public.gm_admin_uid() then
+    raise exception 'GM_FORBIDDEN';
+  end if;
+  if p_pwd is distinct from public.gm_password() then
+    raise exception 'GM_AUTH_FAIL';
+  end if;
+end;
+$$;
+grant execute on function public.gm_check_admin(text) to authenticated;
+
+-- 17) 聊天记录：仅站长可看（次级开发者不可查看聊天记录）
+create or replace function public.gm_get_group_messages(p_pwd text, p_group_id uuid)
+returns table (
+  id               bigint,
+  sender_id        uuid,
+  sender_name      text,
+  receiver_id      uuid,
+  group_id         uuid,
+  kind             text,
+  content          text,
+  file_path        text,
+  file_name        text,
+  file_size        bigint,
+  created_at       timestamptz,
+  recalled         boolean,
+  deleted_by       uuid[],
+  hidden_forbidden boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.gm_check_admin(p_pwd);
+  return query
+    select m.id,
+           m.sender_id,
+           sp.nickname,
+           m.receiver_id,
+           m.group_id,
+           m.kind,
+           coalesce(m.recalled_content, m.content) as content,
+           coalesce(m.recalled_file_path, m.file_path) as file_path,
+           coalesce(m.recalled_file_name, m.file_name) as file_name,
+           coalesce(m.recalled_file_size, m.file_size) as file_size,
+           m.created_at,
+           m.recalled,
+           m.deleted_by,
+           m.hidden_forbidden
+      from public.messages m
+      left join public.profiles sp on sp.id = m.sender_id
+     where m.group_id = p_group_id
+     order by m.created_at asc;
+end;
+$$;
+grant execute on function public.gm_get_group_messages(text, uuid) to authenticated;
+
+create or replace function public.gm_get_dm_messages(p_pwd text, p_user_a uuid, p_user_b uuid)
+returns table (
+  id               bigint,
+  sender_id        uuid,
+  sender_name      text,
+  receiver_id      uuid,
+  group_id         uuid,
+  kind             text,
+  content          text,
+  file_path        text,
+  file_name        text,
+  file_size        bigint,
+  created_at       timestamptz,
+  recalled         boolean,
+  deleted_by       uuid[],
+  hidden_forbidden boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.gm_check_admin(p_pwd);
+  return query
+    select m.id,
+           m.sender_id,
+           sp.nickname,
+           m.receiver_id,
+           m.group_id,
+           m.kind,
+           coalesce(m.recalled_content, m.content) as content,
+           coalesce(m.recalled_file_path, m.file_path) as file_path,
+           coalesce(m.recalled_file_name, m.file_name) as file_name,
+           coalesce(m.recalled_file_size, m.file_size) as file_size,
+           m.created_at,
+           m.recalled,
+           m.deleted_by,
+           m.hidden_forbidden
+      from public.messages m
+      left join public.profiles sp on sp.id = m.sender_id
+     where m.group_id is null
+       and ((m.sender_id = p_user_a and m.receiver_id = p_user_b)
+         or (m.sender_id = p_user_b and m.receiver_id = p_user_a))
+     order by m.created_at asc;
+end;
+$$;
+grant execute on function public.gm_get_dm_messages(text, uuid, uuid) to authenticated;
+
+-- 18) 称号授予 / 撤销：开发者类称号仅站长可操作
+create or replace function public.gm_grant_title(p_pwd text, p_user_id uuid, p_title_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_name text;
+begin
+  perform public.gm_check(p_pwd);
+  select t.name into v_name from public.titles t where t.id = p_title_id;
+  if v_name in ('开发者', '次级开发者') and public.gm2_role() is distinct from 'admin' then
+    raise exception 'DEV_TITLE_ADMIN_ONLY';
+  end if;
+  insert into public.user_titles (user_id, title_id, source, granted_by)
+  values (p_user_id, p_title_id, 'manual', auth.uid())
+  on conflict (user_id, title_id) do nothing;
+  perform public.auto_equip_free_slot(p_user_id, p_title_id);
+end;
+$$;
+grant execute on function public.gm_grant_title(text, uuid, uuid) to authenticated;
+
+create or replace function public.gm_revoke_title(p_pwd text, p_user_id uuid, p_title_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_name text;
+begin
+  perform public.gm_check(p_pwd);
+  select t.name into v_name from public.titles t where t.id = p_title_id;
+  if v_name in ('开发者', '次级开发者') and public.gm2_role() is distinct from 'admin' then
+    raise exception 'DEV_TITLE_ADMIN_ONLY';
+  end if;
+  delete from public.user_titles where user_id = p_user_id and title_id = p_title_id;
+  update public.profiles set display_title_id = (
+    select title_id from public.user_titles where user_id = p_user_id order by granted_at desc limit 1
+  ) where id = p_user_id and display_title_id = p_title_id;
+end;
+$$;
+grant execute on function public.gm_revoke_title(text, uuid, uuid) to authenticated;
+
+-- 19) 系统称号不可删除 / 不可改名（防止破坏开发者称号体系）
+create or replace function public.gm_delete_title(p_pwd text, p_title_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare v_name text;
+begin
+  perform public.gm_check(p_pwd);
+  select t.name into v_name from public.titles t where t.id = p_title_id;
+  if v_name in ('开发者', '次级开发者') then
+    raise exception '系统称号不可删除';
+  end if;
+  delete from public.titles where id = p_title_id;
+end;
+$$;
+grant execute on function public.gm_delete_title(text, uuid) to authenticated;
+
+create or replace function public.gm_update_title(
+  p_pwd text,
+  p_title_id uuid,
+  p_name text,
+  p_desc text,
+  p_color text,
+  p_style text,
+  p_cond_type text,
+  p_value int
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_name text;
+begin
+  perform public.gm_check(p_pwd);
+  if p_title_id is null then
+    raise exception '称号 ID 不能为空';
+  end if;
+  select t.name into v_name from public.titles t where t.id = p_title_id;
+  if v_name in ('开发者', '次级开发者') then
+    raise exception '系统称号不可修改';
+  end if;
+  update public.titles
+    set name = p_name,
+        description = coalesce(nullif(p_desc, ''), null),
+        frame_color = coalesce(nullif(p_color, ''), '#ffd700'),
+        frame_style = coalesce(nullif(p_style, ''), 'ring'),
+        cond_type = coalesce(nullif(p_cond_type, ''), 'manual'),
+        cond_value = case when coalesce(p_cond_type, 'manual') in ('streak','total_login','clean_streak') then p_value else null end
+  where id = p_title_id;
+end;
+$$;
+grant execute on function public.gm_update_title(text, uuid, text, text, text, text, text, int) to authenticated;
 
 notify pgrst, 'reload schema';
