@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=291">
+<link rel="stylesheet" href="assets/style.v201.css?v=292">
 </head>
 <body>
 
@@ -1054,6 +1054,7 @@
       <div class="gm-tabs">
         <button class="gm-tab active" id="sgm-tab-users" type="button">用户在线</button>
         <button class="gm-tab" id="sgm-tab-groups" type="button">群聊状态</button>
+        <button class="gm-tab" id="sgm-tab-titles" type="button">称号管理</button>
       </div>
       <button class="icon-btn" id="sgm-close" type="button" aria-label="关闭">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -1077,12 +1078,32 @@
       </div>
       <div class="gm-results" id="sgm-group-results"></div>
     </div>
+
+    <div class="sgm-body" id="sgm-titles-view" hidden>
+      <div class="gm-search sgm-title-form">
+        <input id="sgm-title-name" maxlength="20" placeholder="称号名称" autocomplete="off">
+        <input id="sgm-title-desc" maxlength="60" placeholder="描述（可选）" autocomplete="off">
+      </div>
+      <div class="gm-search sgm-title-form">
+        <span class="sgm-fld">颜色</span>
+        <input type="color" id="sgm-title-color" class="sgm-color" value="#ffd700">
+        <span class="sgm-fld">样式</span>
+        <select id="sgm-title-style" class="sgm-select">
+          <option value="ring">描边环</option>
+          <option value="glow">发光</option>
+          <option value="solid">加粗环</option>
+        </select>
+        <button class="btn-primary sgm-create-btn" id="sgm-title-create" type="button">创建称号</button>
+      </div>
+      <p class="form-error" id="sgm-title-error" hidden></p>
+      <div class="gm-results" id="sgm-title-list"></div>
+    </div>
   </div>
 </div>
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v291.js"></script>
+<script src="assets/app.v292.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
