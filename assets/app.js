@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v294 loaded');
+  console.log('[chatapp] app.js build v295 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3079,7 +3079,7 @@
         row.appendChild(b);
         var chatBtn = el('button', 'btn-mini', '聊天');
         chatBtn.type = 'button';
-        if (state.gm2Role === 'subdev') chatBtn.hidden = true;
+        if (state.gm2Role === 'subdev') { chatBtn.hidden = true; chatBtn.style.display = 'none'; }
         chatBtn.onclick = function () { gmOpenGroupChat(g.group_id, g.name, uid); };
         row.appendChild(chatBtn);
         groupsBox.appendChild(row);
@@ -3122,7 +3122,7 @@
         row.appendChild(b);
         var chatBtn = el('button', 'btn-mini', '聊天');
         chatBtn.type = 'button';
-        if (state.gm2Role === 'subdev') chatBtn.hidden = true;
+        if (state.gm2Role === 'subdev') { chatBtn.hidden = true; chatBtn.style.display = 'none'; }
         chatBtn.onclick = function () { gmOpenDmChat(uid, f.other_id, f.other_nickname); };
         row.appendChild(chatBtn);
         friendsBox.appendChild(row);
@@ -3152,7 +3152,7 @@
         row.appendChild(txt);
         var chatBtn = el('button', 'btn-mini', '聊天');
         chatBtn.type = 'button';
-        if (state.gm2Role === 'subdev') chatBtn.hidden = true;
+        if (state.gm2Role === 'subdev') { chatBtn.hidden = true; chatBtn.style.display = 'none'; }
         chatBtn.onclick = function () { gmOpenDmChat(uid, p.other_id, p.other_nickname); };
         row.appendChild(chatBtn);
         peersBox.appendChild(row);
@@ -3965,6 +3965,7 @@
           btn.onclick = function () { gmLoadGroupDetail(g.group_id, g.name); };
           var chatBtn = el('button', 'btn-mini', '聊天');
           chatBtn.type = 'button';
+          if (state.gm2Role === 'subdev') { chatBtn.hidden = true; chatBtn.style.display = 'none'; }   // 次级开发者不可看聊天记录
           chatBtn.onclick = function () { gmOpenGroupChat(g.group_id, g.name, null); };
           card.appendChild(main); card.appendChild(btn); card.appendChild(chatBtn);
           box.appendChild(card);
@@ -4006,7 +4007,7 @@
     head.appendChild(delBtn);
     var chatBtn = el('button', 'btn-mini', '聊天');
     chatBtn.type = 'button';
-    if (state.gm2Role === 'subdev') chatBtn.hidden = true;
+    if (state.gm2Role === 'subdev') { chatBtn.hidden = true; chatBtn.style.display = 'none'; }
     chatBtn.onclick = function () { gmOpenGroupChat(gid, gname, null); };
     head.appendChild(chatBtn);
     box.appendChild(head);
