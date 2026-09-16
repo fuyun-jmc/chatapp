@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v293 loaded');
+  console.log('[chatapp] app.js build v294 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -3409,14 +3409,28 @@
   }
 
   // ---------- GM 问题反馈列表 ----------
+  // v294：多条回复（开发者/次级开发者可各自回复同一条反馈）；已读仅标记本端
+  function gmFbRoleLabel(role) {
+    return role === 'admin' ? '站长' : (role === 'subdev' ? '次级开发者' : '开发者');
+  }
+
   function openGmFeedbackTab(silent) {
     var list = $('gm-feedback-list');
     if (!list) return;
     if (!silent) list.innerHTML = '<div class="gm-loading">加载中…</div>';
-    sb.rpc('gm_list_feedback', { p_pwd: gmPwd })
-      .then(function (r) {
-        if (r.error) throw r.error;
-        var rows = r.data || [];
+    Promise.all([
+      sb.rpc('gm_list_feedback', { p_pwd: gmPwd }),
+      // 回复列表可能因后端 SQL 未执行而不存在 → 降级为旧版单条回复渲染
+      sb.rpc('gm_list_feedback_replies', { p_pwd: gmPwd }).catch(function () { return { data: null }; })
+    ])
+      .then(function (rs) {
+        if (rs[0].error) throw rs[0].error;
+        var rows = rs[0].data || [];
+        var repRows = (rs[1] && rs[1].data) || null;   // null = 后端未升级
+        var repMap = {};
+        (repRows || []).forEach(function (r) {
+          (repMap[r.feedback_id] = repMap[r.feedback_id] || []).push(r);
+        });
         list.innerHTML = '';
         updateFeedbackBadgeFromRows(rows);
         if (!rows.length) { list.innerHTML = '<div class="gm-empty">暂无反馈</div>'; return; }
@@ -3425,32 +3439,40 @@
           var head = el('div', 'gm-report-head');
           var name = el('div', 'gm-report-name', (f.nickname || '(无昵称)') + ' · ' + (f.phone || '—'));
           head.appendChild(name);
-          var badge = el('div', 'gm-report-badge' + (f.status === 'new' ? '' : ' done'),
-            f.status === 'new' ? '未读' : '已读');
+          // 已读状态：本端（read_by_me）；后端未升级时回退 status
+          var unread = (repRows ? !f.read_by_me : f.status === 'new');
+          var badge = el('div', 'gm-report-badge' + (unread ? '' : ' done'), unread ? '未读' : '已读');
           head.appendChild(badge);
           card.appendChild(head);
           card.appendChild(el('div', 'gm-report-sub', '提交时间：' + (f.created_at ? f.created_at.replace('T', ' ').slice(0, 16) : '—')));
           card.appendChild(el('div', 'gm-report-line', '内容：' + (f.content || '')));
           if (f.contact) card.appendChild(el('div', 'gm-report-sub', '联系方式：' + f.contact));
 
-          // 开发者已有回复
-          if (f.dev_reply) {
+          // 回复列表（多条，按时间正序）
+          var replies = repMap[f.id] || [];
+          if (!repRows && f.dev_reply) {
+            // 后端未升级：兼容旧的单条回复
+            replies = [{ reply_id: f.id, replier_name: '开发者', replier_role: 'dev', content: f.dev_reply, created_at: f.dev_reply_at, _legacy: true }];
+          }
+          replies.forEach(function (r) {
             var rep = el('div', 'gm-report-reply');
             var repHead = el('div', 'gm-report-reply-head');
-            repHead.appendChild(el('div', 'gm-report-reply-label', '开发者回复：'));
-            var delBtn = el('button', 'btn-mini btn-danger-mini', '删除回复');
-            delBtn.type = 'button';
-            delBtn.onclick = (function (fid) {
-              return function () { gmDeleteFeedbackReply(fid); };
-            })(f.id);
-            repHead.appendChild(delBtn);
+            repHead.appendChild(el('div', 'gm-report-reply-label', gmFbRoleLabel(r.replier_role) + ' ' + (r.replier_name || '') + '：'));
+            if (!r._legacy) {
+              var delBtn = el('button', 'btn-mini btn-danger-mini', '删除');
+              delBtn.type = 'button';
+              delBtn.onclick = (function (rid) {
+                return function () { gmDeleteFeedbackReply(rid); };
+              })(r.reply_id);
+              repHead.appendChild(delBtn);
+            }
             rep.appendChild(repHead);
-            rep.appendChild(el('div', 'gm-report-reply-text', f.dev_reply));
-            if (f.dev_reply_at) rep.appendChild(el('div', 'gm-report-sub', '回复时间：' + f.dev_reply_at.replace('T', ' ').slice(0, 16)));
+            rep.appendChild(el('div', 'gm-report-reply-text', r.content));
+            if (r.created_at) rep.appendChild(el('div', 'gm-report-sub', '回复时间：' + r.created_at.replace('T', ' ').slice(0, 16)));
             card.appendChild(rep);
-          }
+          });
 
-          // 回复框（开发者留言，提交者可见）
+          // 回复框（多条回复互不覆盖，提交者可见全部）
           var replyWrap = el('div', 'gm-fb-reply');
           var ta = el('textarea', 'gm-fb-reply-input');
           ta.rows = 2;
@@ -3462,7 +3484,7 @@
           replyWrap.appendChild(replyBtn);
           card.appendChild(replyWrap);
 
-          if (f.status === 'new') {
+          if (unread) {
             var acts = el('div', 'gm-row-acts');
             var read = el('button', 'btn-mini', '标记已读'); read.type = 'button';
             read.onclick = function () { gmMarkFeedbackRead(f.id); };
@@ -3479,10 +3501,12 @@
       });
   }
 
-  // 根据 feedback 列表计算未读数并更新 tab 徽章与面板计数
+  // 根据 feedback 列表计算未读数并更新 tab 徽章与面板计数（本端口径）
   function updateFeedbackBadgeFromRows(rows) {
     rows = rows || [];
-    var unread = rows.filter(function (f) { return f.status === 'new'; }).length;
+    var unread = rows.filter(function (f) {
+      return typeof f.read_by_me === 'boolean' ? !f.read_by_me : f.status === 'new';
+    }).length;
     var tabBadge = $('gm-feedback-tab-badge');
     if (tabBadge) {
       tabBadge.textContent = unread > 99 ? '99+' : String(unread);
@@ -3527,7 +3551,7 @@
       });
   }
 
-  // GM 删除某条反馈的开发者回复
+  // GM 删除某条回复（p_id = 回复 id）
   function gmDeleteFeedbackReply(id) {
     if (!window.confirm('确定删除该回复？')) return;
     sb.rpc('gm_delete_feedback_reply', { p_pwd: gmPwd, p_id: id })
@@ -3538,9 +3562,9 @@
       })
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
-        if (/FEEDBACK_NOT_FOUND/.test(m)) return toast('反馈不存在或已删除');
+        if (/REPLY_NOT_FOUND|FEEDBACK_NOT_FOUND/.test(m)) return toast('回复不存在或已删除');
         if (/PGRST201|function.*not found|Could not find|schema.*cache/.test(m)) {
-          return window.alert('删除失败：后端函数 gm_delete_feedback_reply 不存在。\n请在 Supabase SQL Editor 执行 20260824_delete_feedback_reply.sql 后再试。');
+          return window.alert('删除失败：后端函数 gm_delete_feedback_reply 不存在。\n请在 Supabase SQL Editor 执行 20260916_feedback_multi.sql 后再试。');
         }
         toast('删除失败：' + friendlyError(e));
       });
@@ -3982,6 +4006,7 @@
     head.appendChild(delBtn);
     var chatBtn = el('button', 'btn-mini', '聊天');
     chatBtn.type = 'button';
+    if (state.gm2Role === 'subdev') chatBtn.hidden = true;
     chatBtn.onclick = function () { gmOpenGroupChat(gid, gname, null); };
     head.appendChild(chatBtn);
     box.appendChild(head);
@@ -5824,15 +5849,24 @@
       });
   });
 
-  // 我的反馈记录（用户在反馈弹窗内查看 + 开发者回复）
+  // 我的反馈记录（用户在反馈弹窗内查看 + 开发者/次级开发者多条回复）
   function loadMyFeedback() {
     var box = $('my-feedback-list');
     if (!box) return;
     box.innerHTML = '<div class="gm-loading">加载中…</div>';
-    sb.rpc('get_my_feedback')
-      .then(function (r) {
-        if (r.error) throw r.error;
-        var rows = r.data || [];
+    Promise.all([
+      sb.rpc('get_my_feedback'),
+      // 回复列表可能因后端 SQL 未执行而不存在 → 降级旧版单条回复
+      sb.rpc('get_my_feedback_replies').catch(function () { return { data: null }; })
+    ])
+      .then(function (rs) {
+        if (rs[0].error) throw rs[0].error;
+        var rows = rs[0].data || [];
+        var repRows = (rs[1] && rs[1].data) || null;   // null = 后端未升级
+        var repMap = {};
+        (repRows || []).forEach(function (r) {
+          (repMap[r.feedback_id] = repMap[r.feedback_id] || []).push(r);
+        });
         box.innerHTML = '';
         if (!rows.length) { box.innerHTML = '<div class="gm-empty">暂无反馈记录</div>'; return; }
         rows.forEach(function (f) {
@@ -5840,16 +5874,22 @@
           card.appendChild(el('div', 'my-fb-time', '提交时间：' + (f.created_at ? f.created_at.replace('T', ' ').slice(0, 16) : '—')));
           card.appendChild(el('div', 'my-fb-content', f.content || ''));
           if (f.contact) card.appendChild(el('div', 'my-fb-sub', '联系方式：' + f.contact));
-          if (f.dev_reply) {
+          var replies = repMap ? (repMap[f.id] || []) : [];
+          if (repRows === null && f.dev_reply) {
+            // 后端未升级：兼容旧的单条回复
+            replies = [{ replier_name: '开发者', replier_role: 'dev', content: f.dev_reply, created_at: f.dev_reply_at }];
+          }
+          replies.forEach(function (r) {
             var rep = el('div', 'my-fb-reply');
-            rep.appendChild(el('div', 'my-fb-reply-label', '开发者回复：'));
-            rep.appendChild(el('div', 'my-fb-reply-text', f.dev_reply));
-            if (f.dev_reply_at) rep.appendChild(el('div', 'my-fb-sub', '回复时间：' + f.dev_reply_at.replace('T', ' ').slice(0, 16)));
+            rep.appendChild(el('div', 'my-fb-reply-label', gmFbRoleLabel(r.replier_role) + ' ' + (r.replier_name || '') + ' 回复：'));
+            rep.appendChild(el('div', 'my-fb-reply-text', r.content));
+            if (r.created_at) rep.appendChild(el('div', 'my-fb-sub', '回复时间：' + r.created_at.replace('T', ' ').slice(0, 16)));
             card.appendChild(rep);
-            if (!f.reply_seen) {
-              // 用户打开即视为已读，消除红点
-              sb.rpc('mark_feedback_reply_seen', { p_id: f.id }).catch(function () {});
-            }
+          });
+          var hasReply = repRows !== null ? !!f.has_reply : !!f.dev_reply;
+          if (hasReply && !f.reply_seen) {
+            // 用户打开即视为已读，消除红点（用户本端状态，不影响管理端）
+            sb.rpc('mark_feedback_reply_seen', { p_id: f.id }).catch(function () {});
           }
           box.appendChild(card);
         });
@@ -5867,7 +5907,10 @@
     sb.rpc('get_my_feedback')
       .then(function (r) {
         var rows = (r.data) || [];
-        var unseen = rows.filter(function (f) { return f.dev_reply && !f.reply_seen; }).length;
+        var unseen = rows.filter(function (f) {
+          var has = typeof f.has_reply === 'boolean' ? f.has_reply : !!f.dev_reply;
+          return has && !f.reply_seen;
+        }).length;
         var show = unseen > 0;
         var label = unseen > 9 ? '9+' : String(unseen);
         if (badge) { badge.hidden = !show; if (show) badge.textContent = label; }
