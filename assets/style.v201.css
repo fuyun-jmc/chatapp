@@ -1824,3 +1824,21 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .invite-code.off { color: var(--text-3, #8b93a1); }
 .invite-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-3, #8b93a1); }
+
+/* ---------- v297：广场点赞 / 收藏 ---------- */
+.sq-react-bar { display: flex; align-items: center; margin-top: 8px; }
+.sq-react-bar > * { margin-right: 14px; }
+.sq-react {
+  display: inline-flex; align-items: center; border: 0; background: transparent;
+  color: var(--text-3, #8b93a1); font-size: 13px; padding: 4px 2px; cursor: pointer;
+}
+.sq-react-icon { font-size: 16px; margin-right: 4px; line-height: 1; }
+.sq-react-num { font-variant-numeric: tabular-nums; }
+.sq-react.is-on { color: #e0245e; font-weight: 600; }
+.sq-react-bar.big .sq-react { font-size: 15px; padding: 8px 4px; }
+.sq-react-bar.big .sq-react-icon { font-size: 20px; }
+.sq-react-tabs { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.sq-react-tabs > * { margin-right: 18px; }
+.sq-post-sub { font-size: 12px; color: var(--text-3, #8b93a1); margin-top: 6px; }
+.sq-mine-row { display: flex; flex-wrap: wrap; }
+.sq-mine-row > * { margin-right: 8px; margin-bottom: 8px; }
