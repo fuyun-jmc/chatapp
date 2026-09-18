@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=295">
+<link rel="stylesheet" href="assets/style.v201.css?v=296">
 </head>
 <body>
 
@@ -266,6 +266,16 @@
         <span>我的群昵称</span>
         <input type="text" id="group-nickname" maxlength="20" autocomplete="off" placeholder="设置后群内成员可见（留空则显示本名）">
       </label>
+      <!-- v296：群聊邀请码（群主可开关，群成员可复制） -->
+      <div class="field invite-field" id="group-invite-block" hidden>
+        <span>群邀请码</span>
+        <div class="invite-row">
+          <span class="invite-code" id="group-invite-code">—</span>
+          <button class="btn-mini" id="group-invite-copy" type="button" hidden>复制</button>
+          <button class="btn-mini btn-outline" id="group-invite-toggle" type="button" hidden>启用邀请码</button>
+        </div>
+        <p class="invite-hint" id="group-invite-hint">启用后好友可在「添加好友」搜索框输入此码直接进群（群解散前一直有效）。</p>
+      </div>
       <div class="side-title" style="margin-top:4px; display:flex; justify-content:space-between; align-items:center">
         成员 <span><span class="count" id="group-member-count">0</span> <button class="mini-add" id="group-info-add" type="button" hidden title="添加成员">＋</button></span>
       </div>
@@ -1005,7 +1015,7 @@
     </header>
     <div class="settings-body fr-page-body">
       <div class="fr-add-search-wrap">
-        <input type="text" id="fr-add-search" placeholder="输入手机号/好友码添加好友" autocomplete="off">
+        <input type="text" id="fr-add-search" placeholder="输入手机号/好友码/群邀请码" autocomplete="off">
         <button type="button" class="search-clear" id="fr-add-clear" aria-label="清空">×</button>
       </div>
       <div class="fr-add-result" id="fr-add-result" hidden></div>
@@ -1048,7 +1058,7 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v295.js"></script>
+<script src="assets/app.v296.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
