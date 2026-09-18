@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v296 loaded');
+  console.log('[chatapp] app.js build v297 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2633,6 +2633,7 @@
     var hp = $('hide-phone-toggle');
     if (hp) hp.checked = !!state.hidePhone;
     refreshAppealSection();
+    loadMyReactCounts();   // v297：广场互动数量
     // 账号找回后强制改密码：显示提示条，并禁用关闭
     $('force-pwd-banner').hidden = !state.forceChangePwd;
     // 强制改密码期间不允许注销账号 / 进入 GM 后台（先完成安全流程）
@@ -8764,7 +8765,7 @@
   function sqPush() {
     sq.stack.push({
       view: sq.view, postId: sq.postId, profileId: sq.profileId,
-      followType: sq.followType, editPost: sq._editPostObj
+      followType: sq.followType, editPost: sq._editPostObj, reactKind: sq.reactKind
     });
   }
   function sqBack() {
@@ -8772,7 +8773,9 @@
     var prev = sq.stack.pop();
     sq.view = prev.view; sq.postId = prev.postId; sq.profileId = prev.profileId;
     sq.followType = prev.followType; sq._editPostObj = prev.editPost; sq.replyTo = null;
-    if (prev.view === 'home') renderSquareHome();
+    sq.reactKind = prev.reactKind || sq.reactKind;
+    if (prev.view === 'reacts') openSquareReacts(prev.reactKind || 'like', true);
+    else if (prev.view === 'home') renderSquareHome();
     else if (prev.view === 'post') renderSquarePost(prev.postId);
     else if (prev.view === 'profile') openSquareProfile(prev.profileId, true);
     else if (prev.view === 'followlist') openSquareFollowList(prev.followType, prev.profileId, true);
@@ -8860,6 +8863,95 @@
             posts.forEach(function (p) { p.author = map[p.author_id]; });
             return posts;
           });
+      })
+      .then(function (posts) { return sqAttachStats(posts); });
+  }
+
+  // v297：批量补上点赞 / 收藏计数与本人状态（后端未执行 SQL 时静默降级）
+  function sqAttachStats(posts) {
+    posts = posts || [];
+    var ids = posts.map(function (p) { return p.id; });
+    if (!ids.length) return Promise.resolve(posts);
+    return sb.rpc('forum_post_stats', { p_post_ids: ids })
+      .then(function (r) {
+        if (r.error) return posts;
+        var map = {};
+        (r.data || []).forEach(function (s) { map[s.post_id] = s; });
+        posts.forEach(function (p) {
+          p.stats = map[p.id] || { like_count: 0, fav_count: 0, liked: false, favorited: false };
+        });
+        return posts;
+      })
+      .catch(function () { return posts; });
+  }
+
+  // 点赞 / 收藏按钮条（列表卡片与详情页共用）
+  function sqReactBar(p, big) {
+    var s = p.stats || { like_count: 0, fav_count: 0, liked: false, favorited: false };
+    var bar = el('div', 'sq-react-bar' + (big ? ' big' : ''));
+    var like = el('button', 'sq-react' + (s.liked ? ' is-on' : ''), '');
+    like.type = 'button';
+    var likeIcon = el('span', 'sq-react-icon', s.liked ? '♥' : '♡');
+    var likeTxt = el('span', 'sq-react-num', String(s.like_count || 0));
+    like.appendChild(likeIcon); like.appendChild(likeTxt);
+    like.title = '点赞';
+    like.onclick = function (e) { e.stopPropagation(); sqToggleReact(p, 'like', like); };
+
+    var fav = el('button', 'sq-react' + (s.favorited ? ' is-on' : ''), '');
+    fav.type = 'button';
+    var favIcon = el('span', 'sq-react-icon', s.favorited ? '★' : '☆');
+    var favTxt = el('span', 'sq-react-num', String(s.fav_count || 0));
+    fav.appendChild(favIcon); fav.appendChild(favTxt);
+    fav.title = '收藏';
+    fav.onclick = function (e) { e.stopPropagation(); sqToggleReact(p, 'fav', fav); };
+
+    bar.appendChild(like); bar.appendChild(fav);
+    return bar;
+  }
+
+  // 切换点赞 / 收藏：先本地乐观更新，失败回滚
+  function sqToggleReact(p, kind, btn) {
+    if (!p || !p.id) return;
+    var s = p.stats || (p.stats = { like_count: 0, fav_count: 0, liked: false, favorited: false });
+    var isLike = (kind === 'like');
+    var onNow = isLike ? s.liked : s.favorited;
+    var nextOn = !onNow;
+    var numKey = isLike ? 'like_count' : 'fav_count';
+    var iconEl = btn && btn.querySelector('.sq-react-icon');
+    var numEl = btn && btn.querySelector('.sq-react-num');
+
+    // 乐观更新
+    if (isLike) s.liked = nextOn; else s.favorited = nextOn;
+    s[numKey] = Math.max(0, (s[numKey] || 0) + (nextOn ? 1 : -1));
+    if (btn) { if (nextOn) btn.classList.add('is-on'); else btn.classList.remove('is-on'); }
+    if (iconEl) iconEl.textContent = isLike ? (nextOn ? '♥' : '♡') : (nextOn ? '★' : '☆');
+    if (numEl) numEl.textContent = String(s[numKey]);
+
+    sb.rpc(isLike ? 'forum_toggle_like' : 'forum_toggle_favorite', { p_post_id: p.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var real = r.data === true;
+        if (real !== nextOn) {   // 与乐观值不一致时以服务端为准
+          if (isLike) s.liked = real; else s.favorited = real;
+          s[numKey] = Math.max(0, (s[numKey] || 0) + (real ? 1 : -1));
+          if (btn) { if (real) btn.classList.add('is-on'); else btn.classList.remove('is-on'); }
+          if (iconEl) iconEl.textContent = isLike ? (real ? '♥' : '♡') : (real ? '★' : '☆');
+          if (numEl) numEl.textContent = String(s[numKey]);
+        }
+        toast(isLike ? (real ? '已点赞' : '已取消点赞') : (real ? '已收藏' : '已取消收藏'));
+      })
+      .catch(function (err) {
+        // 回滚
+        if (isLike) s.liked = onNow; else s.favorited = onNow;
+        s[numKey] = Math.max(0, (s[numKey] || 0) + (onNow ? 1 : -1));
+        if (btn) { if (onNow) btn.classList.add('is-on'); else btn.classList.remove('is-on'); }
+        if (iconEl) iconEl.textContent = isLike ? (onNow ? '♥' : '♡') : (onNow ? '★' : '☆');
+        if (numEl) numEl.textContent = String(s[numKey]);
+        var m = (err && (err.message || '')) || '';
+        if (/PGRST202|does not exist|could not find the function/i.test(m)) {
+          toast('点赞/收藏需先在 Supabase 执行 20260918_forum_like_fav.sql');
+        } else if (/POST_NOT_FOUND/.test(m)) toast('帖子不存在或已删除');
+        else toast('操作失败：' + friendlyError(err));
       });
   }
   function makePostCard(p) {
@@ -8878,6 +8970,8 @@
     sb.from('forum_replies').select('*', { count: 'exact', head: true }).eq('post_id', p.id)
       .then(function (rc) { if (!rc.error) foot.textContent = rc.count + ' 条回复'; });
     card.appendChild(foot);
+    // v297：点赞 / 收藏
+    card.appendChild(sqReactBar(p));
     card.onclick = function () { sqPush(); openSquarePost(p.id); };
     return card;
   }
@@ -8908,6 +9002,8 @@
       if (p.body) { var b = el('div', 'sq-post-body'); b.appendChild(renderTextWithLinks(p.body)); body.appendChild(b); }
       if (p.link) { var lk = el('a', 'sq-post-link', p.link); lk.href = p.link; lk.target = '_blank'; lk.rel = 'noopener noreferrer'; body.appendChild(lk); }
       if (data.media && data.media.length) { var mw = el('div', 'sq-detail-media'); sqRenderMedia(mw, data.media); body.appendChild(mw); }
+      // v297：详情页点赞 / 收藏
+      body.appendChild(sqReactBar(p, true));
       if (p.author_id === state.uid) {
         var acts = el('div', 'sq-detail-actions');
         var edit = el('button', 'sq-btn', '编辑'); edit.onclick = function () { openSquareCompose(p); };
@@ -8931,6 +9027,82 @@
       body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载失败：' + friendlyError(e)));
     });
   }
+  /* ---------- v297：我的点赞 / 收藏列表（个人中心入口也可直达） ---------- */
+  function openSquareReacts(kind, skipPush) {
+    if (!skipPush) sqPush();
+    sq.view = 'reacts'; sq.reactKind = (kind === 'fav' ? 'fav' : 'like');
+    renderSquareReacts();
+  }
+  function renderSquareReacts() {
+    var kind = sq.reactKind === 'fav' ? 'fav' : 'like';
+    sq.view = 'reacts';
+    sqSetTitle(kind === 'fav' ? '我的收藏' : '我的点赞');
+    sqBackBtn(true);
+    var body = $('sq-body'); if (!body) return;
+    body.innerHTML = ''; body.appendChild(el('div', 'sq-empty', '加载中…'));
+    sb.rpc('forum_list_my_reacts', { p_kind: kind, p_limit: 50 })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        body.innerHTML = '';
+        var tabs = el('div', 'sq-react-tabs');
+        var t1 = el('button', 'sq-tab' + (kind === 'like' ? ' is-active' : ''), '我的点赞'); t1.type = 'button';
+        t1.onclick = function () { sq.reactKind = 'like'; renderSquareReacts(); };
+        var t2 = el('button', 'sq-tab' + (kind === 'fav' ? ' is-active' : ''), '我的收藏'); t2.type = 'button';
+        t2.onclick = function () { sq.reactKind = 'fav'; renderSquareReacts(); };
+        tabs.appendChild(t1); tabs.appendChild(t2);
+        body.appendChild(tabs);
+        if (!rows.length) {
+          body.appendChild(el('div', 'sq-empty', kind === 'fav' ? '还没有收藏任何帖子' : '还没有点赞任何帖子'));
+          return;
+        }
+        rows.forEach(function (row) {
+          var p = {
+            id: row.post_id, title: row.title, body: row.body, created_at: row.created_at,
+            author_id: row.author_id,
+            author: { nickname: row.author_nickname, phone: row.author_phone, avatar_path: row.author_avatar },
+            stats: {
+              like_count: row.like_count, fav_count: row.fav_count,
+              liked: kind === 'like', favorited: kind === 'fav'
+            }
+          };
+          var card = makePostCard(p);
+          if (row.reacted_at) card.appendChild(el('div', 'sq-post-sub', (kind === 'fav' ? '收藏于 ' : '点赞于 ') + sqTime(row.reacted_at)));
+          body.appendChild(card);
+        });
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        body.innerHTML = '';
+        if (/PGRST202|does not exist|could not find the function/i.test(m)) {
+          body.appendChild(el('div', 'sq-empty', '需先在 Supabase 执行 20260918_forum_like_fav.sql'));
+        } else {
+          body.appendChild(el('div', 'sq-empty', '加载失败：' + friendlyError(e)));
+        }
+      });
+  }
+
+  // 个人设置「广场互动」入口：关闭设置 → 打开广场 → 直达对应列表
+  function openMyReactsFromSettings(kind) {
+    hideModal('settings-modal');
+    openSquare();
+    sqPush();
+    openSquareReacts(kind, true);
+  }
+
+  // 个人设置里刷新「我点赞 / 我收藏」的数量
+  function loadMyReactCounts() {
+    sb.rpc('forum_my_react_counts')
+      .then(function (r) {
+        if (r.error) return;
+        var d = (r.data && r.data[0]) || {};
+        var lb = $('sq-mine-likes'), fb = $('sq-mine-favs');
+        if (lb) lb.textContent = '我点赞的（' + (d.liked_count || 0) + '）';
+        if (fb) fb.textContent = '我收藏的（' + (d.fav_count || 0) + '）';
+      })
+      .catch(function () {});
+  }
+
   function loadSquarePostData(id) {
     return sb.from('forum_posts').select('id,author_id,title,body,link,created_at').eq('id', id).maybeSingle()
       .then(function (r) {
@@ -8948,7 +9120,9 @@
             var map = {}; (pr.data || []).forEach(function (u) { map[u.id] = u; });
             p.author = map[p.author_id] || { nickname: null, phone: null };
             replies.forEach(function (x) { x.author = map[x.author_id] || { nickname: null, phone: null }; });
-            return { post: p, media: res[1].data || [], replies: replies };
+            return sqAttachStats([p]).then(function () {
+              return { post: p, media: res[1].data || [], replies: replies };
+            });
           });
         });
       });
@@ -9350,6 +9524,10 @@
     var back = $('sq-back'); if (back) back.onclick = function () { sqBack(); };
     var mine = $('sq-my-profile'); if (mine) mine.onclick = function () { sqPush(); openSquareProfile(state.uid); };
     var compose = $('sq-compose-btn'); if (compose) compose.onclick = function () { openSquareCompose(null); };
+    // v297：我的点赞 / 收藏
+    var reacts = $('sq-my-reacts'); if (reacts) reacts.onclick = function () { sqPush(); openSquareReacts(sq.reactKind || 'like', true); };
+    var mLikes = $('sq-mine-likes'); if (mLikes) mLikes.onclick = function () { openMyReactsFromSettings('like'); };
+    var mFavs = $('sq-mine-favs'); if (mFavs) mFavs.onclick = function () { openMyReactsFromSettings('fav'); };
     var modal = $('square-modal'); if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeSquare(); });
     // v282：广场内搜索
     var sInp = $('sq-search-input'); if (sInp) sInp.oninput = onSqSearchInput;
