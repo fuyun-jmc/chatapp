@@ -1811,3 +1811,16 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .sgm-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 6px; margin-left: 6px; vertical-align: middle; color: #fff; }
 .sgm-tag.locked { background: #98a0ad; }
 .sgm-tag.on { background: var(--ok); }
+
+/* ---------- v296：群聊邀请码 ---------- */
+.invite-field { margin: 0 0 10px; }
+.invite-row { display: flex; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.invite-row > * { margin-right: 8px; margin-bottom: 6px; }
+.invite-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 18px; letter-spacing: 2px; font-weight: 600;
+  padding: 6px 12px; border: 1px dashed var(--line); border-radius: 10px;
+  background: var(--bg); user-select: all; word-break: break-all;
+}
+.invite-code.off { color: var(--text-3, #8b93a1); }
+.invite-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-3, #8b93a1); }
