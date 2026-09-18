@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v295 loaded');
+  console.log('[chatapp] app.js build v296 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -6296,6 +6296,99 @@
   // null = 本次未改动群图标；'' = 要清除；字符串 = 新的存储路径
   var pendingGroupAvatar = null;
 
+  /* ---------- v296：群聊邀请码 ---------- */
+  // 通用复制（优先 Clipboard API，WebView/无 HTTPS 场景回退 execCommand）
+  function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+    } catch (e) {}
+    return new Promise(function (resolve, reject) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        var ok = document.execCommand && document.execCommand('copy');
+        document.body.removeChild(ta);
+        ok ? resolve() : reject(new Error('COPY_FAIL'));
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function renderGroupInvite(code, enabled, isOwner) {
+    var block = $('group-invite-block');
+    if (!block) return;
+    block.hidden = false;
+    var codeEl = $('group-invite-code');
+    var copyBtn = $('group-invite-copy');
+    var toggleBtn = $('group-invite-toggle');
+    var hint = $('group-invite-hint');
+    if (enabled && code) {
+      codeEl.textContent = code;
+      codeEl.classList.remove('off');
+      copyBtn.hidden = false;
+    } else {
+      codeEl.textContent = isOwner ? '未启用' : '群主未启用邀请码';
+      codeEl.classList.add('off');
+      copyBtn.hidden = true;
+    }
+    toggleBtn.hidden = !isOwner;
+    toggleBtn.textContent = enabled ? '关闭邀请码' : '启用邀请码';
+    hint.textContent = enabled
+      ? '好友可在「添加好友」搜索框输入此码直接进群（群解散前一直有效）。'
+      : '启用后自动生成 8 位邀请码，群解散前可一直使用；关闭再启用仍是同一个码。';
+  }
+
+  function loadGroupInvite(g) {
+    var block = $('group-invite-block');
+    if (!block) return;
+    // 后端 SQL 未执行 → 整块隐藏，不影响其它功能
+    block.hidden = true;
+    sb.rpc('get_group_invite', { p_group_id: g.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var d = (r.data && r.data[0]) || null;
+        if (!d) { block.hidden = true; return; }
+        renderGroupInvite(d.invite_code, !!d.invite_enabled, !!d.i_am_owner);
+      })
+      .catch(function () { /* 忽略：后端未升级 */ });
+  }
+
+  function toggleGroupInvite() {
+    if (!state.active || state.active.type !== 'group') return;
+    var g = state.active;
+    var btn = $('group-invite-toggle');
+    var enable = btn && btn.textContent.indexOf('启用') >= 0;
+    var prev = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '处理中…'; }
+    function restore() { if (btn) { btn.disabled = false; btn.textContent = prev; } }
+    sb.rpc('set_group_invite', { p_group_id: g.id, p_enable: enable })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        return loadGroupInvite(g);
+      })
+      .then(function () { toast(enable ? '已启用群邀请码' : '已关闭群邀请码'); })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/NOT_OWNER/.test(m)) toast('只有群主能启用邀请码');
+        else if (/PGRST202|does not exist|could not find the function/i.test(m)) toast('请先执行 20260918_group_invite_code.sql');
+        else toast('操作失败：' + friendlyError(e));
+      })
+      .then(restore, restore);
+  }
+
+  function copyGroupInvite() {
+    var t = ($('group-invite-code') && $('group-invite-code').textContent || '').trim();
+    if (!t || t === '—' || t.indexOf('未启用') >= 0) { toast('暂无可复制的邀请码'); return; }
+    copyText(t).then(function () { toast('已复制邀请码'); }, function () { toast('复制失败，请长按选择文字复制'); });
+  }
+
   function openGroupInfo() {
     if (!state.active || state.active.type !== 'group') return;
     var g = state.active;
@@ -6329,6 +6422,7 @@
     $('group-info-leave').hidden = g.iAmOwner;
     renderMemberList(g);
     refreshGroupMembersOnline(g);
+    loadGroupInvite(g);   // v296：群邀请码（失败自动静默隐藏）
     loadTitlesForGroupMembers(g.memberIds).then(function () {
       if ($('group-info-modal') && $('group-info-modal').classList.contains('open')) {
         renderMemberList(g);
@@ -6569,6 +6663,11 @@
     frAddClear.addEventListener('click', clearFrAddSearch);
     frAddClear.addEventListener('touchstart', function (e) { e.preventDefault(); clearFrAddSearch(); }, { passive: false });
   }
+
+  var giCopyBtn = $('group-invite-copy');
+  if (giCopyBtn) giCopyBtn.addEventListener('click', copyGroupInvite);
+  var giToggleBtn = $('group-invite-toggle');
+  if (giToggleBtn) giToggleBtn.addEventListener('click', toggleGroupInvite);
 
   $('group-info-btn').addEventListener('click', openGroupInfo);
   $('group-info-close').addEventListener('click', function () { hideModal('group-info-modal'); });
@@ -6892,8 +6991,28 @@
   /* ============================================================
    *  好友码（v243）：通过好友码添加好友 + 个人设置管理
    * ============================================================ */
+  // v296：8 位码可能是好友码，也可能是群邀请码 → 先按好友码试，未命中再按群邀请码入群
+  function joinGroupByInvite(code) {
+    sb.rpc('join_group_by_invite', { p_code: code })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var d = (r.data && r.data[0]) || {};
+        if (d.outcome === 'already_member') toast('你已经是「' + (d.group_name || '该群') + '」的成员了');
+        else toast('已加入群聊「' + (d.group_name || '群聊') + '」');
+        clearFrAddSearch();
+        return loadGroups();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        if (/INVITE_NOT_FOUND/.test(m)) renderFrAddNote('好友码 / 群邀请码无效或已失效');
+        else if (/NOT_AUTH/.test(m)) renderFrAddNote('请先登录');
+        else if (/PGRST202|does not exist|could not find the function/i.test(m)) renderFrAddNote('入群功能需先执行 20260918_group_invite_code.sql');
+        else renderFrAddNote('入群失败：' + friendlyError(e));
+      });
+  }
+
   // 在搜索框输入 8 位好友码 → 向对方发起好友申请（临时码会被消耗并自动换新）
-  function addFriendByCode(code) {
+  function addFriendByCode(code, allowGroupFallback) {
     var panel = $('fr-add-result');
     if (panel) { panel.hidden = false; panel.innerHTML = '<div class="note">正在通过好友码添加…</div>'; }
     sb.rpc('add_friend_by_code', { p_code: code, p_note: null })
@@ -6911,7 +7030,11 @@
       .catch(function (e) {
         var m = (e && (e.message || '')) || '';
         if (/CODE_EMPTY/.test(m)) renderFrAddNote('请输入好友码');
-        else if (/CODE_NOT_FOUND/.test(m)) renderFrAddNote('好友码无效或已失效');
+        else if (/CODE_NOT_FOUND/.test(m)) {
+          // 好友码未命中 → 再尝试当作群邀请码入群
+          if (allowGroupFallback) joinGroupByInvite(code);
+          else renderFrAddNote('好友码无效或已失效');
+        }
         else if (/CANNOT_ADD_SELF/.test(m)) renderFrAddNote('不能添加自己为好友');
         else if (/ALREADY_FRIEND/.test(m)) renderFrAddNote('已经是好友了');
         else if (/NOT_AUTH/.test(m)) renderFrAddNote('请先登录');
@@ -6993,7 +7116,7 @@
     // 这样既保留好友码自动添加，又不会在输手机号到一半时被误判并清空输入框。
     if (/^[a-z0-9]{8}$/.test(fcCode)) {
       if (/[a-z]/.test(fcCode) || forceSubmit) {
-        addFriendByCode(fcCode);
+        addFriendByCode(fcCode, true);
       } else {
         renderFrAddNote('继续输入到 11 位即按手机号查找；若这是纯数字好友码，按回车添加');
       }
