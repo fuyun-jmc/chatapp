@@ -10,7 +10,7 @@
 <title>轻聊 · 在线聊天</title>
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/style.v201.css?v=296">
+<link rel="stylesheet" href="assets/style.v201.css?v=297">
 </head>
 <body>
 
@@ -369,6 +369,16 @@
         <p class="form-hint">最多可同时佩戴 2 个自选称号，将显示在头像框上；管理员 / 开发者称号强制展示，不占用名额。</p>
         <div class="title-list" id="my-titles-list"></div>
         <p class="title-empty" id="my-titles-empty" hidden>暂无称号，达成条件或等待管理员授予后即可佩戴。</p>
+      </div>
+
+      <!-- v297：广场互动（我点赞过 / 我收藏过的帖子） -->
+      <div class="sq-mine-section">
+        <div class="section-title">广场互动</div>
+        <p class="form-hint">查看你在交友广场点赞、收藏过的帖子。</p>
+        <div class="sq-mine-row">
+          <button class="btn-ghost" id="sq-mine-likes" type="button">我点赞的（—）</button>
+          <button class="btn-ghost" id="sq-mine-favs" type="button">我收藏的（—）</button>
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -1058,7 +1068,7 @@
 
 <script src="assets/vendor/supabase.umd.js?v=1"></script>
 <script src="assets/config.js?v=114"></script>
-<script src="assets/app.v296.js"></script>
+<script src="assets/app.v297.js"></script>
 
 <div class="lightbox" id="lightbox">
   <img id="lightbox-img" alt="图片预览" hidden>
@@ -1073,6 +1083,7 @@
       <div class="sq-title" id="sq-title">交友广场</div>
       <div class="sq-header-actions">
         <button class="sq-btn" id="sq-my-profile" type="button">我的主页</button>
+        <button class="sq-btn" id="sq-my-reacts" type="button">点赞/收藏</button>
         <button class="sq-btn sq-btn-primary" id="sq-compose-btn" type="button">发帖</button>
       </div>
       <button class="sq-close" id="sq-close" type="button" aria-label="关闭">✕</button>
