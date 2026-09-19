@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v308 loaded');
+  console.log('[chatapp] app.js build v309 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -329,6 +329,34 @@
     }
   }
 
+  /* v309：头像图片缓存（path -> 已加载完成的 Image 元素）。
+     会话列表一重渲染就会新建头像节点，若每次都走 new Image() + onload，
+     头像会反复经历「色块 → 图片」的一帧闪烁（在线心跳 / 在线轮询触发重渲染时
+     就表现为「好友列表头像一直刷新」）。命中缓存时直接 cloneNode 插入，
+     浏览器从缓存取图，肉眼无闪烁。 */
+  var _avatarImgCache = {};
+  function avatarImgFor(path, url, name, onReady, onFail) {
+    var cached = _avatarImgCache[path];
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      var c = cached.cloneNode(false);
+      c.className = 'avatar-img';
+      c.alt = name;
+      onReady(c);
+      return;
+    }
+    var im = new Image();
+    im.className = 'avatar-img';
+    im.alt = name;
+    im.onload = function () {
+      _avatarImgCache[path] = im;     // 缓存已解码的图片，供后续 clone 复用
+      onReady(im);
+    };
+    im.onerror = function () { onFail(); };
+    im.src = url;
+  }
+  // 头像被用户更换 / 删除后清掉缓存，避免一直显示旧图
+  function dropAvatarCache(path) { if (path) delete _avatarImgCache[path]; }
+
   /* 统一渲染头像：有自定义头像图则显示图片，否则显示首字母色块 */
   function setAvatar(node, opts) {
     opts = opts || {};
@@ -342,20 +370,18 @@
     node.style.background = colorOf(seed);
     if (opts.avatarPath) {
       signedUrl(opts.avatarPath).then(function (url) {
-        if (!url) { setAvatarText(node, dot, initialOf(name)); return; }
-        var im = new Image();
-        im.className = 'avatar-img';
-        im.alt = name;
-        im.onload = function () {
+        if (!url) { setAvatarText(node, node.querySelector('.online-dot'), initialOf(name)); return; }
+        // v309：命中已解码缓存时同步插入克隆节点，不再等 onload，消除闪烁
+        avatarImgFor(opts.avatarPath, url, name, function (im) {
           var cur = node.querySelector('.online-dot');
           removeChildrenExcept(node, cur);
           node.style.background = 'transparent';
           if (cur && cur.parentNode === node) node.insertBefore(im, cur);
           else node.appendChild(im);
           if (cur && cur.parentNode !== node) node.appendChild(cur);
-        };
-        im.onerror = function () { setAvatarText(node, node.querySelector('.online-dot'), initialOf(name)); };
-        im.src = url;
+        }, function () {
+          setAvatarText(node, node.querySelector('.online-dot'), initialOf(name));
+        });
       });
     } else {
       setAvatarText(node, dot, initialOf(name));
@@ -397,16 +423,14 @@
     if (g.avatar) {
       signedUrl(g.avatar).then(function (url) {
         if (!url) { node.textContent = name.charAt(0); return; }
-        var im = new Image();
-        im.className = 'avatar-img';
-        im.alt = name;
-        im.onload = function () {
+        // v309：同上，命中缓存直接克隆插入，避免群头像反复闪烁
+        avatarImgFor(g.avatar, url, name, function (im) {
           node.textContent = '';
           node.style.background = 'transparent';
           node.appendChild(im);
-        };
-        im.onerror = function () { node.textContent = name.charAt(0); };
-        im.src = url;
+        }, function () {
+          node.textContent = name.charAt(0);
+        });
       });
     } else {
       node.textContent = name.charAt(0);
@@ -749,6 +773,25 @@
     return days + ' 天前';
   }
 
+  /* v309：只更新会话列表里的在线小圆点，不整表重渲染。
+     在线状态有两个周期性来源：refreshOnline() 每 10s 轮询一次，以及每个在线好友
+     每 15s 广播一次 presence tick —— N 个好友就是每 15/N 秒触发一次。
+     之前每次都 renderConversations() 全表重建，头像节点被反复销毁重建
+     （色块 → 图片 → 色块），表现为「好友列表头像一直刷新」。
+     列表排序只依赖 convTs，与在线状态无关，所以只改圆点 class 就够了。 */
+  function refreshListOnlineDots() {
+    var list = $('chat-list');
+    if (!list) return;
+    var rows = list.querySelectorAll('li[data-uid]');
+    for (var i = 0; i < rows.length; i++) {
+      var dot = rows[i].querySelector('.online-dot');
+      if (!dot) continue;                       // 群聊行没有在线点
+      var on = isOnline(rows[i].getAttribute('data-uid'));
+      if (on) { dot.classList.add('online'); dot.classList.remove('offline'); }
+      else { dot.classList.add('offline'); dot.classList.remove('online'); }
+    }
+  }
+
   // 拉取所有好友的在线状态：直接查 profiles（全员可读），失败则静默降级为全离线
   function refreshOnline() {
     var ids = state.friends.map(function (f) { return f.id; });
@@ -759,7 +802,7 @@
         var map = {};
         (r.data || []).forEach(function (p) { map[p.id] = p.last_active; });
         state.lastActive = map;
-        renderConversations();
+        refreshListOnlineDots();          // v309：只更新在线圆点，不再整表重渲染（避免头像反复重建闪烁）
         if (state.active && state.active.type === 'friend') updatePeerOnline();
       })
       .catch(function () {});
@@ -1470,7 +1513,7 @@
         } else {
           state.lastActive[p.uid] = p.ts ? new Date(p.ts).toISOString() : new Date().toISOString();
         }
-        renderConversations();
+        refreshListOnlineDots();          // v309：presence tick 只更新在线圆点，不整表重渲染
         if (state.active && state.active.type === 'friend' && state.active.id === p.uid) updatePeerOnline();
         if (inGroup) updateMemberOnlineDots(state.active);
       })
@@ -2212,6 +2255,7 @@
 
   function makeGroupItem(g) {
     var li = el('li');
+    li.dataset.uid = g.id;             // v309：同上（群行没有在线点，更新时会自动跳过）
     if (state.active && state.active.id === g.id) li.classList.add('is-active');
     var av = el('div', 'avatar sm');
     setGroupAvatar(av, g);
@@ -2445,6 +2489,7 @@
 
   function makeFriendItem(f) {
     var li = el('li');
+    li.dataset.uid = f.id;             // v309：供「只更新在线点」时定位行，避免整表重渲染
     if (state.active && state.active.id === f.id) li.classList.add('is-active');
     var av = el('div', 'avatar sm');
     setAvatar(av, { nickname: f.remark || f.nickname, phone: f.phone, avatarPath: f.avatar });
