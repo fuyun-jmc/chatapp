@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v297 loaded');
+  console.log('[chatapp] app.js build v298 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1798,6 +1798,11 @@
     refreshOnline();
     if (state.onlineTimer) clearInterval(state.onlineTimer);
     state.onlineTimer = setInterval(refreshOnline, 10000);
+
+    // v298：广场入口红点（新帖子 / 我的帖子被点赞）——登录即拉一次，60s 轮询兜底
+    refreshSquareDot();
+    if (state.squareDotTimer) clearInterval(state.squareDotTimer);
+    state.squareDotTimer = setInterval(refreshSquareDot, 60000);
 
     loadProfile()
       .then(loadRelations)
@@ -8726,6 +8731,7 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && state.uid) {
       loadRelations();
+      refreshSquareDot();   // v298：回到前台补拉一次广场红点
       // 群资料（群名 / 群图标 / 成员数）由群主单方修改，这里补拉一次让其他成员同步到
       loadGroups().catch(function () {});
       if (state.active) openChat(state.active);
@@ -8791,6 +8797,8 @@
     resetSquareSearch();
     showModal('square-modal');
     renderSquareHome();
+    // v298：进入广场即清除「新帖子」红点
+    markSquareSeen('posts');
   }
   function closeSquare() {
     sq.stack = []; sq.media = []; sq.replyTo = null;
@@ -9031,6 +9039,8 @@
   function openSquareReacts(kind, skipPush) {
     if (!skipPush) sqPush();
     sq.view = 'reacts'; sq.reactKind = (kind === 'fav' ? 'fav' : 'like');
+    // v298：查看「我的点赞」列表时，把「被赞」红点清掉
+    if (sq.reactKind === 'like') markSquareSeen('likes');
     renderSquareReacts();
   }
   function renderSquareReacts() {
@@ -9088,6 +9098,27 @@
     openSquare();
     sqPush();
     openSquareReacts(kind, true);
+  }
+
+  // v298：广场入口红点（有新帖子 / 我的帖子被点赞）——只显示红点，不显示数字
+  function refreshSquareDot() {
+    var dot = $('square-new-dot');
+    if (!dot || !state.uid) return;
+    sb.rpc('forum_has_unread')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var d = (r.data && r.data[0]) || {};
+        var on = !!(d.new_posts || d.new_likes);
+        dot.hidden = !on;
+        if (on) dot.title = d.new_likes ? '有新帖子或新的点赞' : '广场有新帖子';
+      })
+      .catch(function () { /* 后端未升级：静默不显示红点 */ });
+  }
+
+  function markSquareSeen(kind) {
+    sb.rpc('forum_mark_seen', { p_kind: kind || 'all' })
+      .then(function () { refreshSquareDot(); })
+      .catch(function () {});
   }
 
   // 个人设置里刷新「我点赞 / 我收藏」的数量
