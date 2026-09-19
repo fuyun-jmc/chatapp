@@ -131,14 +131,8 @@ grant execute on function public.chatroom_send(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4. Realtime：让前端能订阅新消息
+--    ⚠ 2026-09-19 拆出：replica identity / alter publication 需要排他锁，
+--    与建表/建函数放在同一批执行曾与 Realtime 后台连接互相等待造成死锁（40P01）。
+--    → 现单独放 20260919_chat_room_publication.sql，请分两步执行：
+--      第 1 步先跑本文件，第 2 步再跑 publication 文件。
 -- ---------------------------------------------------------------------------
-alter table public.chatroom_messages replica identity full;
-do $$
-begin
-  begin
-    alter publication supabase_realtime add table public.chatroom_messages;
-  exception when duplicate_object then null;
-  end;
-end $$;
-
-notify pgrst, 'reload schema';
