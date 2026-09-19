@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v302 loaded');
+  console.log('[chatapp] app.js build v303 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1933,6 +1933,8 @@
         friends.forEach(function (f) {
           state.profilesById[f.id] = { nickname: f.nickname, avatar_path: f.avatar, phone: f.phone, user_number: f.user_number, hide_phone: f.hide_phone };
         });
+        // v303：本次新出现的好友（对方同意了我的申请 / 我同意了对方的申请）顶到会话列表最前
+        trackNewConversations(friends.map(function (f) { return f.id; }), 'friends');
         renderFriends();
         renderRequests();
         updateFriendRequestBadge();
@@ -2335,6 +2337,35 @@
     if (!id) return;
     state.convTs[id] = Date.now();
     try { localStorage.setItem('convTs:' + state.uid, JSON.stringify(state.convTs)); } catch (e) {}
+  }
+
+  // v303：新增会话（新好友 / 新群聊）自动顶到会话列表最前。
+  // 做法：给本次新出现的 id 打上 bumpConvTs，会话列表会按 convTs 倒序把它排到所在分组的最前。
+  // 关键：第一次拉列表只建立基线**不置顶**，否则所有历史会话会集体跳位；
+  // 之后真正新增的那一个才置顶。好友与群各自维护基线（两者先后拉取互不影响）。
+  // key: 'friends' | 'groups'
+  function trackNewConversations(ids, key) {
+    if (state._convSeenUid !== state.uid) {                 // 换账号：清空基线
+      state._convSeenUid = state.uid;
+      state._convSeen_friends = {}; state._convSeenReady_friends = false;
+      state._convSeen_groups = {};  state._convSeenReady_groups = false;
+    }
+    var seen = state['_convSeen_' + key] || (state['_convSeen_' + key] = {});
+    var ready = !!state['_convSeenReady_' + key];
+    var added = [];
+    (ids || []).forEach(function (id) {
+      if (!id) return;
+      if (seen[id]) return;
+      seen[id] = 1;
+      if (ready) added.push(id);
+    });
+    state['_convSeenReady_' + key] = true;
+    added.forEach(function (id) { bumpConvTs(id); });
+    // 清理已不存在的会话（删好友 / 退群）：下次再加回来能重新置顶
+    var alive = {};
+    (ids || []).forEach(function (id) { if (id) alive[id] = 1; });
+    Object.keys(seen).forEach(function (id) { if (!alive[id]) delete seen[id]; });
+    return added.length;
   }
 
   // 把好友按“置顶 / 非置顶”分组渲染进容器；每组内未读优先。clickFn 为点击回调
@@ -6230,6 +6261,8 @@
       };
     });
     state.groups.sort(function (a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); });
+    // v303：本次新出现的群（自己建的 / 邀请码入的 / 被别人拉进的）顶到会话列表最前
+    trackNewConversations(state.groups.map(function (g) { return g.id; }), 'groups');
     if (state.active && state.active.type === 'group') {
       var fresh = groupById(state.active.id);
       if (fresh) state.active = fresh;
