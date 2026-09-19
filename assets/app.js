@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v300 loaded');
+  console.log('[chatapp] app.js build v301 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -7946,7 +7946,189 @@
     }
   }
 
-  /* ---------- v299 / v300 事件绑定（相关面板 HTML 均在脚本标签之前，可直接绑定） ---------- */
+  /* ============================================================
+   *  v301：在线聊天室
+   *  与所有「在线且处于聊天室内」的用户群聊；点头像 → 个人主页（看称号 / 加好友）
+   * ============================================================ */
+  function openChatRoom() {
+    if (!state.uid) return;
+    state.chatRoomOpen = true;
+    var inp = $('cr-input'); if (inp) inp.value = '';
+    showModal('chatroom-modal');
+    renderChatRoomMessages();
+    refreshChatRoomOnline();
+    chatRoomHeartbeat();
+    if (state.crHeartTimer) clearInterval(state.crHeartTimer);
+    state.crHeartTimer = setInterval(chatRoomHeartbeat, 15000);
+    if (state.crOnlineTimer) clearInterval(state.crOnlineTimer);
+    state.crOnlineTimer = setInterval(refreshChatRoomOnline, 10000);
+    subscribeChatRoom();
+    try { inp && inp.focus(); } catch (e) {}
+  }
+
+  function closeChatRoom() {
+    state.chatRoomOpen = false;
+    hideModal('chatroom-modal');
+    if (state.crHeartTimer) { clearInterval(state.crHeartTimer); state.crHeartTimer = null; }
+    if (state.crOnlineTimer) { clearInterval(state.crOnlineTimer); state.crOnlineTimer = null; }
+    unsubscribeChatRoom();
+    try { sb.rpc('chatroom_leave'); } catch (e) {}
+  }
+
+  function chatRoomHeartbeat() {
+    if (!state.chatRoomOpen) return;
+    try { sb.rpc('chatroom_heartbeat'); } catch (e) {}
+  }
+
+  function crScrollBottom() {
+    var box = $('cr-body');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+
+  function crMessageNode(m) {
+    var isMe = m.user_id === state.uid;
+    var row = el('div', 'cr-msg' + (isMe ? ' me' : ''));
+    row.setAttribute('data-id', m.id);
+    var av = el('div', 'avatar sm cr-av');
+    setAvatar(av, { nickname: m.nickname, phone: '', avatarPath: m.avatar_path });
+    applyTitleFrame(av, m.user_id);
+    av.onclick = function () { openProfileById(m.user_id, m.nickname); };
+    var main = el('div', 'cr-main');
+    var head = el('div', 'cr-msg-head');
+    var nm = el('span', 'cr-name', m.nickname || (m.user_number != null ? ('用户 #' + m.user_number) : '用户'));
+    addTitleBadge(nm, m.user_id);
+    head.appendChild(nm);
+    head.appendChild(el('span', 'cr-time', fmtTime(m.created_at)));
+    main.appendChild(head);
+    main.appendChild(el('div', 'cr-bubble', m.content || ''));
+    row.appendChild(av); row.appendChild(main);
+    return row;
+  }
+
+  function renderChatRoomMessages() {
+    var box = $('cr-body');
+    if (!box) return;
+    box.innerHTML = '';
+    box.appendChild(el('div', 'cr-tip', '加载中…'));
+    sb.rpc('chatroom_list', { p_limit: 60 })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = (r.data || []).slice().reverse();
+        box.innerHTML = '';
+        if (!rows.length) {
+          box.appendChild(el('div', 'cr-tip', '还没有人发言，来打个招呼吧'));
+          return;
+        }
+        rows.forEach(function (m) { box.appendChild(crMessageNode(m)); });
+        crScrollBottom();
+      })
+      .catch(function (e) {
+        var msg = (e && (e.message || '')) || '';
+        box.innerHTML = '';
+        if (/PGRST202|could not find the function|schema cache/i.test(msg)) {
+          box.appendChild(el('div', 'cr-tip', '需先在 Supabase 执行 20260919_chat_room.sql'));
+        } else {
+          box.appendChild(el('div', 'cr-tip', '加载失败：' + friendlyError(e)));
+        }
+      });
+  }
+
+  function crAppendMessage(m) {
+    var box = $('cr-body');
+    if (!box || !m || !m.id) return;
+    if (box.querySelector('[data-id="' + m.id + '"]')) return;
+    var tip = box.querySelector('.cr-tip');
+    if (tip) domRemove(tip);
+    var p = state.profilesById[m.user_id] || {};
+    var mk = function (nick, ava, uno) {
+      return crMessageNode({
+        id: m.id, user_id: m.user_id, content: m.content, created_at: m.created_at,
+        nickname: nick, avatar_path: ava, user_number: uno
+      });
+    };
+    box.appendChild(mk(p.nickname, p.avatar_path, p.user_number));
+    crScrollBottom();
+    if (!p.nickname && m.user_id !== state.uid) {
+      sb.from('profiles').select('id,nickname,avatar_path,user_number').eq('id', m.user_id).maybeSingle()
+        .then(function (r) {
+          if (r.error || !r.data) return;
+          var d = r.data;
+          state.profilesById[m.user_id] = { nickname: d.nickname, avatar_path: d.avatar_path, user_number: d.user_number };
+          var old = box.querySelector('[data-id="' + m.id + '"]');
+          if (old) domReplace(old, mk(d.nickname, d.avatar_path, d.user_number));
+        })
+        .catch(function () {});
+    }
+  }
+
+  function refreshChatRoomOnline() {
+    var cnt = $('cr-online-count');
+    if (!state.uid) return;
+    sb.rpc('chatroom_online')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        if (cnt) cnt.textContent = '在线 ' + rows.length + ' 人';
+        var box = $('cr-members');
+        if (!box) return;
+        box.innerHTML = '';
+        rows.forEach(function (u) {
+          var av = el('div', 'avatar sm cr-member-av');
+          addOnlineDot(av, u.user_id);
+          setAvatar(av, { nickname: u.nickname, phone: '', avatarPath: u.avatar_path });
+          applyTitleFrame(av, u.user_id);
+          av.title = u.nickname || '用户';
+          av.onclick = function () { openProfileById(u.user_id, u.nickname); };
+          box.appendChild(av);
+        });
+      })
+      .catch(function () { if (cnt) cnt.textContent = '在线 —'; });
+  }
+
+  function sendChatRoomMessage() {
+    var inp = $('cr-input');
+    if (!inp) return;
+    var txt = (inp.value || '').trim();
+    if (!txt) return;
+    inp.value = '';
+    sb.rpc('chatroom_send', { p_content: txt })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        // Realtime 未开启时兜底：1.2s 后若自己的消息还没出现就整表重拉
+        var id = r.data;
+        setTimeout(function () {
+          var box = $('cr-body');
+          if (id && box && !box.querySelector('[data-id="' + id + '"]')) renderChatRoomMessages();
+        }, 1200);
+        refreshChatRoomOnline();
+      })
+      .catch(function (e) {
+        var msg = (e && (e.message || '')) || '';
+        if (/PGRST202|could not find the function|schema cache/i.test(msg)) toast('需先在 Supabase 执行 20260919_chat_room.sql');
+        else if (/CHATROOM_TOO_LONG/.test(msg)) toast('消息过长（最多 500 字）');
+        else toast('发送失败：' + friendlyError(e));
+      });
+  }
+
+  function subscribeChatRoom() {
+    if (state.crChannel || !sb.channel) return;
+    try {
+      state.crChannel = sb.channel('chatroom-public')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chatroom_messages' }, function (payload) {
+          if (!state.chatRoomOpen) return;
+          crAppendMessage(payload.new);
+        })
+        .subscribe();
+    } catch (e) { state.crChannel = null; }
+  }
+  function unsubscribeChatRoom() {
+    if (state.crChannel) {
+      try { sb.removeChannel(state.crChannel); } catch (e) {}
+      state.crChannel = null;
+    }
+  }
+
+  /* ---------- v299 / v300 / v301 事件绑定（面板 HTML 均在脚本标签之前，可直接绑定） ---------- */
   (function bondBindOnce() {
     var bc = $('bond-close');
     if (bc) bc.addEventListener('click', closeBondModal);
@@ -8030,6 +8212,19 @@
       if (!uid || uid === state.uid) return;
       openProfileById(uid, t.textContent);
     });
+
+    // v301：在线聊天室
+    var creBtn = $('chatroom-entry-btn');
+    if (creBtn) creBtn.addEventListener('click', openChatRoom);
+    var crClose = $('cr-close');
+    if (crClose) crClose.addEventListener('click', closeChatRoom);
+    var crForm = $('cr-composer');
+    if (crForm) crForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      sendChatRoomMessage();
+    });
+    var crSend = $('cr-send');
+    if (crSend) crSend.addEventListener('click', function (e) { e.preventDefault(); sendChatRoomMessage(); });
   })();
 
   function scrollBottom() {
