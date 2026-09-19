@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v305 loaded');
+  console.log('[chatapp] app.js build v307 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -6582,24 +6582,29 @@
       var tag = (uid === g.ownerId) ? '（群主）'
               : (isAdmin ? '（管理员）' : (uid === state.uid ? '（我）' : ''));
       var nm = el('div', 'nm');
-      nm.appendChild(el('span', '', disp + tag));
+      // v307：文本节点加 .nm-text（nowrap + 省略号），防止窄屏被按钮挤成竖排
+      nm.appendChild(el('span', 'nm-text', disp + tag));
       info.appendChild(nm);
       addTitleBadge(nm, uid);
       var on = isOnline(uid);
       info.appendChild(el('div', 'online-status ' + (on ? 'on' : 'off'), on ? '在线' : '离线'));
       li.appendChild(av); li.appendChild(info);
+      // v307：操作按钮统一收进 .member-ops 容器，窄屏放不下时整体换行，
+      // 不再与昵称抢宽度（之前昵称被 4 个按钮挤成一字一行竖排）
+      var ops = el('div', 'member-ops');
+      li.appendChild(ops);
       // 转让给群主：仅群主可操作，目标不能是群主 / 自己
       if (g.iAmOwner && uid !== g.ownerId && uid !== state.uid) {
         var tr = el('button', 'mini-ok', '转让'); tr.type = 'button';
         tr.onclick = function () { transferOwner(g, uid); };
-        li.appendChild(tr);
+        ops.appendChild(tr);
       }
       // 设为 / 取消管理员：仅群主可操作，目标不能是群主 / 自己
       if (g.iAmOwner && uid !== g.ownerId && uid !== state.uid) {
         var admb = el('button', isAdmin ? 'mini-no' : 'mini-ok', isAdmin ? '取消管理员' : '设为管理员');
         admb.type = 'button';
         admb.onclick = function () { setGroupAdmin(g, uid, !isAdmin); };
-        li.appendChild(admb);
+        ops.appendChild(admb);
       }
       // 移除成员权限：
       //   群主：可移除任何他人（含管理员），不能移除自己
@@ -6613,7 +6618,7 @@
       if (canRemove) {
         var rm = el('button', 'mini-no', '移除'); rm.type = 'button';
         rm.onclick = function () { removeMember(g, uid); };
-        li.appendChild(rm);
+        ops.appendChild(rm);
       }
       // v300：点击成员行（非按钮区域）打开个人主页，主页里有「加好友」——普通成员同样可用
       li.onclick = function (ev) {
@@ -6628,7 +6633,7 @@
           ev.stopPropagation();
           sendRequest({ id: uid }, af);
         };
-        li.appendChild(af);
+        ops.appendChild(af);
       }
       list.appendChild(li);
     });
