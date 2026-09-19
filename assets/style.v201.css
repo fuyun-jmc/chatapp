@@ -951,7 +951,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
 @media (max-width: 719px) {
   .gm-panel .gm-inner { overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .gm-reports, .gm-word-log, .gm-userreports, .gm-appeals,
-  .gm-titles, .gm-feedback { flex: none; overflow: visible; min-height: 0; }
+  .gm-titles, .gm-feedback, .gm-groups { flex: none; overflow: visible; min-height: 0; }
   .gm-report-list, .gm-title-list { flex: none; overflow: visible; }
 }
 .gm-head {
@@ -966,6 +966,9 @@ input, textarea { font-family: inherit; font-size: 15px; }
 }
 .gm-search .btn-primary { flex: 0 0 auto; padding: 10px 18px; justify-content: center; }
 .gm-users { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+/* v306：群聊管理内容区之前没有任何规则 → 内容一多就被 .gm-inner 的 overflow:hidden 裁掉且无法滚动；
+   补上与 .gm-users 相同的列布局约束，让内部 .gm-results 恢复滚动 */
+.gm-groups { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .gm-list-col { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .gm-results { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 2px 14px; min-height: 0; }
 .gm-detail { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 2px 14px 10px; border-top: 1px solid var(--line); min-height: 0; }
@@ -1991,6 +1994,48 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* 群聊内成员昵称可点，给一点可点击暗示 */
 .msg-sender { cursor: pointer; }
 .msg-sender:active { opacity: .7; }
+
+/* ============================================================
+ * v304：关系绑定列表行内编辑（手机 WebView 无 prompt/confirm，全部行内交互）
+ * ============================================================ */
+.gm-bond-edit {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.gm-bond-edit[hidden] { display: none; }
+.gm-bond-edit > input,
+.gm-bond-edit > select { min-width: 0; margin-right: 8px; }
+.gm-bond-edit .bond-gm-num,
+.gm-bond-edit .bond-gm-select { flex: 1 1 110px; width: auto; }
+.gm-bond-edit .btn-mini { flex: 0 0 auto; margin-right: 8px; }
+.gm-bond-edit .btn-mini:last-child { margin-right: 0; }
+.gm-bond-edit-tip { color: var(--text-3); font-size: 12px; }
+/* 解除按钮进入「确认解除?」武装态 */
+.btn-mini.danger-arm {
+  background: #e0245e;
+  border-color: #e0245e;
+  color: #fff;
+}
+
+/* v304：好友备注弹层（复用 .modal/.modal-card，WebView 无 prompt 的替代） */
+.remark-card { padding: 16px 14px 14px; }
+.remark-title {
+  font-size: 15px; font-weight: 600;
+  margin-bottom: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.remark-input {
+  display: block;
+  width: 100%; box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--text);
+  font-size: 14px; outline: none;
+}
+.remark-row { display: flex; justify-content: flex-end; margin-top: 12px; }
+.remark-row .btn-mini { margin-left: 8px; }
 
 /* ============================================================
  * v301：在线聊天室
