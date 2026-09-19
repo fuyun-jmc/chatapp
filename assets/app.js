@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v307 loaded');
+  console.log('[chatapp] app.js build v308 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -1776,6 +1776,8 @@
     }
     state.uid = null; state.profile = null; state.friends = [];
     state.incoming = []; state.active = null; state.chatVisible = false; state.unread = {}; state.urlCache = {};
+    // v308：换账号时清空已读游标相关的本地缓存，避免上一个账号的 seenTs 误判新账号的消息
+    state.seenTsByPeer = {}; state.leftSeenTs = {};
     $('app-view').hidden = true;
     $('auth-view').hidden = false;
     document.querySelector('.app-view').classList.remove('show-chat');
@@ -7293,6 +7295,18 @@
       });
       // 当前已打开且正在看的会话：不应被 get_my_unread 重新标记为未读
       if (state.active && state.chatVisible && state.active.id) delete map[state.active.id];
+      // v308：已读游标正在推进（RPC 还没返回）的会话，DB 里可能仍是旧游标，
+      // 跳过它们，避免刚看过 / 刚离开的会话被回弹成未读（滞后红点 + 滞后提示的根源）。
+      Object.keys(map).forEach(function (pid) {
+        if (_markInFlight[pid]) delete map[pid];
+      });
+      // v308：本次已经算作「无未读」的会话 → 清掉离线提示去重标记，
+      // 之后对方再发新消息仍能重新弹出提示（旧逻辑一旦弹过就永久静音）。
+      if (state._offlineNotified) {
+        Object.keys(state._offlineNotified).forEach(function (pid) {
+          if (!map[pid]) delete state._offlineNotified[pid];
+        });
+      }
       state.unread = map;
       // 红点与“浮顶置前”必须同源校准：弱网下实时推送常丢事件，未读靠本次 DB 重连校准，
       // 若不一并置 convTs，就会出现「只多红点、会话却排在后面」。给有未读的会话打上最新浮顶时间戳，
@@ -7306,6 +7320,79 @@
       // 这里用已读游标重算出的未读 map 补上「上线提示」。
       notifyOfflineUnread(map);
     }).catch(function () {});
+  }
+
+  /* ------------------------------------------------------------
+   *  v308：已读游标（conversation_reads）推进工具
+   *  ------------------------------------------------------------
+   *  旧逻辑只在 openChat() 时把游标推到 now() 一次，之后在该会话里聊多久都不再更新。
+   *  于是「已经看过的消息」在 DB 里仍算未读；一旦切到别的会话，实时重连触发
+   *  loadUnreadFromDb() 按游标重算，就会把这些旧消息重新算成未读 —— 表现为
+   *  「刚聊完切走，反而提示刚才那位 / 那个群有新消息」（滞后提示 + 滞后红点）。
+   *  修复两件事：
+   *    ① 会话内看到新消息（实时 / 兜底轮询 / 自己发出）时节流推进游标；
+   *    ② 离开会话（切到别人、退出聊天页）时立即推一次。
+   * ------------------------------------------------------------ */
+  var _markInFlight = {};      // { peerId: bool }  RPC 是否还在路上
+  var _markLastAt = {};        // { peerId: ts }    上次推进时间（节流用）
+  var _markTimer = null;       // 待执行的尾随推进
+
+  // 立即把某个会话的游标推到 now()（不节流，用于「离开会话」这种必须落库的时刻）
+  function markReadNow(peerId, isGroup) {
+    if (!state.uid || !peerId) return Promise.resolve();
+    _markLastAt[peerId] = Date.now();
+    _markInFlight[peerId] = true;
+    var done = function () { _markInFlight[peerId] = false; };
+    try {
+      return sb.rpc('mark_conversation_read', { p_peer: peerId, p_is_group: !!isGroup })
+        .then(done, done);
+    } catch (e) {
+      done();
+      return Promise.resolve();
+    }
+  }
+
+  // 当前正在看的会话推进游标。
+  // 用「有尾随的防抖」而不是简单节流：节流会把窗口内到达的那条消息漏掉
+  // （游标停在上一次推进时刻，中间的消息仍算未读），防抖保证窗口结束后一定再推一次，
+  // 最终游标必然覆盖到最新一条。force=true 用于离开会话等必须立刻落库的时刻。
+  function markActiveRead(force) {
+    var p = state.active;
+    if (!p || !state.uid || !state.chatVisible) return;
+    if (force) {
+      if (_markTimer) { clearTimeout(_markTimer); _markTimer = null; }
+      markReadNow(p.id, p.type === 'group');
+      return;
+    }
+    if (_markTimer) return;                 // 已有待执行的推进，合并到那一次
+    var last = _markLastAt[p.id] || 0;
+    var wait = 1200 - (Date.now() - last);
+    if (wait < 0) wait = 0;
+    _markTimer = setTimeout(function () {
+      _markTimer = null;
+      var q = state.active;
+      if (q && state.uid && state.chatVisible) markReadNow(q.id, q.type === 'group');
+    }, wait);
+  }
+
+  // 离开某个会话：记录「已经看到哪条消息为止」并立刻推游标。
+  // seenTs 用服务端 created_at（不是本地 Date.now()），避免手机时钟偏差导致误判。
+  function markLeftRead(p) {
+    if (!p || !p.id) return;
+    if (!state.leftSeenTs) state.leftSeenTs = {};
+    state.leftSeenTs[p.id] = (state.seenTsByPeer && state.seenTsByPeer[p.id]) || 0;
+    markReadNow(p.id, p.type === 'group');
+  }
+
+  // 实时事件迟到判定：一条「非当前会话」的新消息，如果它在我们离开该会话之前就已经
+  // 生成（created_at <= 离开时已显示到的最新消息时间），说明服务端游标已把它算作已读，
+  // 事件只是迟到 —— 不能再计未读、不能弹提示，否则就是「刚聊完却提示有新消息」。
+  function staleSeenMessage(m, pid) {
+    if (!pid || !m || !m.created_at) return false;
+    var ct = new Date(m.created_at).getTime();
+    if (!ct) return false;
+    var upto = (state.leftSeenTs && state.leftSeenTs[pid]) || 0;
+    return upto > 0 && ct <= upto;
   }
 
   // 离线未读提示：用队列顺序弹，避免 toast() 直接覆盖文本导致只显示最后一条。
@@ -7354,6 +7441,14 @@
     flushDraft();
     // 切换会话时清除引用状态，避免引用残留到另一个会话
     clearQuote();
+    // v308：离开上一个会话前，先把它的已读游标推到 now()。
+    // 不做这一步的话，刚才在旧会话里明明已经看过的消息在 DB 里仍是未读，
+    // 切走后只要实时重连触发 loadUnreadFromDb() 重算，就会滞后弹出
+    // 「刚聊完的那个人 / 那个群有新消息」。
+    var _prevActive = state.active;
+    if (_prevActive && _prevActive.id && (!peer || _prevActive.id !== peer.id)) {
+      markLeftRead(_prevActive);
+    }
     var isGroup = peer.type === 'group';
     state.active = peer;
     state.activeSenderIds = {};   // 重置称号关心范围，进入新会话后由消息/成员重新填充
@@ -7532,6 +7627,9 @@
   }
 
   $('back-btn').addEventListener('click', function () {
+    // v308：退出聊天页（回到会话列表）前，把当前会话立刻标为已读，
+    // 避免刚看过的消息在回到列表后被重算成未读、滞后弹提示
+    markLeftRead(state.active);
     state.chatVisible = false;
     document.querySelector('.app-view').classList.remove('show-chat');
   });
@@ -8692,6 +8790,13 @@
       }
       if (!dup) state.activeMessages.push(m);
       if (m.sender_id) state.activeSenderIds[m.sender_id] = 1;
+      // v308：记录当前会话「已显示到哪条消息为止」（用服务端 created_at，不用本地时钟，
+      // 避免手机时间不准导致误判）。离开会话时据此识别迟到的实时事件。
+      if (m.created_at && state.active && state.active.id) {
+        if (!state.seenTsByPeer) state.seenTsByPeer = {};
+        var _ct = new Date(m.created_at).getTime() || 0;
+        if (_ct > (state.seenTsByPeer[state.active.id] || 0)) state.seenTsByPeer[state.active.id] = _ct;
+      }
     }
     // 必须先渲染再动 DOM：本端已删除的消息返回 null，
     // 若先把空态提示删掉再 return，聊天区会变成彻底空白（一键清空后最易触发）
@@ -9276,6 +9381,8 @@
         // 草稿已在发送前清除；成功后的后处理只刷新会话列表/时间戳
         bumpConvTs(peerId);
         if (isGroup) renderGroups(); else renderFriends();
+        // v308：发出消息说明人正在看这个会话，游标立刻推过这条消息的时间点
+        markActiveRead(true);
         // 延迟释放锁：发送前未完成的 save_my_draft RPC 仍可能在成功后回写旧草稿，
         // 2500ms 窗口可覆盖绝大多数 stale save 的 realtime 回声。
         scheduleReleaseDraftSendLock();
@@ -9478,7 +9585,10 @@
         if (m.group_id) {
           if (state.chatVisible && state.active && state.active.type === 'group' && state.active.id === m.group_id) {
             appendMessage(m);
+            markActiveRead();   // v308：人正在看 → 顺手推进游标，切走后不再被算成未读
           } else {
+            // v308：消息在我们离开该群之前就已生成 → 只是实时事件迟到，已读过，不再提示
+            if (staleSeenMessage(m, m.group_id)) return;
             state.unread[m.group_id] = (state.unread[m.group_id] || 0) + 1;
             bumpConvTs(m.group_id);
             renderGroups();
@@ -9488,7 +9598,10 @@
         } else if (m.receiver_id === state.uid) {
           if (state.chatVisible && state.active && state.active.type !== 'group' && state.active.id === m.sender_id) {
             appendMessage(m);
+            markActiveRead();   // v308：人正在看 → 顺手推进游标，切走后不再被算成未读
           } else {
+            // v308：消息在我们离开该会话之前就已生成 → 只是实时事件迟到，已读过，不再提示
+            if (staleSeenMessage(m, m.sender_id)) return;
             state.unread[m.sender_id] = (state.unread[m.sender_id] || 0) + 1;
             bumpConvTs(m.sender_id);
             renderFriends();
@@ -9612,11 +9725,15 @@
       .then(function (r) {
         if (r.error) return;
         if (!state.active || state.active.id !== peer.id) return;
+        var _got = 0;
         (r.data || []).forEach(function (m) {
           appendMessage(m);
+          _got++;
           var t = m.created_at ? new Date(m.created_at).getTime() : 0;
           if (t > (state.lastSeenTs || 0)) state.lastSeenTs = t;
         });
+        // v308：兜底轮询补到的消息同样说明「用户正在看这个会话」，推进一次已读游标
+        if (_got) markActiveRead();
       })
       .catch(function () {});
   }
@@ -9651,7 +9768,11 @@
 
   // 页面切到后台 / 关闭前，立即把未落库的草稿保存（退出网页后草稿不丢）
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) flushDraft();
+    if (document.hidden) {
+      flushDraft();
+      // v308：切后台前把当前正在看的会话标为已读，回到前台不会被重算成未读
+      markLeftRead(state.active);
+    }
   });
   window.addEventListener('beforeunload', function () { flushDraft(); });
 
