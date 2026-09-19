@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v298 loaded');
+  console.log('[chatapp] app.js build v299 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -122,7 +122,12 @@
     titleReloadTimer: {}, // uid -> 节流定时器，避免同一用户高频刷新
     devHiddenMap: {},    // uid -> boolean，记录每位用户的 hide_dev_title（影响所有 viewer）
     activeSenderIds: {}, // uid -> 1：当前会话（群聊含发言者）/ 群资料成员，称号变化需实时同步的人
-    gmPollTimer: null    // GM 看板轮询定时器
+    gmPollTimer: null,   // GM 看板轮询定时器
+    bondMap: {},         // v299：uid -> { bond_type, icon, color, intimacy, bound_at } 我与该好友的亲密关系
+    bondPendingIn: [],   // v299：我收到的待处理绑定申请
+    bondTypes: [],       // v299：可选关系类型（预设 + GM 自定义）
+    bondTimer: null,     // v299：关系数据轮询定时器
+    bondTarget: null     // v299：当前关系弹窗对应的 peer
   };
 
   // 超过该时长未活跃即视为离线（与心跳 30s 间隔匹配，留足余量）
@@ -1804,6 +1809,11 @@
     if (state.squareDotTimer) clearInterval(state.squareDotTimer);
     state.squareDotTimer = setInterval(refreshSquareDot, 60000);
 
+    // v299：亲密关系（好友列表徽标 + 收到的绑定申请）——登录即拉一次，60s 轮询
+    refreshBonds(true);
+    if (state.bondTimer) clearInterval(state.bondTimer);
+    state.bondTimer = setInterval(function () { refreshBonds(false); }, 60000);
+
     loadProfile()
       .then(loadRelations)
       .then(loadGroupRemarks)
@@ -2409,6 +2419,18 @@
     var nm = el('div', 'nm', displayName(f));
     info.appendChild(nm);
     info.appendChild(el('div', 'ph', (f.hide_phone ? '手机号已隐藏' : f.phone) + (f.remark ? ' · ' + f.nickname : '')));
+    // v299：亲密关系徽标（仅绑定双方可见，数据来自 bond_my_bonds RPC）
+    var bd = state.bondMap[f.id];
+    if (bd) {
+      var bl = el('div', 'bond-line');
+      var bt = el('span', 'bond-tag');
+      bt.style.color = bd.color || '#e0245e';
+      bt.style.borderColor = bd.color || '#e0245e';
+      bt.textContent = (bd.icon || '💞') + ' ' + bd.bond_type;
+      bl.appendChild(bt);
+      bl.appendChild(el('span', 'bond-intimacy', '亲密度 ' + (bd.intimacy || 0)));
+      info.appendChild(bl);
+    }
     appendDraftPreview(info, f.id, false);
     li.appendChild(av); li.appendChild(info);
     addOnlineDot(av, f.id);
@@ -4266,6 +4288,7 @@
     else if (tab === 'appeals') { openGmAppealsTab(); startGmPolling(); }
     else if (tab === 'feedback') { openGmFeedbackTab(); gmFeedbackBadge(); stopGmPolling(); }
     else if (tab === 'wordlog') { openGmWordLogTab(); startGmPolling(); }
+    else if (tab === 'bonds') { stopGmPolling(); openGmBondsTab(); }
     else { stopGmPolling(); }
   }
 
@@ -5962,6 +5985,7 @@
   $('gm-tab-feedback').addEventListener('click', function () { gmSwitchTab('feedback'); });
   $('gm-tab-wordlog').addEventListener('click', function () { gmSwitchTab('wordlog'); });
   $('gm-tab-userreports').addEventListener('click', function () { gmSwitchTab('userreports'); });
+  $('gm-tab-bonds').addEventListener('click', function () { gmSwitchTab('bonds'); });
   // 各看板「刷新」按钮（手动刷新）
   $('gm-report-refresh').addEventListener('click', openReportsTab);
   $('gm-userreport-refresh').addEventListener('click', openGmUserReportsTab);
@@ -7335,6 +7359,9 @@
       // 群聊：打开群资料弹窗（内含「我的群备注」）；好友：直接编辑备注
       rb.onclick = isGroup ? openGroupInfo : function () { editRemark(peer); };
     }
+    // v299：亲密关系入口（「备注」旁边，仅 1:1 好友可用）
+    var pb = $('peer-bond-btn');
+    if (pb) { pb.hidden = isGroup; if (!isGroup) pb.onclick = function () { openBondModal(peer); }; }
     var db = $('peer-del-btn');
     if (db) { db.hidden = isGroup; if (!isGroup) db.onclick = function () { deleteFriend(peer); }; }
     var cb = $('peer-clear-btn');
@@ -7465,6 +7492,31 @@
              : (state.profilesById[peer.id] && state.profilesById[peer.id].user_number);
     $('profile-no').textContent = (_uno != null) ? ('用户编号 #' + _uno) : '未分配编号';
 
+    // v299：亲密关系横幅（仅绑定双方可见）
+    var pbd = $('profile-bond');
+    if (pbd) {
+      var cached = state.bondMap[peer.id];
+      pbd.hidden = false;
+      if (cached) { renderBondBanner(pbd, cached); }
+      else { pbd.innerHTML = ''; pbd.appendChild(el('div', 'bond-loading', '')); }
+      sb.rpc('bond_status', { p_user_id: peer.id })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          var d = (r.data && r.data[0]) || {};
+          if (d.bond_type) {
+            renderBondBanner(pbd, { bond_type: d.bond_type, icon: d.icon, color: d.color, intimacy: d.intimacy, bound_at: d.bound_at });
+          } else if (d.request_id) {
+            pbd.innerHTML = '';
+            pbd.appendChild(el('div', 'bond-pending-tip',
+              d.pending_in ? '对方申请与你绑定「' + d.request_type + '」，可在聊天页「关系」按钮中处理'
+                           : '已向对方发送「' + d.request_type + '」绑定申请，等待对方通过'));
+          } else {
+            pbd.hidden = true;
+          }
+        })
+        .catch(function () { if (!cached) pbd.hidden = true; });
+    }
+
     showModal('profile-modal');
 
     var box = $('profile-titles');
@@ -7501,6 +7553,416 @@
         box.appendChild(el('div', 'profile-empty', '称号加载失败'));
       });
   }
+
+  /* ============================================================
+   *  v299：亲密关系绑定
+   *  聊天页「关系」按钮 → 发申请 → 对方通过 → 绑定；每次单聊消息 +1 亲密度（触发器）
+   *  数据仅绑定双方可见（RLS + bond_* RPC）；GM 后台「关系绑定」页可强制绑定/解除/管理
+   * ============================================================ */
+
+  // 拉取我的全部绑定 + 收到的申请（好友列表徽标 / 新申请 toast）
+  function refreshBonds(first) {
+    if (!sb || !state.uid) return;
+    var prevIn = (state.bondPendingIn || []).length;
+    var p1 = sb.rpc('bond_my_bonds').then(function (r) {
+      if (r.error) throw r.error;
+      var map = {};
+      (r.data || []).forEach(function (b) { map[b.other_id] = b; });
+      state.bondMap = map;
+    });
+    var p2 = sb.rpc('bond_pending_in').then(function (r) {
+      if (r.error) throw r.error;
+      state.bondPendingIn = r.data || [];
+    });
+    return Promise.all([p1, p2])
+      .then(function () {
+        renderFriends();
+        if (!first && state.bondPendingIn.length > prevIn) {
+          toast('收到一条亲密关系绑定申请 💞');
+        }
+        if (state.bondModalOpen && state.bondTarget) renderBondModalBody();
+      })
+      .catch(function () { /* 后端未升级：静默降级，不显示关系 */ });
+  }
+
+  function loadBondTypes() {
+    if (state.bondTypes && state.bondTypes.length) return Promise.resolve(state.bondTypes);
+    return sb.rpc('bond_list_types').then(function (r) {
+      if (r.error) throw r.error;
+      state.bondTypes = r.data || [];
+      return state.bondTypes;
+    });
+  }
+
+  /* ---------- 聊天页「关系」弹窗 ---------- */
+  function openBondModal(peer) {
+    state.bondTarget = peer;
+    state.bondModalOpen = true;
+    var t = $('bond-title');
+    if (t) t.textContent = '与 ' + displayName(peer) + ' 的关系';
+    showModal('bond-modal');
+    renderBondModalBody();
+  }
+  function closeBondModal() {
+    state.bondModalOpen = false;
+    state.bondTarget = null;
+    hideModal('bond-modal');
+  }
+
+  function bondSqlMissing(box) {
+    box.innerHTML = '';
+    box.appendChild(el('div', 'bond-empty', '需先在 Supabase 执行 20260919_close_bond.sql'));
+  }
+
+  function renderBondModalBody() {
+    var body = $('bond-body');
+    if (!body || !state.bondTarget) return;
+    var peer = state.bondTarget;
+    body.innerHTML = '';
+    body.appendChild(el('div', 'bond-empty', '加载中…'));
+    sb.rpc('bond_status', { p_user_id: peer.id })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!state.bondTarget || state.bondTarget.id !== peer.id) return;
+        var d = (r.data && r.data[0]) || {};
+        body.innerHTML = '';
+        if (d.bond_type) {
+          renderBondBanner(body, { bond_type: d.bond_type, icon: d.icon, color: d.color, intimacy: d.intimacy, bound_at: d.bound_at }, true);
+          return;
+        }
+        if (d.request_id) {
+          var tip = el('div', 'bond-pending-tip',
+            d.pending_in ? ('对方申请与你绑定「' + d.request_type + '」，通过后将正式建立关系')
+                         : ('已向对方发送「' + d.request_type + '」绑定申请，等待对方通过'));
+          body.appendChild(tip);
+          var row = el('div', 'bond-actions');
+          if (d.pending_in) {
+            var ok = el('button', 'bond-btn bond-btn-ok', '同意绑定'); ok.type = 'button';
+            ok.onclick = function () {
+              sb.rpc('bond_respond', { p_request_id: d.request_id, p_accept: true })
+                .then(function (rr) { if (rr.error) throw rr.error; toast('已建立「' + d.request_type + '」关系 💞'); refreshBonds(false); renderBondModalBody(); })
+                .catch(bondHandleErr);
+            };
+            var no = el('button', 'bond-btn bond-btn-no', '拒绝'); no.type = 'button';
+            no.onclick = function () {
+              sb.rpc('bond_respond', { p_request_id: d.request_id, p_accept: false })
+                .then(function (rr) { if (rr.error) throw rr.error; toast('已拒绝'); refreshBonds(false); renderBondModalBody(); })
+                .catch(bondHandleErr);
+            };
+            row.appendChild(ok); row.appendChild(no);
+          } else {
+            var cancel = el('button', 'bond-btn bond-btn-no', '撤回申请'); cancel.type = 'button';
+            cancel.onclick = function () {
+              sb.rpc('bond_cancel', { p_user_id: peer.id })
+                .then(function (rr) { if (rr.error) throw rr.error; toast('已撤回申请'); refreshBonds(false); renderBondModalBody(); })
+                .catch(bondHandleErr);
+            };
+            row.appendChild(cancel);
+          }
+          body.appendChild(row);
+          return;
+        }
+        // 未绑定：展示可选关系类型
+        loadBondTypes().then(function (types) {
+          if (!state.bondTarget || state.bondTarget.id !== peer.id) return;
+          body.innerHTML = '';
+          body.appendChild(el('div', 'bond-grid-title', '选择要绑定的关系，绑定后对方需通过申请'));
+          var grid = el('div', 'bond-grid');
+          (types || []).forEach(function (tp) {
+            var b = el('button', 'bond-type-btn');
+            b.type = 'button';
+            b.style.color = tp.color || '#e0245e';
+            b.style.borderColor = (tp.color || '#e0245e') + '55';
+            b.style.background = 'linear-gradient(135deg, ' + (tp.color || '#e0245e') + '1a, ' + (tp.color || '#e0245e') + '08)';
+            b.appendChild(el('div', 'bt-icon', tp.icon || '💞'));
+            b.appendChild(el('div', 'bt-name', tp.name));
+            b.onclick = function () { bondSendRequest(peer, tp.name); };
+            grid.appendChild(b);
+          });
+          body.appendChild(grid);
+        }).catch(function (e) { bondHandleErr(e, body); });
+      })
+      .catch(function (e) { bondHandleErr(e, body); });
+  }
+
+  function bondSendRequest(peer, typeName) {
+    sb.rpc('bond_request', { p_user_id: peer.id, p_type: typeName })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        toast('已发送「' + typeName + '」绑定申请，等待对方通过 💞');
+        refreshBonds(false);
+        renderBondModalBody();
+      })
+      .catch(function (e) { bondHandleErr(e); });
+  }
+
+  function bondHandleErr(e, box) {
+    var m = (e && (e.message || '')) || '';
+    if (/PGRST202|could not find the function|schema cache/i.test(m)) {
+      if (box) bondSqlMissing(box); else toast('需先在 Supabase 执行 20260919_close_bond.sql');
+    } else if (/BOND_NOT_FRIEND/.test(m)) toast('只能和好友绑定关系');
+    else if (/BOND_EXISTS/.test(m)) toast('你们已经绑定过关系了');
+    else if (/BOND_PENDING_EXISTS/.test(m)) toast('已有一条待处理的绑定申请');
+    else if (/BOND_BAD_TYPE/.test(m)) toast('关系类型不存在');
+    else if (/BOND_BAD_TARGET/.test(m)) toast('目标用户不正确');
+    else if (/BOND_REQ_NOT_FOUND/.test(m)) toast('申请不存在或已处理');
+    else toast('操作失败：' + friendlyError(e));
+  }
+
+  // 关系卡（弹窗大卡 + 个人主页横幅共用）；withActions=true 时附「解除绑定」
+  function renderBondBanner(box, b, withActions) {
+    box.innerHTML = '';
+    var color = b.color || '#e0245e';
+    var card = el('div', 'bond-card');
+    card.style.background = 'linear-gradient(135deg, ' + color + '2e, ' + color + '0f)';
+    card.style.borderColor = color + '59';
+    card.setAttribute('data-icon', b.icon || '💞');
+    var icon = el('div', 'bond-card-icon', b.icon || '💞');
+    icon.style.background = color + '26';
+    icon.style.color = color;
+    var main = el('div', 'bond-card-main');
+    var tn = el('div', 'bond-card-type', b.bond_type);
+    tn.style.color = color;
+    main.appendChild(tn);
+    main.appendChild(el('div', 'bond-card-int', '❤️ 亲密度 ' + (b.intimacy || 0)));
+    if (b.bound_at) {
+      try { main.appendChild(el('div', 'bond-card-since', '绑定于 ' + fmtDateTime(b.bound_at))); } catch (e) {}
+    }
+    card.appendChild(icon); card.appendChild(main);
+    box.appendChild(card);
+
+    if (withActions && state.bondTarget) {
+      var ub = el('button', 'bond-btn bond-btn-no bond-unbind', '解除绑定');
+      ub.type = 'button';
+      var armed = false;
+      ub.onclick = function () {
+        if (!armed) { armed = true; ub.textContent = '再点一次确认解除'; setTimeout(function () { armed = false; ub.textContent = '解除绑定'; }, 3000); return; }
+        sb.rpc('bond_unbind', { p_user_id: state.bondTarget.id })
+          .then(function (r) {
+            if (r.error) throw r.error;
+            toast('已解除关系');
+            refreshBonds(false);
+            renderBondModalBody();
+          })
+          .catch(bondHandleErr);
+      };
+      box.appendChild(ub);
+    }
+  }
+
+  /* ---------- GM 后台 / 管理后台：关系绑定 tab ---------- */
+  function openGmBondsTab() {
+    loadGmBondTypeSelect();
+    gmBondList();
+  }
+
+  function loadGmBondTypeSelect() {
+    return sb.rpc('bond_list_types').then(function (r) {
+      if (r.error) throw r.error;
+      state.bondTypes = r.data || [];
+      var sel = $('gm-bond-type');
+      if (sel) {
+        sel.innerHTML = '';
+        state.bondTypes.forEach(function (t) {
+          var o = document.createElement('option');
+          o.value = t.name;
+          o.textContent = (t.icon || '') + ' ' + t.name;
+          sel.appendChild(o);
+        });
+      }
+      return state.bondTypes;
+    }).catch(function () {});
+  }
+
+  // GM 输入（手机号 / 编号 / uid）→ 精确解析成用户行
+  function gmResolveBondUser(q) {
+    return sb.rpc('gm_search_users', { p_pwd: gmPwd, p_query: String(q || '').trim() })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        var s = String(q || '').trim().toLowerCase();
+        var hit = null;
+        rows.forEach(function (u) {
+          if (hit) return;
+          if (u.phone && String(u.phone).toLowerCase() === s) hit = u;
+          else if (u.user_number != null && String(u.user_number) === s) hit = u;
+          else if (u.id && String(u.id).toLowerCase() === s) hit = u;
+        });
+        if (!hit && rows.length === 1) hit = rows[0];
+        return hit;
+      });
+  }
+
+  function gmBondMsg(text, isErr) {
+    var m = $('gm-bond-msg');
+    if (m) { m.textContent = text || ''; m.classList.toggle('err', !!isErr); }
+  }
+
+  function gmBondResolve2() {
+    var qa = $('gm-bond-user-a'), qb = $('gm-bond-user-b');
+    var va = (qa && qa.value || '').trim(), vb = (qb && qb.value || '').trim();
+    if (!va || !vb) { gmBondMsg('请填写两个用户（手机号 / 编号 / uid）', true); return Promise.resolve(null); }
+    return Promise.all([gmResolveBondUser(va), gmResolveBondUser(vb)]).then(function (res) {
+      if (!res[0]) { gmBondMsg('用户A 未精确匹配到：' + va, true); return null; }
+      if (!res[1]) { gmBondMsg('用户B 未精确匹配到：' + vb, true); return null; }
+      if (res[0].id === res[1].id) { gmBondMsg('不能和自己绑定', true); return null; }
+      return res;
+    });
+  }
+
+  function gmBondList() {
+    var box = $('gm-bond-list');
+    if (!box) return;
+    box.innerHTML = '<div class="gm-empty">加载中…</div>';
+    sb.rpc('gm_bond_list', { p_pwd: gmPwd })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        gmBondRows = rows;
+        gmBondRenderList();
+      })
+      .catch(function (e) {
+        var m = (e && (e.message || '')) || '';
+        box.innerHTML = '';
+        if (/PGRST202|could not find the function|schema cache/i.test(m)) {
+          box.appendChild(el('div', 'gm-empty', '需先在 Supabase 执行 20260919_close_bond.sql'));
+        } else if (/GM_FORBIDDEN/.test(m)) {
+          box.appendChild(el('div', 'gm-empty', '口令已失效，请重新进入'));
+        } else {
+          box.appendChild(el('div', 'gm-empty', '加载失败：' + friendlyError(e)));
+        }
+      });
+  }
+
+  var gmBondRows = [];
+
+  function gmBondRenderList() {
+    var box = $('gm-bond-list');
+    if (!box) return;
+    var kw = (($('gm-bond-search') || {}).value || '').trim().toLowerCase();
+    box.innerHTML = '';
+    var rows = gmBondRows.filter(function (b) {
+      if (!kw) return true;
+      return [b.a_name, b.a_phone, b.b_name, b.b_phone, b.bond_type]
+        .some(function (v) { return v && String(v).toLowerCase().indexOf(kw) >= 0; });
+    });
+    if (!rows.length) {
+      box.appendChild(el('div', 'gm-empty', kw ? '未找到匹配的绑定' : '暂无绑定关系'));
+      return;
+    }
+    rows.forEach(function (b) {
+      var card = el('div', 'gm-bond-item');
+      var icon = el('span', 'gm-bond-icon', b.icon || '💞');
+      icon.style.background = (b.color || '#e0245e') + '22';
+      var main = el('div', 'gm-bond-main');
+      var ln = el('div', 'gm-bond-line');
+      var tn = el('span', 'gm-bond-type', b.bond_type);
+      tn.style.color = b.color || '#e0245e';
+      ln.appendChild(tn);
+      ln.appendChild(el('span', 'gm-bond-int', '❤️ ' + (b.intimacy || 0)));
+      main.appendChild(ln);
+      main.appendChild(el('div', 'gm-bond-pair',
+        (b.a_name || '') + (b.a_phone ? '（' + b.a_phone + '）' : '') +
+        ' × ' + (b.b_name || '') + (b.b_phone ? '（' + b.b_phone + '）' : '')));
+      var meta = b.bound_by_name ? ('强制绑定 · ' + b.bound_by_name) : '';
+      if (b.created_at) {
+        try { meta = (meta ? meta + ' · ' : '') + fmtDateTime(b.created_at); } catch (e) {}
+      }
+      if (meta) main.appendChild(el('div', 'gm-bond-meta', meta));
+      var ops = el('div', 'gm-bond-ops');
+      var bInt = el('button', 'btn-mini', '改亲密度'); bInt.type = 'button';
+      bInt.onclick = function () {
+        var v = window.prompt('设置 ' + (b.a_name || '') + ' × ' + (b.b_name || '') + ' 的亲密度：', b.intimacy || 0);
+        if (v === null) return;
+        v = parseInt(v, 10);
+        if (isNaN(v) || v < 0) { toast('请输入不小于 0 的数字'); return; }
+        sb.rpc('gm_bond_set_intimacy', { p_pwd: gmPwd, p_user_a: b.a_id, p_user_b: b.b_id, p_value: v })
+          .then(function (r) { if (r.error) throw r.error; toast('已设为 ' + v); gmBondList(); })
+          .catch(function (e2) { toast('失败：' + friendlyError(e2)); });
+      };
+      var bDel = el('button', 'btn-mini gm-bond-un', '解除'); bDel.type = 'button';
+      bDel.onclick = function () {
+        sb.rpc('gm_bond_remove', { p_pwd: gmPwd, p_user_a: b.a_id, p_user_b: b.b_id })
+          .then(function (r) { if (r.error) throw r.error; toast('已解除并清理待处理申请'); gmBondList(); })
+          .catch(function (e2) { toast('失败：' + friendlyError(e2)); });
+      };
+      ops.appendChild(bInt); ops.appendChild(bDel);
+      card.appendChild(icon); card.appendChild(main); card.appendChild(ops);
+      box.appendChild(card);
+    });
+  }
+
+  /* ---------- v299 事件绑定（相关面板 HTML 均在脚本标签之前，可直接绑定） ---------- */
+  (function bondBindOnce() {
+    var bc = $('bond-close');
+    if (bc) bc.addEventListener('click', closeBondModal);
+    var gf = $('gm-bond-force-btn');
+    if (gf) gf.addEventListener('click', function () {
+      gmBondResolve2().then(function (res) {
+        if (!res) return;
+        var tn = ($('gm-bond-type') || {}).value;
+        sb.rpc('gm_bond_force', { p_pwd: gmPwd, p_user_a: res[0].id, p_user_b: res[1].id, p_type: tn })
+          .then(function (r) {
+            if (r.error) throw r.error;
+            gmBondMsg('已强制绑定 ' + (res[0].nickname || '') + ' × ' + (res[1].nickname || '') + '（' + tn + '）');
+            gmBondList();
+          })
+          .catch(function (e) { gmBondMsg('失败：' + friendlyError(e), true); });
+      });
+    });
+    var gr = $('gm-bond-remove-btn');
+    if (gr) gr.addEventListener('click', function () {
+      gmBondResolve2().then(function (res) {
+        if (!res) return;
+        sb.rpc('gm_bond_remove', { p_pwd: gmPwd, p_user_a: res[0].id, p_user_b: res[1].id })
+          .then(function (r) { if (r.error) throw r.error; gmBondMsg('已解除并清理待处理申请'); gmBondList(); })
+          .catch(function (e) { gmBondMsg('失败：' + friendlyError(e), true); });
+      });
+    });
+    var gi = $('gm-bond-set-int-btn');
+    if (gi) gi.addEventListener('click', function () {
+      var v = parseInt(($('gm-bond-intimacy') || {}).value, 10);
+      if (isNaN(v) || v < 0) { gmBondMsg('请输入不小于 0 的亲密度', true); return; }
+      gmBondResolve2().then(function (res) {
+        if (!res) return;
+        sb.rpc('gm_bond_set_intimacy', { p_pwd: gmPwd, p_user_a: res[0].id, p_user_b: res[1].id, p_value: v })
+          .then(function (r) { if (r.error) throw r.error; gmBondMsg('亲密度已设为 ' + v); gmBondList(); })
+          .catch(function (e) { gmBondMsg('失败：' + friendlyError(e), true); });
+      });
+    });
+    var ga = $('gm-bond-addtype-btn');
+    if (ga) ga.addEventListener('click', function () {
+      var n = (($('gm-bond-new-name') || {}).value || '').trim();
+      var ic = (($('gm-bond-new-icon') || {}).value || '').trim();
+      var cc = (($('gm-bond-new-color') || {}).value || '').trim();
+      if (!n) { gmBondMsg('请输入类型名称', true); return; }
+      sb.rpc('gm_bond_add_type', { p_pwd: gmPwd, p_name: n, p_icon: ic, p_color: cc })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          gmBondMsg('已添加/更新类型「' + n + '」');
+          var nn = $('gm-bond-new-name'); if (nn) nn.value = '';
+          var ii = $('gm-bond-new-icon'); if (ii) ii.value = '';
+          loadGmBondTypeSelect(); gmBondList();
+        })
+        .catch(function (e) { gmBondMsg('失败：' + friendlyError(e), true); });
+    });
+    var gd = $('gm-bond-deltype-btn');
+    if (gd) gd.addEventListener('click', function () {
+      var tn = ($('gm-bond-type') || {}).value;
+      if (!tn) { gmBondMsg('请先选择类型', true); return; }
+      sb.rpc('gm_bond_del_type', { p_pwd: gmPwd, p_name: tn })
+        .then(function (r) {
+          if (r.error) throw r.error;
+          gmBondMsg('已删除类型「' + tn + '」');
+          loadGmBondTypeSelect();
+        })
+        .catch(function (e) { gmBondMsg('失败：' + friendlyError(e), true); });
+    });
+    var gs = $('gm-bond-search');
+    if (gs) gs.addEventListener('input', gmBondRenderList);
+    var grf = $('gm-bond-refresh');
+    if (grf) grf.addEventListener('click', gmBondList);
+  })();
 
   function scrollBottom() {
     var box = $('messages');
