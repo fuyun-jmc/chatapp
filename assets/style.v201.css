@@ -1991,3 +1991,139 @@ input, textarea { font-family: inherit; font-size: 15px; }
 /* 群聊内成员昵称可点，给一点可点击暗示 */
 .msg-sender { cursor: pointer; }
 .msg-sender:active { opacity: .7; }
+
+/* ============================================================
+ * v301：在线聊天室
+ * ============================================================ */
+/* 入口与交友广场同一排、各占一半（#square-entry-btn 原有 flex:1 1 100% 会把聊天室挤成 0 宽） */
+.side-top-actions .friend-req-btn#square-entry-btn,
+.side-top-actions .friend-req-btn.chatroom-entry {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.side-top-actions .friend-req-btn#square-entry-btn { margin-right: 4px; }
+.side-top-actions .friend-req-btn.chatroom-entry { margin-right: 0; }
+.friend-req-btn.chatroom-entry:hover { background: rgba(79,124,247,.2); }
+.friend-req-btn.chatroom-entry:active { opacity: .85; }
+.friend-req-btn.chatroom-entry > svg { margin-right: 6px; }
+.friend-req-btn.chatroom-entry > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 面板 */
+.cr-inner { display: flex; flex-direction: column; }
+.cr-header { align-items: center; }
+.cr-title { flex: 0 0 auto; }
+/* 右上角小号在线人数 */
+.cr-online {
+  margin-left: auto;
+  margin-right: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 在线成员头像条 */
+.cr-members {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.cr-members:empty { display: none; }
+.cr-member-av {
+  position: relative;
+  flex: 0 0 auto;
+  margin-right: 8px;
+  cursor: pointer;
+}
+.cr-member-av:active { opacity: .7; }
+
+/* 消息区 */
+.cr-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.cr-msg { display: flex; align-items: flex-start; margin-bottom: 12px; }
+.cr-msg.me { flex-direction: row-reverse; }
+.cr-av { flex: 0 0 auto; margin-right: 8px; cursor: pointer; }
+.cr-av:active { opacity: .7; }
+.cr-msg.me .cr-av { margin-right: 0; margin-left: 8px; }
+.cr-main { min-width: 0; max-width: 76%; }
+.cr-msg-head { display: flex; align-items: baseline; margin-bottom: 3px; }
+.cr-msg.me .cr-msg-head { flex-direction: row-reverse; }
+.cr-name {
+  margin-right: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.cr-msg.me .cr-name { margin-right: 0; margin-left: 6px; }
+.cr-time { color: var(--text-3); font-size: 11px; opacity: .75; }
+.cr-bubble {
+  display: inline-block;
+  padding: 8px 11px;
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.cr-msg.me .cr-bubble { background: var(--brand); color: #fff; }
+.cr-tip { padding: 18px 10px; text-align: center; color: var(--text-3); font-size: 13px; }
+
+/* 输入区 */
+.cr-composer {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+#cr-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.cr-send {
+  flex: 0 0 auto;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cr-send:active { filter: brightness(.92); }
+
+/* 手机端：面板整体不滚动，仅消息区滚动（覆盖 .sq-panel .sq-inner 的通用规则） */
+@media (max-width: 719px) {
+  .chatroom-panel.open .cr-inner { overflow: hidden; }
+  .chatroom-panel.open .cr-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
