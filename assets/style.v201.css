@@ -864,7 +864,7 @@ input, textarea { font-family: inherit; font-size: 15px; }
   .chat-head .avatar { width: 30px; height: 30px; flex-basis: 30px; font-size: 12px; }
   .chat-name { font-size: 13.5px; }
   .chat-phone { font-size: 11px; }
-  .peer-remark-btn, .peer-report-btn, .peer-del-btn { padding: 4px 9px; font-size: 12px; }
+  .peer-remark-btn, .peer-bond-btn, .peer-report-btn, .peer-del-btn { padding: 4px 9px; font-size: 12px; }
   .peer-clear-btn { margin-left: 4px; }
 }
 
@@ -1856,3 +1856,130 @@ input, textarea { font-family: inherit; font-size: 15px; }
   pointer-events: none;
 }
 .sq-new-dot[hidden] { display: none; }
+
+/* ---------- v299：亲密关系绑定 ---------- */
+/* 聊天头「关系」按钮（与「备注」同款外观，紧跟其后） */
+.peer-bond-btn {
+  margin-left: 6px; flex: 0 0 auto;
+  font-size: 12.5px; color: var(--text-2);
+  background: var(--bg); border: none; padding: 5px 11px;
+  border-radius: 8px; cursor: pointer; transition: background .15s, color .15s;
+}
+.peer-bond-btn:hover { color: #e0245e; background: rgba(224,36,94,.10); }
+
+/* 好友列表里的关系徽标行 */
+.bond-line { display: flex; align-items: center; margin-top: 2px; }
+.bond-line > * { margin-right: 6px; }
+.bond-tag {
+  display: inline-block; font-size: 11px; line-height: 1.4;
+  padding: 0 6px; border: 1px solid currentColor; border-radius: 6px;
+  font-weight: 600;
+}
+.bond-intimacy { font-size: 11px; color: var(--text-3, #8b93a1); }
+
+/* 关系弹窗 */
+.bond-modal .bond-card-wrap { max-width: 420px; }
+.bond-body { padding: 14px 16px 18px; }
+.bond-empty { text-align: center; color: var(--text-3, #8b93a1); font-size: 13px; padding: 22px 0; }
+.bond-grid-title { font-size: 12.5px; color: var(--text-3, #8b93a1); text-align: center; margin-bottom: 12px; }
+.bond-grid { display: flex; flex-wrap: wrap; }
+.bond-grid > * { margin-right: 10px; margin-bottom: 10px; }
+.bond-type-btn {
+  width: calc(33.33% - 10px); min-width: 88px;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 6px 10px; border: 1px solid; border-radius: 12px; cursor: pointer;
+  transition: transform .12s;
+}
+.bond-type-btn:active { transform: scale(.96); }
+.bond-type-btn .bt-icon { font-size: 24px; line-height: 1.2; }
+.bond-type-btn .bt-name { font-size: 13px; font-weight: 600; margin-top: 4px; }
+
+/* 待处理申请提示 */
+.bond-pending-tip {
+  text-align: center; font-size: 13.5px; line-height: 1.6;
+  padding: 14px 10px; margin-bottom: 12px;
+  border-radius: 12px; background: rgba(224,36,94,.07); color: var(--text);
+}
+.bond-actions { display: flex; justify-content: center; }
+.bond-actions > * { margin-right: 10px; }
+.bond-btn {
+  border: none; border-radius: 10px; padding: 9px 18px;
+  font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.bond-btn-ok { background: #e0245e; color: #fff; }
+.bond-btn-no { background: var(--bg); color: var(--text-2); border: 1px solid var(--line); }
+.bond-unbind { margin-top: 12px; width: 100%; }
+
+/* 关系卡：特殊纹样 + 标志（渐变底 + 大水印图标 + 虚线描边） */
+.bond-card {
+  position: relative; display: flex; align-items: center;
+  border: 1px dashed; border-radius: 14px;
+  padding: 16px 14px; overflow: hidden;
+}
+.bond-card::after {
+  content: attr(data-icon);
+  position: absolute; right: 6px; top: -10px;
+  font-size: 64px; line-height: 1; opacity: .12;
+  pointer-events: none;
+}
+.bond-card-icon {
+  flex: 0 0 auto; width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; margin-right: 14px;
+}
+.bond-card-main { flex: 1 1 auto; min-width: 0; }
+.bond-card-type { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+.bond-card-int { font-size: 13px; color: var(--text); margin-top: 3px; font-weight: 600; }
+.bond-card-since { font-size: 11.5px; color: var(--text-3, #8b93a1); margin-top: 2px; }
+.bond-loading { height: 8px; }
+
+/* 个人主页横幅（小号关系卡） */
+.profile-bond { margin-top: 10px; }
+.profile-bond .bond-card { padding: 12px; text-align: left; }
+.profile-bond .bond-card-icon { width: 40px; height: 40px; font-size: 20px; margin-right: 10px; }
+.profile-bond .bond-card-type { font-size: 15px; }
+
+/* GM 后台：关系绑定 tab */
+.bond-gm-forms { margin-bottom: 10px; }
+.bond-gm-form {
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 10px; background: var(--bg);
+}
+.bond-gm-form-title { font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; }
+.bond-gm-row { display: flex; flex-wrap: wrap; align-items: center; }
+.bond-gm-row > * { margin-right: 8px; margin-bottom: 6px; }
+.bond-gm-row input[type="text"] {
+  flex: 1 1 150px; min-width: 140px;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 12.5px; background: var(--bg); color: var(--text);
+}
+.bond-gm-select {
+  padding: 7px 6px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 12.5px; background: var(--bg); color: var(--text); max-width: 140px;
+}
+.bond-gm-num { width: 90px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; background: var(--bg); color: var(--text); }
+.bond-gm-color { width: 40px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.bond-gm-go { background: var(--brand); color: #fff; border: none; }
+.bond-gm-hint { font-size: 12px; color: var(--ok, #2fa463); min-height: 16px; margin-top: 2px; }
+.bond-gm-hint.err { color: var(--danger, #e5484d); }
+
+.gm-bond-item {
+  display: flex; align-items: flex-start;
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 8px; background: var(--bg);
+}
+.gm-bond-icon {
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; margin-right: 10px;
+}
+.gm-bond-main { flex: 1 1 auto; min-width: 0; }
+.gm-bond-line { display: flex; align-items: center; }
+.gm-bond-line > * { margin-right: 10px; }
+.gm-bond-type { font-weight: 700; font-size: 14px; }
+.gm-bond-int { font-size: 12.5px; color: var(--text-2); }
+.gm-bond-pair { font-size: 12.5px; color: var(--text); margin-top: 3px; word-break: break-all; }
+.gm-bond-meta { font-size: 11px; color: var(--text-3, #8b93a1); margin-top: 3px; }
+.gm-bond-ops { flex: 0 0 auto; display: flex; flex-direction: column; }
+.gm-bond-ops > * { margin-bottom: 6px; }
+.gm-bond-un { color: var(--danger, #e5484d); }
