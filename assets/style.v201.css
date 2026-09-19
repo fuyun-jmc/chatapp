@@ -452,6 +452,27 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .member-item .online-status.on  { color: var(--ok); }
 .member-item .online-status.off { color: #98a0ad; }
 
+/* v307：群资料成员行 —— 按钮收进 .member-ops 容器
+   之前按钮与昵称平级抢宽度，窄屏时昵称被压到一字宽逐字竖排；
+   现在 ops 整体不收缩，行内放不下时整体换到第二行，昵称保持完整 */
+.member-item { flex-wrap: wrap; }
+.member-item .info { flex: 1 1 120px; }
+.member-item .nm-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-item .member-ops {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 6px;
+}
+.member-item .member-ops .mini-ok,
+.member-item .member-ops .mini-no { margin-left: 6px; }
+/* 老的平级按钮规则已被 ops 容器取代，仅作兜底（结构外不存在该情况） */
+
 /* 群聊中他人消息显示发送者昵称 */
 .msg.group-in { flex-wrap: wrap; }
 .msg.group-in .msg-sender { flex-basis: 100%; margin: 0 2px 3px; }
