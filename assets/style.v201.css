@@ -1983,3 +1983,11 @@ input, textarea { font-family: inherit; font-size: 15px; }
 .gm-bond-ops { flex: 0 0 auto; display: flex; flex-direction: column; }
 .gm-bond-ops > * { margin-bottom: 6px; }
 .gm-bond-un { color: var(--danger, #e5484d); }
+
+/* ---------- v300：个人主页「加好友」（群聊内点成员进来同样可加） ---------- */
+.profile-actions { display: flex; justify-content: center; margin-top: 12px; }
+.profile-actions[hidden] { display: none; }
+.profile-actions .btn-primary { padding: 9px 30px; }
+/* 群聊内成员昵称可点，给一点可点击暗示 */
+.msg-sender { cursor: pointer; }
+.msg-sender:active { opacity: .7; }
