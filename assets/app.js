@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v299 loaded');
+  console.log('[chatapp] app.js build v300 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -6560,7 +6560,13 @@
         rm.onclick = function () { removeMember(g, uid); };
         li.appendChild(rm);
       }
+      // v300：点击成员行（非按钮区域）打开个人主页，主页里有「加好友」——普通成员同样可用
+      li.onclick = function (ev) {
+        if (ev && ev.target && String(ev.target.tagName) === 'BUTTON') return;
+        openProfileById(uid, disp);
+      };
       // 群内加好友：非自己、且还不是好友的成员，显示「加好友」
+      // v300：此处对「群主 / 管理员 / 普通成员」一视同仁，任何群成员都能把群友加为好友
       if (uid !== state.uid && !friendById(uid)) {
         var af = el('button', 'mini-ok', '加好友'); af.type = 'button';
         af.onclick = function (ev) {
@@ -7492,6 +7498,21 @@
              : (state.profilesById[peer.id] && state.profilesById[peer.id].user_number);
     $('profile-no').textContent = (_uno != null) ? ('用户编号 #' + _uno) : '未分配编号';
 
+    // v300：个人主页「加好友」——任何场景都可用（群聊内点成员进来同样可直接加，不区分群主/管理员）
+    var pa = $('profile-actions'), paf = $('profile-add-friend');
+    if (pa && paf) {
+      var isSelfProf = peer.id === state.uid;
+      var isFriendProf = !!friendById(peer.id);
+      pa.hidden = isSelfProf || isFriendProf;
+      if (!pa.hidden) {
+        paf.textContent = '加好友';
+        paf.onclick = function () {
+          hideModal('profile-modal');
+          sendRequest(peer, null);
+        };
+      }
+    }
+
     // v299：亲密关系横幅（仅绑定双方可见）
     var pbd = $('profile-bond');
     if (pbd) {
@@ -7892,7 +7913,40 @@
     });
   }
 
-  /* ---------- v299 事件绑定（相关面板 HTML 均在脚本标签之前，可直接绑定） ---------- */
+  // v300：按 uid 打开个人主页（群聊内点成员昵称 / 群成员列表行进来；本地资料缺失时先拉一次）
+  function openProfileById(uid, fallbackName) {
+    if (!uid || uid === state.uid) return;
+    var p = state.profilesById[uid] || {};
+    var peer = {
+      id: uid,
+      nickname: p.nickname || fallbackName || '',
+      phone: p.phone || '',
+      avatar: p.avatar_path || '',
+      hide_phone: !!p.hide_phone,
+      user_number: (p.user_number != null) ? p.user_number : null
+    };
+    openProfile(peer);
+    if (!p.nickname) {
+      sb.from('profiles').select('id,nickname,phone,avatar_path,hide_phone,user_number').eq('id', uid).maybeSingle()
+        .then(function (r) {
+          if (r.error || !r.data) return;
+          var d = r.data;
+          state.profilesById[uid] = {
+            nickname: d.nickname, avatar_path: d.avatar_path, phone: d.phone,
+            user_number: d.user_number, hide_phone: d.hide_phone
+          };
+          peer.nickname = d.nickname || peer.nickname;
+          peer.phone = d.phone || '';
+          peer.avatar = d.avatar_path || '';
+          peer.hide_phone = !!d.hide_phone;
+          peer.user_number = d.user_number;
+          openProfile(peer);   // 资料补齐后再刷一次头部
+        })
+        .catch(function () {});
+    }
+  }
+
+  /* ---------- v299 / v300 事件绑定（相关面板 HTML 均在脚本标签之前，可直接绑定） ---------- */
   (function bondBindOnce() {
     var bc = $('bond-close');
     if (bc) bc.addEventListener('click', closeBondModal);
@@ -7962,6 +8016,20 @@
     if (gs) gs.addEventListener('input', gmBondRenderList);
     var grf = $('gm-bond-refresh');
     if (grf) grf.addEventListener('click', gmBondList);
+
+    // v300：群聊内点击成员昵称 → 个人主页（可在主页加好友，不区分群主/管理员）
+    var msgBox = $('messages');
+    if (msgBox) msgBox.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.classList || !t.classList.contains('msg-sender')) return;
+      var node = t.parentNode, uid = null;
+      while (node && node !== msgBox) {
+        if (node.getAttribute && node.getAttribute('data-sender')) { uid = node.getAttribute('data-sender'); break; }
+        node = node.parentNode;
+      }
+      if (!uid || uid === state.uid) return;
+      openProfileById(uid, t.textContent);
+    });
   })();
 
   function scrollBottom() {
