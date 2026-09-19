@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v304 loaded');
+  console.log('[chatapp] app.js build v305 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -8109,13 +8109,18 @@
     try { inp && inp.focus(); } catch (e) {}
   }
 
+  // 退出聊天室：只清除「在场状态」（不再计入在线人数），**绝不删除任何聊天记录**。
+  // 消息本体在 chatroom_messages 表里永久保留，下次进入仍会拉出最近 60 条；
+  // #cr-body 里的已渲染消息也保留，重进时不会闪空。
   function closeChatRoom() {
     state.chatRoomOpen = false;
     hideModal('chatroom-modal');
     if (state.crHeartTimer) { clearInterval(state.crHeartTimer); state.crHeartTimer = null; }
     if (state.crOnlineTimer) { clearInterval(state.crOnlineTimer); state.crOnlineTimer = null; }
     unsubscribeChatRoom();
-    try { sb.rpc('chatroom_leave'); } catch (e) {}
+    try {
+      sb.rpc('chatroom_leave').catch(function () {});   // 仅删 presence，不动消息
+    } catch (e) {}
   }
 
   function chatRoomHeartbeat() {
@@ -8151,8 +8156,13 @@
   function renderChatRoomMessages() {
     var box = $('cr-body');
     if (!box) return;
-    box.innerHTML = '';
-    box.appendChild(el('div', 'cr-tip', '加载中…'));
+    // v305：不清空已有消息——退出/重进时先看到上一次的内容，拉到新数据再整体替换，
+    // 既避免闪烁，也让「聊天记录一直保留」在体验上可见（消息本体存在 chatroom_messages，永不删除）
+    var hadMsg = !!box.querySelector('.cr-msg');
+    var oldTip = box.querySelector('.cr-tip');
+    if (oldTip) domRemove(oldTip);
+    var tip = el('div', 'cr-tip', '加载中…');
+    if (!hadMsg) box.appendChild(tip);
     sb.rpc('chatroom_list', { p_limit: 60 })
       .then(function (r) {
         if (r.error) throw r.error;
@@ -8167,6 +8177,8 @@
       })
       .catch(function (e) {
         var msg = (e && (e.message || '')) || '';
+        domRemove(tip);
+        if (hadMsg) { toast('刷新聊天室消息失败：' + friendlyError(e)); return; }  // 保留历史
         box.innerHTML = '';
         if (/PGRST202|could not find the function|schema cache/i.test(msg)) {
           box.appendChild(el('div', 'cr-tip', '需先在 Supabase 执行 20260919_chat_room.sql'));
@@ -8356,19 +8368,39 @@
       openProfileById(uid, t.textContent);
     });
 
-    // v301：在线聊天室
+  })();
+
+  /* ---------- v305：在线聊天室绑定
+   * ⚠ 必须独立于 bondBindOnce：#chatroom-modal 的 HTML 在 <script> 标签之后
+   * （index.html 约 1168 行，脚本在约 1134 行），脚本执行时节点还不存在，
+   * 直接绑定会被 if (x) 静默跳过 → 表单原生提交导致页面重载（表现为「发送后自动退出」），
+   * 且 ✕ 关闭按钮失效。故用 DOMContentLoaded 兜底。
+   * ------------------------------------------------------------------------ */
+  function initChatRoomBindings() {
     var creBtn = $('chatroom-entry-btn');
     if (creBtn) creBtn.addEventListener('click', openChatRoom);
     var crClose = $('cr-close');
     if (crClose) crClose.addEventListener('click', closeChatRoom);
+    var crModal = $('chatroom-modal');
+    if (crModal) crModal.addEventListener('click', function (e) {
+      if (e.target === crModal) closeChatRoom();   // 点遮罩关闭（桌面端）
+    });
     var crForm = $('cr-composer');
     if (crForm) crForm.addEventListener('submit', function (e) {
-      e.preventDefault();
+      e.preventDefault();                          // 关键：阻止原生提交导致页面重载
       sendChatRoomMessage();
     });
     var crSend = $('cr-send');
-    if (crSend) crSend.addEventListener('click', function (e) { e.preventDefault(); sendChatRoomMessage(); });
-  })();
+    if (crSend) {
+      crSend.type = 'button';                      // 双保险：即便 submit 兜不到也不会提交表单
+      crSend.addEventListener('click', function (e) { e.preventDefault(); sendChatRoomMessage(); });
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChatRoomBindings);
+  } else {
+    initChatRoomBindings();
+  }
 
   function scrollBottom() {
     var box = $('messages');
