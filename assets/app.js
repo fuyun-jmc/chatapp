@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v301 loaded');
+  console.log('[chatapp] app.js build v302 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -4275,8 +4275,8 @@
   // ---------- 称号管理（GM 后台） ----------
   function gmSwitchTab(tab) {
     state.gmCurrentTab = tab;
-    var map = { users: 'gm-users', reports: 'gm-reports', userreports: 'gm-userreports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback', wordlog: 'gm-word-log' };
-    ['users', 'reports', 'userreports', 'titles', 'groups', 'appeals', 'feedback', 'wordlog'].forEach(function (k) {
+    var map = { users: 'gm-users', reports: 'gm-reports', userreports: 'gm-userreports', titles: 'gm-titles', groups: 'gm-groups', appeals: 'gm-appeals', feedback: 'gm-feedback', wordlog: 'gm-word-log', bonds: 'gm-bonds' };
+    ['users', 'reports', 'userreports', 'titles', 'groups', 'appeals', 'feedback', 'wordlog', 'bonds'].forEach(function (k) {
       var b = $('gm-tab-' + k); if (b) b.classList.toggle('active', k === tab);
       var p = $(map[k]); if (p) p.hidden = (k !== tab);
     });
