@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v303 loaded');
+  console.log('[chatapp] app.js build v304 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -2560,28 +2560,50 @@
     }
   }
 
-  /* ---------- 编辑好友备注 ---------- */
+  /* ---------- 编辑好友备注（v304：改为弹层输入，手机 WebView 不支持 prompt） ---------- */
   function editRemark(f) {
     var cur = f.remark || '';
-    var input = window.prompt('给好友设置备注名（留空可清除）：', cur);
-    if (input === null) return; // 取消
-    var val = input.trim().slice(0, 20);
-    var payload = { updated_at: new Date().toISOString() };
-    if (f.iAmRequester) payload.requester_remark = val || null;
-    else payload.addressee_remark = val || null;
-
-    sb.from('friendships').update(payload).eq('id', f.relId)
-      .then(function (r) {
-        if (r.error) throw r.error;
-        f.remark = val || null;
-        renderFriends();
-        if (state.active && state.active.id === f.id) {
-          $('peer-name').textContent = displayName(f);
-          $('peer-avatar').textContent = initialOf(f.remark || f.nickname);
-        }
-        toast(val ? '已设置备注：' + val : '已清除备注');
-      })
-      .catch(function (e) { toast(friendlyError(e)); });
+    var mask = el('div', 'modal remark-modal');
+    var card = el('div', 'modal-card remark-card');
+    var title = el('div', 'remark-title', '设置备注');
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'remark-input';
+    inp.maxLength = 20;
+    inp.placeholder = '留空则清除备注';
+    inp.value = cur;
+    var row = el('div', 'remark-row');
+    var ok = el('button', 'btn-mini bond-gm-go', '保存'); ok.type = 'button';
+    var no = el('button', 'btn-mini', '取消'); no.type = 'button';
+    row.appendChild(ok); row.appendChild(no);
+    card.appendChild(title); card.appendChild(inp); card.appendChild(row);
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    mask.classList.add('open');
+    var close = function () { domRemove(mask); };
+    mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
+    no.onclick = close;
+    ok.onclick = function () {
+      var val = (inp.value || '').trim().slice(0, 20);
+      var payload = { updated_at: new Date().toISOString() };
+      if (f.iAmRequester) payload.requester_remark = val || null;
+      else payload.addressee_remark = val || null;
+      ok.disabled = true;
+      sb.from('friendships').update(payload).eq('id', f.relId)
+        .then(function (r) {
+          if (r.error) throw r.error;
+          f.remark = val || null;
+          renderFriends();
+          if (state.active && state.active.id === f.id) {
+            $('peer-name').textContent = displayName(f);
+            $('peer-avatar').textContent = initialOf(f.remark || f.nickname);
+          }
+          close();
+          toast(val ? '已设置备注：' + val : '已清除备注');
+        })
+        .catch(function (e) { ok.disabled = false; toast(friendlyError(e)); });
+    };
+    try { inp.focus(); } catch (e) {}
   }
 
   /* ---------- 删除好友 ---------- */
@@ -7923,25 +7945,113 @@
         try { meta = (meta ? meta + ' · ' : '') + fmtDateTime(b.created_at); } catch (e) {}
       }
       if (meta) main.appendChild(el('div', 'gm-bond-meta', meta));
+
+      // v304：行内编辑器（手机 WebView 不支持 prompt/confirm，弃用弹窗，全部行内交互）
+      var editBox = el('div', 'gm-bond-edit');
+      editBox.hidden = true;
+      var closeEditor = function () { editBox.hidden = true; editBox.innerHTML = ''; };
+      function openEditor(kind) {
+        editBox.innerHTML = '';
+        editBox.hidden = false;
+        if (kind === 'int') {
+          var inp = document.createElement('input');
+          inp.type = 'number'; inp.className = 'bond-gm-num';
+          inp.min = '0'; inp.max = '9999999';
+          inp.value = String(b.intimacy || 0);
+          var ok = el('button', 'btn-mini bond-gm-go', '确定'); ok.type = 'button';
+          var no = el('button', 'btn-mini', '取消'); no.type = 'button';
+          ok.onclick = function () {
+            var v = parseInt(inp.value, 10);
+            if (isNaN(v) || v < 0) { toast('请输入不小于 0 的数字'); return; }
+            ok.disabled = true;
+            sb.rpc('gm_bond_set_intimacy', { p_pwd: gmPwd, p_user_a: b.a_id, p_user_b: b.b_id, p_value: v })
+              .then(function (r) {
+                if (r.error) throw r.error;
+                toast('已设为 ' + v);
+                closeEditor();
+                gmBondList();
+              })
+              .catch(function (e2) { ok.disabled = false; toast('失败：' + friendlyError(e2)); });
+          };
+          no.onclick = closeEditor;
+          editBox.appendChild(inp); editBox.appendChild(ok); editBox.appendChild(no);
+          try { inp.focus(); } catch (e) {}
+        } else {
+          // 改类型：复用 gm_bond_force 的 upsert（只换类型，亲密度保留），无需额外 SQL
+          var types = state.bondTypes || [];
+          if (!types.length) {
+            editBox.appendChild(el('span', 'gm-bond-edit-tip', '类型列表加载中，请稍后再点'));
+            return;
+          }
+          var sel = document.createElement('select');
+          sel.className = 'bond-gm-select';
+          types.forEach(function (t) {
+            var o = document.createElement('option');
+            o.value = t.name;
+            o.textContent = (t.icon || '') + ' ' + t.name;
+            if (t.name === b.bond_type) o.selected = true;
+            sel.appendChild(o);
+          });
+          var ok2 = el('button', 'btn-mini bond-gm-go', '保存'); ok2.type = 'button';
+          var no2 = el('button', 'btn-mini', '取消'); no2.type = 'button';
+          ok2.onclick = function () {
+            ok2.disabled = true;
+            sb.rpc('gm_bond_force', { p_pwd: gmPwd, p_user_a: b.a_id, p_user_b: b.b_id, p_type: sel.value })
+              .then(function (r) {
+                if (r.error) throw r.error;
+                toast('关系已改为「' + sel.value + '」（亲密度保留）');
+                closeEditor();
+                gmBondList();
+              })
+              .catch(function (e2) { ok2.disabled = false; toast('失败：' + friendlyError(e2)); });
+          };
+          no2.onclick = closeEditor;
+          editBox.appendChild(sel); editBox.appendChild(ok2); editBox.appendChild(no2);
+        }
+      }
+
       var ops = el('div', 'gm-bond-ops');
+      var bType = el('button', 'btn-mini', '改类型'); bType.type = 'button';
+      bType.onclick = function () {
+        if (!editBox.hidden && editBox.firstChild && editBox.firstChild.tagName === 'SELECT') { closeEditor(); return; }
+        openEditor('type');
+      };
       var bInt = el('button', 'btn-mini', '改亲密度'); bInt.type = 'button';
       bInt.onclick = function () {
-        var v = window.prompt('设置 ' + (b.a_name || '') + ' × ' + (b.b_name || '') + ' 的亲密度：', b.intimacy || 0);
-        if (v === null) return;
-        v = parseInt(v, 10);
-        if (isNaN(v) || v < 0) { toast('请输入不小于 0 的数字'); return; }
-        sb.rpc('gm_bond_set_intimacy', { p_pwd: gmPwd, p_user_a: b.a_id, p_user_b: b.b_id, p_value: v })
-          .then(function (r) { if (r.error) throw r.error; toast('已设为 ' + v); gmBondList(); })
-          .catch(function (e2) { toast('失败：' + friendlyError(e2)); });
+        if (!editBox.hidden && editBox.firstChild && editBox.firstChild.tagName === 'INPUT') { closeEditor(); return; }
+        openEditor('int');
       };
+      // 解除：两步点击确认（WebView 无 confirm 弹窗）
       var bDel = el('button', 'btn-mini gm-bond-un', '解除'); bDel.type = 'button';
+      var armed = false, armTimer = null;
       bDel.onclick = function () {
+        if (!armed) {
+          armed = true;
+          bDel.textContent = '确认解除?';
+          bDel.classList.add('danger-arm');
+          armTimer = setTimeout(function () {
+            armed = false;
+            bDel.textContent = '解除';
+            bDel.classList.remove('danger-arm');
+          }, 3000);
+          return;
+        }
+        clearTimeout(armTimer);
+        bDel.disabled = true; bDel.textContent = '解除中…';
         sb.rpc('gm_bond_remove', { p_pwd: gmPwd, p_user_a: b.a_id, p_user_b: b.b_id })
-          .then(function (r) { if (r.error) throw r.error; toast('已解除并清理待处理申请'); gmBondList(); })
-          .catch(function (e2) { toast('失败：' + friendlyError(e2)); });
+          .then(function (r) {
+            if (r.error) throw r.error;
+            toast('已解除并清理待处理申请');
+            gmBondList();
+          })
+          .catch(function (e2) {
+            bDel.disabled = false; bDel.textContent = '解除'; bDel.classList.remove('danger-arm'); armed = false;
+            toast('失败：' + friendlyError(e2));
+          });
       };
-      ops.appendChild(bInt); ops.appendChild(bDel);
+      ops.appendChild(bType); ops.appendChild(bInt); ops.appendChild(bDel);
       card.appendChild(icon); card.appendChild(main); card.appendChild(ops);
+      card.appendChild(editBox);
       box.appendChild(card);
     });
   }
