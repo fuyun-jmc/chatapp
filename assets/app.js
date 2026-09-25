@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v309 loaded');
+  console.log('[chatapp] app.js build v310 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -773,8 +773,8 @@
     return days + ' 天前';
   }
 
-  /* v309：只更新会话列表里的在线小圆点，不整表重渲染。
-     在线状态有两个周期性来源：refreshOnline() 每 10s 轮询一次，以及每个在线好友
+  /* v309：只更新会话列表里的在线小圆点，不整表重渲染（v310 起 refreshOnline 降为每 30s 轮询）。
+     在线状态有两个周期性来源：refreshOnline() 每 30s 轮询一次，以及每个在线好友
      每 15s 广播一次 presence tick —— N 个好友就是每 15/N 秒触发一次。
      之前每次都 renderConversations() 全表重建，头像节点被反复销毁重建
      （色块 → 图片 → 色块），表现为「好友列表头像一直刷新」。
@@ -1847,7 +1847,7 @@
     // 在线状态：登录后拉一次；Realtime 广播负责秒级点亮，10s 轮询作兜底校正
     refreshOnline();
     if (state.onlineTimer) clearInterval(state.onlineTimer);
-    state.onlineTimer = setInterval(refreshOnline, 10000);
+    state.onlineTimer = setInterval(refreshOnline, 30000);   // v310：性能优化，在线轮询 10s→30s（实时 presence 已推送，兜底即可）
 
     // v298：广场入口红点（新帖子 / 我的帖子被点赞）——登录即拉一次，60s 轮询兜底
     refreshSquareDot();
@@ -2225,9 +2225,35 @@
     info.appendChild(el('div', 'draft-prev', '草稿：' + prev));
   }
 
+  // v310：列表数据签名——未变化则跳过整表重建，避免性能差设备反复销毁重建数百个 DOM 节点
+  function draftLenOf(id, isGroup) {
+    var d = state.drafts[draftKey(id, isGroup)];
+    return d && d.text ? d.text.length : 0;
+  }
+  function convSignature() {
+    var s = 'fr' + (state.friends ? state.friends.length : 0) + 'gr' + (state.groups ? state.groups.length : 0) + '|';
+    (state.friends || []).forEach(function (f) {
+      var bd = state.bondMap && state.bondMap[f.id];
+      s += 'f' + f.id + ':' + (state.unread[f.id] || 0) + ':' + draftLenOf(f.id, false) + ':' +
+           (f.pinned ? 1 : 0) + ':' + (state.convTs[f.id] || 0) + ':' + (f.avatar || '') + ':' +
+           (f.remark || f.nickname || '') + ':' +
+           (bd ? (bd.bond_type + ':' + (bd.intimacy || 0)) : '') + ':' +
+           (state.profileTitleSig ? (state.profileTitleSig[f.id] || '') : '') + ';';
+    });
+    (state.groups || []).forEach(function (g) {
+      s += 'g' + g.id + ':' + (state.unread[g.id] || 0) + ':' + draftLenOf(g.id, true) + ':' +
+           (g.pinned ? 1 : 0) + ':' + (state.convTs[g.id] || 0) + ':' + (g.name || '') + ':' + (g.memberCount || 0) + ';';
+    });
+    return s;
+  }
+
   function renderConversations() {
     var list = $('chat-list');
     if (!list) return;
+    // v310：数据没变就跳过整表重建（直接 return，不碰 DOM）
+    var sig = convSignature();
+    if (sig === state._lastConvSig) return;
+    state._lastConvSig = sig;
     list.innerHTML = '';
 
     var all = state.groups.concat(state.friends);
@@ -8252,7 +8278,7 @@
     if (state.crHeartTimer) clearInterval(state.crHeartTimer);
     state.crHeartTimer = setInterval(chatRoomHeartbeat, 15000);
     if (state.crOnlineTimer) clearInterval(state.crOnlineTimer);
-    state.crOnlineTimer = setInterval(refreshChatRoomOnline, 10000);
+    state.crOnlineTimer = setInterval(refreshChatRoomOnline, 15000);   // v310：性能优化，聊天室在线轮询 10s→15s（与心跳对齐）
     subscribeChatRoom();
     try { inp && inp.focus(); } catch (e) {}
   }
@@ -9788,7 +9814,7 @@
     state.pollTimer = setInterval(function () {
       if (!state.uid || !state.active) return;
       fillNewMessages();
-    }, 4000);
+    }, 12000);   // v310：性能优化，消息兜底轮询 4s→12s（实时订阅正常时几乎不缺数据）
   }
   function stopPoll() {
     if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
