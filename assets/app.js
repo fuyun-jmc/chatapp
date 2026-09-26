@@ -1859,19 +1859,43 @@
     if (state.bondTimer) clearInterval(state.bondTimer);
     state.bondTimer = setInterval(function () { refreshBonds(false); }, 60000);
 
-    loadProfile()
-      .then(loadRelations)
-      .then(loadGroupRemarks)
-      .then(loadGroups)
-      .then(convTsFallbackIfNeeded)   // RPC 不可用时，群聊加载完再补算会话浮顶时间
-      .then(loadDisplayTitles)
-      .then(applySelfTitle)
-      .then(refreshAdminStatus)
-      .then(loadForbiddenWords)
-      .then(loadMyDrafts)            // 登录即拉取我的全部草稿（跨设备/退出网页后仍在）
-      .then(loadUnreadFromDb)        // 登录即按 DB 计算离线/跨设备未读
-      .then(loadMyTitles)            // 计算「新称号」红点（设置弹窗未开时不标记已读）
+    // v311：启动链由「12 段串行 await」改为「分层并发」。
+    // 背景：后端迁到本机后单次请求 RTT 从 ~100ms 变成 ~2.4s（cloudflared 边缘在境外），
+    // 串行 12 段需要约 29s 才进主界面，表现为「登录成功但什么都不加载」，
+    // 中途超时的请求拿到 cloudflared 自己的错误页（无 CORS 头），控制台还会报 CORS 错。
+    // 分三层：①只依赖 state.uid 的一起发 ②依赖好友/群列表的 ③最后画称号框。
+    // 附带好处：某一步失败不再中断后面所有加载（旧写法一个 throw 整条链断掉）。
+    var fatalErr = null;
+    function settle(name, fn, critical) {
+      return Promise.resolve()
+        .then(fn)
+        .catch(function (e) {
+          try { console.warn('[start] ' + name + ' failed:', e && (e.message || e.code || e)); } catch (_) {}
+          if (critical && !fatalErr) fatalErr = e;
+        });
+    }
+
+    Promise.all([
+      settle('loadProfile', loadProfile, true),
+      settle('loadRelations', loadRelations, true),
+      settle('loadGroupRemarks', loadGroupRemarks),
+      settle('loadGroups', loadGroups, true),
+      settle('loadForbiddenWords', loadForbiddenWords),
+      settle('loadMyDrafts', loadMyDrafts),            // 登录即拉取我的全部草稿（跨设备/退出网页后仍在）
+      settle('loadMyTitles', loadMyTitles),            // 计算「新称号」红点（设置弹窗未开时不标记已读）
+      settle('refreshAdminStatus', refreshAdminStatus)
+    ])
       .then(function () {
+        // 第 2 层：依赖 state.friends（loadRelations）或 state.groups（loadGroups）
+        return Promise.all([
+          settle('loadDisplayTitles', loadDisplayTitles),
+          settle('convTsFallbackIfNeeded', convTsFallbackIfNeeded),  // RPC 不可用时补算会话浮顶时间
+          settle('loadUnreadFromDb', loadUnreadFromDb)               // 登录即按 DB 计算离线/跨设备未读
+        ]);
+      })
+      .then(function () {
+        // 第 3 层：称号框/徽标画到自己头像上（依赖 state.titlesMap）
+        try { applySelfTitle(); } catch (e) {}
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
         // —— subscribeRealtime 没有 return，会返回 undefined，导致 .then(startPoll) 抛错、
         //    startPoll 永远不执行（一个坑过多次的 thenable 陷阱）。这里顺序调用即可。
@@ -1879,8 +1903,8 @@
         startPoll();
         // 账号找回后：资料加载完即强制打开设置改密码
         if (state.forceChangePwd) openSettings();
-      })
-      .catch(function (e) { toast(friendlyError(e)); });
+        if (fatalErr) toast(friendlyError(fatalErr));
+      });
   }
 
   function loadProfile() {
