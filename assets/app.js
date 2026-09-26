@@ -4,7 +4,7 @@
  * ============================================================ */
 (function () {
   'use strict';
-  console.log('[chatapp] app.js build v310 loaded');
+  console.log('[chatapp] app.js build v315 loaded');
 
   var CFG = window.CHAT_CONFIG || {};
   var PHONE_RE = /^1[3-9]\d{9}$/;
@@ -340,6 +340,11 @@
    */
   var IMG_CONCURRENCY = 4, IMG_TIMEOUT = 25000;
   var _imgQueue = [], _imgActive = 0;
+  /* v315：已知下载不到的 path（文件在迁移时没拉下来，storage 里只有元数据没有实体）。
+   * 不记的话每个缺失头像都要白跑一趟签名+下载（经隧道各 ~2.4s），46 个就是几十秒。
+   * 记下后直接走字母头像；用户重传成功时 dropAvatarCache 会清掉，允许重新加载。
+   */
+  var _badPath = {};
 
   function pumpImg() {
     while (_imgActive < IMG_CONCURRENCY && _imgQueue.length) {
@@ -369,6 +374,7 @@
     im.onerror = function () {
       if (settled) return;
       settled = true; clearTimeout(timer);
+      _badPath[it.path] = true;        // 文件缺失/损坏，本次会话内不再重试
       _imgActive--; pumpImg();
       it.onFail();
     };
@@ -387,8 +393,14 @@
     _imgQueue.push({ path: path, url: url, name: name, onReady: onReady, onFail: onFail });
     pumpImg();
   }
-  // 头像被用户更换 / 删除后清掉缓存，避免一直显示旧图
-  function dropAvatarCache(path) { if (path) delete _avatarImgCache[path]; }
+  // 头像被用户更换 / 删除后清掉缓存，避免一直显示旧图。
+  // v315：同时清掉 _badPath —— 迁移后大量 avatar_path 在 storage 里只有元数据没有实体，
+  // 第一次加载失败就被记进 _badPath 走字母头像；用户重新传图后必须解禁，否则永远不显示。
+  function dropAvatarCache(path) {
+    if (!path) return;
+    delete _avatarImgCache[path];
+    delete _badPath[path];
+  }
 
   /* 统一渲染头像：有自定义头像图则显示图片，否则显示首字母色块 */
   function setAvatar(node, opts) {
@@ -511,7 +523,11 @@
     if (/Password should be at least/i.test(m)) return '密码至少需要 6 位';
     if (/Email address .* is invalid|Email address is invalid/i.test(m))
       return '注册被邮箱格式校验拦截：请把 config.js 里的 EMAIL_DOMAIN 改成 example.com 再试';
-    if (/duplicate key|profiles_phone_key/i.test(m)) return '该手机号已被占用';
+    // v315：先精确匹配 profiles_phone_key（注册/改手机号场景），
+    // 其余 duplicate key 一律给通用文案 —— 迁移后序列没对齐时 messages_pkey
+    // 冲突曾被误报成「该手机号已被占用」，误导排查方向。
+    if (/profiles_phone_key/i.test(m)) return '该手机号已被占用';
+    if (/duplicate key/i.test(m)) return '数据冲突，请重试';
     if (/row-level security|violates row-level/i.test(m)) return '没有权限执行该操作（可能还不是好友）';
     if (/rate limit|too many/i.test(m)) return '操作太频繁，请稍后再试';
     if (/CANNOT_MUTE_SELF/.test(m)) return '不能禁言自己';
@@ -6309,6 +6325,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         pendingAvatar = path;
+        dropAvatarCache(path);   // v315：解禁（可能是重新上传到同一 path）
         var url = URL.createObjectURL(file);   // 立即本地预览
         var av = $('settings-avatar');
         av.textContent = '';
@@ -6956,6 +6973,7 @@
       .then(function (r) {
         if (r.error) throw r.error;
         pendingGroupAvatar = path;
+        dropAvatarCache(path);   // v315：同个人头像，重传后允许再次加载
         var url = URL.createObjectURL(file);   // 立即本地预览，不等签名地址
         var av = $('group-info-avatar');
         av.textContent = '';
@@ -9291,6 +9309,7 @@
 
   function signedUrl(path) {
     if (!path) return Promise.resolve(null);
+    if (_badPath[path]) return Promise.resolve(null);   // 已知取不到，别再浪费一次往返
     if (state.urlCache[path]) return Promise.resolve(state.urlCache[path]);
     return new Promise(function (resolve) {
       if (!_signWaiters[path]) {
