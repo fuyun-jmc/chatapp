@@ -1828,73 +1828,77 @@
     $('chat-empty').hidden = false;
   }
 
+  /* v311：启动请求并发池 + 分层调度（针对「后端迁本机 → 走 cloudflared 隧道」的网络特征）
+   *
+   * 实测（同一批真实启动请求）：
+   *   本机 8080   并发 4 / 8 / 16 → 0.1s / 0.0s / 0.0s   （后端完全不是瓶颈）
+   *   经隧道      并发 4 / 8 / 16 → 3.0s / 3.0s / 92.3s  （16 路雪崩，出现 90s 超时）
+   *   隧道单次 RTT ≈ 1.9~2.4s（cloudflared 边缘在境外 LAX，--region ap 因 DNS 被墙不可用）
+   *
+   * 原来 12 段串行 await ≈ 29s 才进主界面，看起来就是「登录成功但什么都不加载」；
+   * 中途超时的请求拿到的是 cloudflared 自己的错误页（不带 CORS 头），控制台便报 CORS 错。
+   * 这里改为：所有启动请求排队，最多 BOOT_CONCURRENCY 个同时在飞（避开雪崩区），
+   * 并按「首屏关键 → 依赖好友/群 → 非关键后台」三层调度，让主界面尽早可用。
+   * 附带好处：某一步失败不再中断后面所有加载（旧写法一个 throw 整条链断掉）。
+   */
+  var BOOT_CONCURRENCY = 6;
+  var bootQ = [], bootActive = 0, bootFatal = null;
+
+  function pumpBoot() {
+    while (bootActive < BOOT_CONCURRENCY && bootQ.length) {
+      var item = bootQ.shift();
+      bootActive++;
+      Promise.resolve()
+        .then(item.fn)
+        .catch(function (e) {
+          try { console.warn('[start] ' + item.name + ' failed:', e && (e.message || e.code || e)); } catch (_) {}
+          if (item.critical && !bootFatal) bootFatal = e;
+        })
+        .then(function () {
+          bootActive--;
+          pumpBoot();
+          item.resolve();
+        });
+    }
+  }
+
+  // 排进启动池：fn 可以是同步函数或返回 Promise 的函数
+  function boot(name, fn, critical) {
+    return new Promise(function (resolve) {
+      bootQ.push({ name: name, fn: fn, critical: critical, resolve: resolve });
+      pumpBoot();
+    });
+  }
+
   function start(session) {
     $('auth-view').hidden = true;
     $('app-view').hidden = false;
     sb.realtime.setAuth(session.access_token);
 
     loadConvTs();   // 刷新网页后恢复「会话浮顶时间戳」，避免刚发消息置顶、刷新又回原位
-
-    registerDeviceSession();
-    startHeartbeat();
-    setupKickChannel();
+    setupKickChannel();      // WebSocket 订阅，不走 HTTP，不占并发池
     setupPresenceChannel();
-    // 连续登录计数 + 自动授予「连续登录 N 天」称号（失败不影响主流程）
-    sb.rpc('touch_login_streak').then(function () {}).catch(function () {});
-    // 拉取“绝对管理员”uid，用于决定 GM 入口是否可见
-    refreshGmAdmin();
+    bootFatal = null;
 
-    // 在线状态：登录后拉一次；Realtime 广播负责秒级点亮，10s 轮询作兜底校正
-    refreshOnline();
-    if (state.onlineTimer) clearInterval(state.onlineTimer);
-    state.onlineTimer = setInterval(refreshOnline, 30000);   // v310：性能优化，在线轮询 10s→30s（实时 presence 已推送，兜底即可）
-
-    // v298：广场入口红点（新帖子 / 我的帖子被点赞）——登录即拉一次，60s 轮询兜底
-    refreshSquareDot();
-    if (state.squareDotTimer) clearInterval(state.squareDotTimer);
-    state.squareDotTimer = setInterval(refreshSquareDot, 60000);
-
-    // v299：亲密关系（好友列表徽标 + 收到的绑定申请）——登录即拉一次，60s 轮询
-    refreshBonds(true);
-    if (state.bondTimer) clearInterval(state.bondTimer);
-    state.bondTimer = setInterval(function () { refreshBonds(false); }, 60000);
-
-    // v311：启动链由「12 段串行 await」改为「分层并发」。
-    // 背景：后端迁到本机后单次请求 RTT 从 ~100ms 变成 ~2.4s（cloudflared 边缘在境外），
-    // 串行 12 段需要约 29s 才进主界面，表现为「登录成功但什么都不加载」，
-    // 中途超时的请求拿到 cloudflared 自己的错误页（无 CORS 头），控制台还会报 CORS 错。
-    // 分三层：①只依赖 state.uid 的一起发 ②依赖好友/群列表的 ③最后画称号框。
-    // 附带好处：某一步失败不再中断后面所有加载（旧写法一个 throw 整条链断掉）。
-    var fatalErr = null;
-    function settle(name, fn, critical) {
-      return Promise.resolve()
-        .then(fn)
-        .catch(function (e) {
-          try { console.warn('[start] ' + name + ' failed:', e && (e.message || e.code || e)); } catch (_) {}
-          if (critical && !fatalErr) fatalErr = e;
-        });
-    }
-
+    // —— 第 1 层：首屏关键数据 ——
     Promise.all([
-      settle('loadProfile', loadProfile, true),
-      settle('loadRelations', loadRelations, true),
-      settle('loadGroupRemarks', loadGroupRemarks),
-      settle('loadGroups', loadGroups, true),
-      settle('loadForbiddenWords', loadForbiddenWords),
-      settle('loadMyDrafts', loadMyDrafts),            // 登录即拉取我的全部草稿（跨设备/退出网页后仍在）
-      settle('loadMyTitles', loadMyTitles),            // 计算「新称号」红点（设置弹窗未开时不标记已读）
-      settle('refreshAdminStatus', refreshAdminStatus)
+      boot('loadProfile', loadProfile, true),
+      boot('loadRelations', loadRelations, true),
+      boot('loadGroups', loadGroups, true),
+      boot('loadGroupRemarks', loadGroupRemarks),
+      boot('refreshAdminStatus', refreshAdminStatus),
+      boot('loadMyTitles', loadMyTitles)      // 计算「新称号」红点（设置弹窗未开时不标记已读）
     ])
       .then(function () {
-        // 第 2 层：依赖 state.friends（loadRelations）或 state.groups（loadGroups）
+        // —— 第 2 层：依赖 state.friends（loadRelations）/ state.groups（loadGroups）——
         return Promise.all([
-          settle('loadDisplayTitles', loadDisplayTitles),
-          settle('convTsFallbackIfNeeded', convTsFallbackIfNeeded),  // RPC 不可用时补算会话浮顶时间
-          settle('loadUnreadFromDb', loadUnreadFromDb)               // 登录即按 DB 计算离线/跨设备未读
+          boot('loadDisplayTitles', loadDisplayTitles),
+          boot('convTsFallbackIfNeeded', convTsFallbackIfNeeded),   // RPC 不可用时补算会话浮顶时间
+          boot('loadUnreadFromDb', loadUnreadFromDb)                // 登录即按 DB 计算离线/跨设备未读
         ]);
       })
       .then(function () {
-        // 第 3 层：称号框/徽标画到自己头像上（依赖 state.titlesMap）
+        // 主界面此刻已可用 —— 先画称号框、起实时订阅，再慢慢补非关键数据
         try { applySelfTitle(); } catch (e) {}
         // 注意：不要写成 .then(subscribeRealtime).then(startPoll)
         // —— subscribeRealtime 没有 return，会返回 undefined，导致 .then(startPoll) 抛错、
@@ -1903,7 +1907,29 @@
         startPoll();
         // 账号找回后：资料加载完即强制打开设置改密码
         if (state.forceChangePwd) openSettings();
-        if (fatalErr) toast(friendlyError(fatalErr));
+        if (bootFatal) toast(friendlyError(bootFatal));
+
+        // —— 第 3 层：非关键，后台慢慢补 ——
+        return Promise.all([
+          boot('registerDeviceSession', registerDeviceSession),
+          boot('touch_login_streak', function () { return sb.rpc('touch_login_streak'); }),
+          boot('refreshGmAdmin', refreshGmAdmin),          // “绝对管理员”uid，决定 GM 入口可见性
+          boot('refreshOnline', refreshOnline),            // 在线点（Realtime 广播兜底校正）
+          boot('refreshSquareDot', refreshSquareDot),      // v298 广场入口红点
+          boot('refreshBonds', function () { return refreshBonds(true); }),  // v299 亲密关系
+          boot('loadForbiddenWords', loadForbiddenWords),
+          boot('loadMyDrafts', loadMyDrafts)               // 跨设备/退出网页后草稿仍在
+        ]);
+      })
+      .then(function () {
+        // 轮询定时器等启动请求跑完再起，避免定时请求与启动请求抢并发槽
+        startHeartbeat();
+        if (state.onlineTimer) clearInterval(state.onlineTimer);
+        state.onlineTimer = setInterval(refreshOnline, 30000);   // v310：实时 presence 已推送，30s 兜底即可
+        if (state.squareDotTimer) clearInterval(state.squareDotTimer);
+        state.squareDotTimer = setInterval(refreshSquareDot, 60000);
+        if (state.bondTimer) clearInterval(state.bondTimer);
+        state.bondTimer = setInterval(function () { refreshBonds(false); }, 60000);
       });
   }
 
