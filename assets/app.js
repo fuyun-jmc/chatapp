@@ -9214,13 +9214,58 @@
     lb.classList.add('open');
   }
 
+  /* 头像/图片签名批量化（v313）
+   * 隧道 RTT ≈2.4s 且并发 >8 会雪崩：48 个好友头像逐个签名就是 48 次往返，
+   * 头像要么迟迟不出现、要么整批超时失败（表现为「头像不加载」）。
+   * 这里把同一批（40ms 内）到达的 path 合并成一次 createSignedUrls 批量请求。
+   */
+  var _signQueue = [], _signWaiters = {}, _signTimer = null, _signBusy = false;
+
+  function doneSign(p, url) {
+    if (url) state.urlCache[p] = url;
+    var ws = _signWaiters[p] || [];
+    delete _signWaiters[p];
+    for (var i = 0; i < ws.length; i++) { try { ws[i](url || null); } catch (e) {} }
+  }
+
+  function flushSignQueue() {
+    _signTimer = null;
+    if (_signBusy || !_signQueue.length) return;
+    var paths = _signQueue.slice();
+    _signQueue = [];
+    _signBusy = true;
+    sb.storage.from(BUCKET).createSignedUrls(paths, 3600)
+      .then(function (r) {
+        var got = {};
+        ((r && r.data) || []).forEach(function (it) {
+          if (it && it.path && it.signedUrl) { state.urlCache[it.path] = it.signedUrl; got[it.path] = 1; }
+        });
+        paths.forEach(function (p) { doneSign(p, got[p] ? state.urlCache[p] : null); });
+      })
+      .catch(function () {
+        // 批量端点不可用时退回逐个签名
+        paths.forEach(function (p) {
+          sb.storage.from(BUCKET).createSignedUrl(p, 3600)
+            .then(function (r2) { doneSign(p, (r2 && r2.data && r2.data.signedUrl) || null); })
+            .catch(function () { doneSign(p, null); });
+        });
+      })
+      .then(function () {
+        _signBusy = false;
+        if (_signQueue.length) flushSignQueue();
+      });
+  }
+
   function signedUrl(path) {
     if (!path) return Promise.resolve(null);
     if (state.urlCache[path]) return Promise.resolve(state.urlCache[path]);
-    return sb.storage.from(BUCKET).createSignedUrl(path, 3600).then(function (r) {
-      if (r.error || !r.data) return null;
-      state.urlCache[path] = r.data.signedUrl;
-      return r.data.signedUrl;
+    return new Promise(function (resolve) {
+      if (!_signWaiters[path]) {
+        _signWaiters[path] = [];
+        _signQueue.push(path);
+      }
+      _signWaiters[path].push(resolve);
+      if (!_signTimer) _signTimer = setTimeout(flushSignQueue, 40);
     });
   }
 
