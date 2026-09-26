@@ -335,6 +335,46 @@
      就表现为「好友列表头像一直刷新」）。命中缓存时直接 cloneNode 插入，
      浏览器从缓存取图，肉眼无闪烁。 */
   var _avatarImgCache = {};
+  /* 图片下载并发池（v314）：隧道并发 ≥8 会雪崩（实测 20 张 123s、出现 120s 卡死），
+   * 所以头像图也排队下载，一次最多 IMG_CONCURRENCY 张。命中已解码缓存的走同步分支不排队。
+   */
+  var IMG_CONCURRENCY = 4, IMG_TIMEOUT = 25000;
+  var _imgQueue = [], _imgActive = 0;
+
+  function pumpImg() {
+    while (_imgActive < IMG_CONCURRENCY && _imgQueue.length) {
+      _imgActive++;
+      loadOneImg(_imgQueue.shift());
+    }
+  }
+
+  function loadOneImg(it) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      _imgActive--; pumpImg();
+      it.onFail();
+    }, IMG_TIMEOUT);
+    var im = new Image();
+    im.className = 'avatar-img';
+    im.alt = it.name;
+    im.onload = function () {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      _avatarImgCache[it.path] = im;   // 缓存已解码的图片，供后续 clone 复用
+      _imgActive--; pumpImg();
+      it.onReady(im);
+    };
+    im.onerror = function () {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      _imgActive--; pumpImg();
+      it.onFail();
+    };
+    im.src = it.url;
+  }
+
   function avatarImgFor(path, url, name, onReady, onFail) {
     var cached = _avatarImgCache[path];
     if (cached && cached.complete && cached.naturalWidth > 0) {
@@ -344,15 +384,8 @@
       onReady(c);
       return;
     }
-    var im = new Image();
-    im.className = 'avatar-img';
-    im.alt = name;
-    im.onload = function () {
-      _avatarImgCache[path] = im;     // 缓存已解码的图片，供后续 clone 复用
-      onReady(im);
-    };
-    im.onerror = function () { onFail(); };
-    im.src = url;
+    _imgQueue.push({ path: path, url: url, name: name, onReady: onReady, onFail: onFail });
+    pumpImg();
   }
   // 头像被用户更换 / 删除后清掉缓存，避免一直显示旧图
   function dropAvatarCache(path) { if (path) delete _avatarImgCache[path]; }
