@@ -11,13 +11,13 @@
  * ============================================================ */
 
 window.CHAT_CONFIG = {
-  // ===== 临时切换：本机自建后端（PostgREST + gateway.py）经 cloudflared 隧道暴露 =====
-  // 注意：这是 quick tunnel，每次重启 cloudflared 域名都会变，需要同步改这里
-  // （start_all.py 启动后会打印新地址）。切回 Supabase 时把下面两行换回原值即可。
-  SUPABASE_URL: 'https://essays-ratio-dispatched-pad.trycloudflare.com',
-  // 用本地 JWT secret 签发的长期 anon JWT（role=anon），等价于 Supabase 的 anon public key
+  // ===== 后端：Cloudflare Worker（云端 gateway）+ D1 =====
+  // 固定域名，不再随隧道重启变化。Worker 实现 /auth/v1、/rest/v1、/storage/v1
+  SUPABASE_URL: 'https://chat.fuyunchat.top',
+  // 用 JWT secret 签发的长期 anon JWT（role=anon），等价于 Supabase 的 anon public key
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5MDM4NDQ2MSwiZXhwIjoyMTA1NzQ0NDYxLCJyb2xlIjoiYW5vbiJ9.Nw1rVl3lLVmtKzTYOR0fMUydfcq11kX91DzMPoha1rY',
-  // ---------- 原 Supabase 配置（保留备用）----------
+  // ---------- 历史配置（保留备用）----------
+  // SUPABASE_URL: 'https://essays-ratio-dispatched-pad.trycloudflare.com',  // 本地 gateway.py 经 cloudflared 隧道
   // SUPABASE_URL: 'https://qbijifskzkhianacsjqp.supabase.co',
   // SUPABASE_ANON_KEY: 'sb_publishable_GiAzZDEekVhA0QAqy8djgg_mvHI79ws',
 
